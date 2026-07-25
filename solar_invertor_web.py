@@ -22,11 +22,11 @@ from __future__ import annotations
 import json
 import os
 import re
-import secrets
 import sqlite3
 import subprocess
 import threading
 import time
+from contextlib import closing
 from datetime import datetime
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -39,16 +39,20 @@ SLAVE_ID = 1
 BAUD_RATE = 9600
 COMMAND_TIMEOUT_SECONDS = 3.0
 FAVICON_PATH = Path(__file__).with_name("favicon.png")
-STATS_DB_PATH = Path(
-    os.environ.get(
-        "INVERTER_STATS_DB",
-        str(Path(__file__).with_name("inverter_stats.sqlite3")),
-    )
+_stats_path_setting = os.environ.get("INVERTER_STATS_DB")
+_new_stats_path = Path(__file__).with_name("solar_invertor_web_stats.sqlite3")
+_legacy_stats_path = Path(__file__).with_name("inverter_stats.sqlite3")
+STATS_DB_PATH = (
+    Path(_stats_path_setting)
+    if _stats_path_setting
+    else _legacy_stats_path
+    if _legacy_stats_path.exists() and not _new_stats_path.exists()
+    else _new_stats_path
 )
-STATS_ACCESS_KEY = os.environ.get("INVERTER_STATS_KEY", "")
-VISITOR_COOKIE = "inverter_visitor"
 stats_lock = threading.Lock()
 stats_error = ""
+site_visit_total = 0
+COUNTED_VISITOR_COOKIE = "inverter_counted"
 
 POLL_RATES = [0.5, 1.0, 2.0, 5.0, 10.0]
 
@@ -637,7 +641,7 @@ WEB_DASHBOARD = r"""<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <link rel="icon" type="image/png" sizes="any" href="/favicon.png">
-  <title>Solar Inverter</title>
+  <title>Solar Invertor Web</title>
   <style>
     :root {
       color-scheme: dark;
@@ -930,7 +934,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       .toolbar > * { width: 100%; min-width: 0; margin: 0 }
       .toolbar .chip { justify-content: space-between; padding-inline: 10px }
       .toolbar select { width: auto; min-width: 0; min-height: 36px; padding-inline: 7px }
-      #demo-button, #manage-values-button, #cycle, #updated { grid-column: 1 / -1 }
+      #demo-button, #manage-values-button, #updated { grid-column: 1 / -1 }
       .updated { margin-left: 0 }
       .gauges { gap: 8px; margin-bottom: 12px }
       .gauge-card { padding: 11px 8px 10px; border-radius: 15px }
@@ -1003,7 +1007,7 @@ WEB_DASHBOARD = r"""<!doctype html>
     <header>
       <div class="brand">
         <div class="logo">☀</div>
-        <div><h1>Solar Invertor</h1><div class="subtitle" id="identifier">Waiting for invertor…</div></div>
+        <div><h1>Solar Invertor Web</h1><div class="subtitle" id="identifier">Waiting for invertor…</div></div>
       </div>
       <div class="header-actions">
         <label class="theme-switch">
@@ -1033,6 +1037,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       <button id="demo-button" class="all-data-demo-button" type="button">Run 120s demo · 79 values</button>
       <button id="manage-values-button" type="button">＋ Add values</button>
       <span class="chip" id="cycle">Cycle —</span>
+      <span class="chip" id="site-visits">Visitors — · —</span>
       <span class="chip updated" id="updated">Not updated yet</span>
     </div>
 
@@ -1090,6 +1095,7 @@ WEB_DASHBOARD = r"""<!doctype html>
     let refreshInFlight = false;
     let refreshTimer = null;
     let refreshController = null;
+    let lastLoggedSiteVisits = null;
     const requestIntervals = [500, 1000, 2000, 5000, 10000];
     let chartDefinitions = new Map();
     function savedSelections(name) {
@@ -1590,6 +1596,21 @@ WEB_DASHBOARD = r"""<!doctype html>
         data.paused
           ? `Cycle ${data.cycle_id} · monitoring paused`
           : `Cycle ${data.cycle_id} · ${data.cycle_seconds.toFixed(2)} s · ${data.successful} reads`;
+      const totalVisitors = Number(data.site_visits || 0);
+      document.querySelector('#site-visits').textContent =
+        `Visitors ${totalVisitors.toLocaleString()} · ${data.site_visits_date}`;
+      if (lastLoggedSiteVisits !== totalVisitors) {
+        console.log('[Solar Invertor Web visit]', {
+          totalVisitors,
+          date: data.site_visits_date,
+          openedAt: new Date().toISOString(),
+          referrer: document.referrer || 'direct',
+          language: navigator.language,
+          userAgent: navigator.userAgent,
+          viewport: `${window.innerWidth}x${window.innerHeight}`
+        });
+        lastLoggedSiteVisits = totalVisitors;
+      }
       document.querySelector('#poll-rate').value = data.poll_rate_index;
       document.querySelector('#read-mode').value = data.read_mode;
       const error = document.querySelector('#error');
@@ -1824,20 +1845,125 @@ def web_state() -> dict[str, Any]:
         "error": snapshot["error"],
         "identifier": snapshot["identifier"],
         "paused": bool(snapshot["paused"]),
+        "site_visits": site_visit_total,
+        "site_visits_date": datetime.now().astimezone().strftime("%d %b %Y"),
         "meters": meters,
         "registers": registers,
     }
 
 
+def initialise_statistics() -> None:
+    """Create and load the privacy-friendly persistent page-view counter."""
+    global site_visit_total, stats_error
+    try:
+        STATS_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(STATS_DB_PATH)) as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS site_counters (
+                    name TEXT PRIMARY KEY,
+                    value INTEGER NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO site_counters (name, value)
+                VALUES ('page_views', 0)
+                """
+            )
+            site_visit_total = int(
+                connection.execute(
+                    "SELECT value FROM site_counters WHERE name = 'page_views'"
+                ).fetchone()[0]
+            )
+            connection.commit()
+        stats_error = ""
+    except (OSError, sqlite3.Error) as error:
+        stats_error = str(error)
+
+
+def increment_site_visits() -> None:
+    """Count one dashboard HTML page load without storing visitor information."""
+    global site_visit_total, stats_error
+    try:
+        with stats_lock, closing(sqlite3.connect(STATS_DB_PATH)) as connection:
+            connection.execute(
+                """
+                UPDATE site_counters
+                SET value = value + 1
+                WHERE name = 'page_views'
+                """
+            )
+            site_visit_total = int(
+                connection.execute(
+                    "SELECT value FROM site_counters WHERE name = 'page_views'"
+                ).fetchone()[0]
+            )
+            connection.commit()
+        stats_error = ""
+    except sqlite3.Error as error:
+        stats_error = str(error)
+
+
+def visitor_was_counted(cookie_header: str) -> bool:
+    """Check the anonymous first-visit cookie without identifying the visitor."""
+    try:
+        cookie = SimpleCookie()
+        cookie.load(cookie_header)
+        return cookie.get(COUNTED_VISITOR_COOKIE, "").value == "1"
+    except (AttributeError, ValueError):
+        return False
+
+
+def log_visit_to_console(
+    handler: BaseHTTPRequestHandler, new_visitor: bool
+) -> None:
+    """Write request details to the private server terminal only."""
+    peer = str(handler.client_address[0])
+    forwarded = handler.headers.get("X-Forwarded-For", "")
+    source = (
+        forwarded.split(",", 1)[0].strip()
+        if peer in {"127.0.0.1", "::1"} and forwarded
+        else peer
+    )
+    details = {
+        "event": "dashboard_visit",
+        "date": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "total_visitors": site_visit_total,
+        "new_visitor": new_visitor,
+        "source": source[:100],
+        "identity": (
+            handler.headers.get("Tailscale-User-Login")
+            or handler.headers.get("Tailscale-User-Name")
+            or "public/anonymous"
+        )[:160],
+        "referrer": handler.headers.get("Referer", "direct")[:500],
+        "user_agent": handler.headers.get("User-Agent", "unknown")[:500],
+    }
+    print(
+        "VISITOR " + json.dumps(details, ensure_ascii=False, separators=(",", ":")),
+        flush=True,
+    )
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     """Serve the dashboard and its small JSON API."""
 
-    def send_content(self, body: bytes, content_type: str, status: HTTPStatus = HTTPStatus.OK) -> None:
+    def send_content(
+        self,
+        body: bytes,
+        content_type: str,
+        status: HTTPStatus = HTTPStatus.OK,
+        extra_headers: dict[str, str] | None = None,
+    ) -> None:
         try:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            for name, value in (extra_headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
@@ -1845,23 +1971,46 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
     def do_GET(self) -> None:
-        if self.path in {"/favicon.png", "/favicon.ico"}:
+        request_path = self.path.split("?", 1)[0]
+        if request_path in {"/favicon.png", "/favicon.ico"}:
             try:
                 self.send_content(FAVICON_PATH.read_bytes(), "image/png")
             except OSError:
                 self.send_content(b"", "image/png", HTTPStatus.NOT_FOUND)
             return
 
-        if self.path == "/":
+        if request_path == "/":
+            new_visitor = not visitor_was_counted(
+                self.headers.get("Cookie", "")
+            )
+            if new_visitor:
+                increment_site_visits()
+            log_visit_to_console(self, new_visitor)
             initial_state = json.dumps(
                 web_state(), ensure_ascii=False, separators=(",", ":")
             ).replace("<", "\\u003c")
             page = WEB_DASHBOARD.replace(
                 "/*__INITIAL_STATE__*/null", initial_state, 1
             )
-            self.send_content(page.encode("utf-8"), "text/html; charset=utf-8")
+            response_headers: dict[str, str] = {}
+            if new_visitor:
+                cookie = (
+                    f"{COUNTED_VISITOR_COOKIE}=1; Path=/; Max-Age=31536000; "
+                    "HttpOnly; SameSite=Lax"
+                )
+                if (
+                    self.headers.get("X-Forwarded-Proto", "").lower() == "https"
+                    or self.headers.get("Host", "").endswith(".ts.net")
+                ):
+                    cookie += "; Secure"
+                response_headers["Set-Cookie"] = cookie
+            self.send_content(
+                page.encode("utf-8"),
+                "text/html; charset=utf-8",
+                extra_headers=response_headers,
+            )
             return
-        if self.path == "/api/state":
+        if request_path == "/api/state":
             body = json.dumps(web_state(), ensure_ascii=False).encode("utf-8")
             self.send_content(body, "application/json; charset=utf-8")
             return
@@ -1904,11 +2053,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def run_web_dashboard() -> None:
     host = os.environ.get("INVERTER_WEB_HOST", "0.0.0.0")
     port = int(os.environ.get("INVERTER_WEB_PORT", "8080"))
+    initialise_statistics()
     worker = threading.Thread(target=poll_worker, name="inverter-poller", daemon=True)
     worker.start()
     server = ThreadingHTTPServer((host, port), DashboardHandler)
-    print(f"Inverter dashboard: http://localhost:{port}")
+    print(f"Solar Invertor Web: http://localhost:{port}")
     print(f"Listening on {host}:{port} — press Ctrl+C to stop")
+    if stats_error:
+        print(f"Visit counter disabled: {stats_error}")
+    else:
+        print(f"Visit counter: {site_visit_total} visits · {STATS_DB_PATH}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
