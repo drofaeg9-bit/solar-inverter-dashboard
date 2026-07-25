@@ -821,11 +821,27 @@ WEB_DASHBOARD = r"""<!doctype html>
       background: linear-gradient(145deg, var(--card-start), var(--card-end));
       box-shadow: inset 0 1px rgba(255,255,255,.035), 0 14px 34px rgba(0,0,0,.2);
     }
+    .gauge-card[draggable="true"] { cursor: grab }
+    .gauge-card[draggable="true"]:active { cursor: grabbing }
+    .gauge-card.dragging { opacity: .38; transform: scale(.98) }
+    .gauge-card.drag-target { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(34,211,238,.14) }
     .gauge-card::after {
       content: ""; position: absolute; width: 120px; height: 120px; right: -55px; top: -60px;
       border-radius: 50%; background: var(--accent); opacity: .08; filter: blur(12px);
     }
-    .gauge-title { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .gauge-title { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 62px }
+    .gauge-actions { position: absolute; z-index: 2; right: 8px; top: 7px; display: flex; align-items: center; gap: 1px }
+    .drag-handle, .gauge-actions .remove-value {
+      position: static; width: 27px; min-height: 27px; padding: 0; border: 0;
+      background: transparent; color: var(--muted); font-size: 18px; line-height: 1;
+    }
+    .drag-handle { cursor: grab; font-size: 17px }
+    .drag-handle:active { cursor: grabbing }
+    .dashboard-empty {
+      grid-column: 1 / -1; display: grid; place-items: center; min-height: 190px;
+      padding: 28px; border: 1px dashed rgba(148,163,184,.3); border-radius: 18px;
+      color: var(--muted); text-align: center;
+    }
     svg { display: block; width: 100%; max-height: 150px; margin-top: 3px; overflow: visible }
     .track { fill: none; stroke: var(--gauge-track); stroke-width: 13; stroke-linecap: round }
     .progress {
@@ -1061,10 +1077,6 @@ WEB_DASHBOARD = r"""<!doctype html>
 
     <div class="panel error" id="error"></div>
     <section class="gauges" id="gauges" aria-label="Поточні показники інвертора" data-i18n-aria="gaugesAria"></section>
-    <section class="panel custom-values" id="custom-values-section" hidden>
-      <h2 data-i18n="addedValues">Додані значення панелі</h2>
-      <div class="custom-value-grid" id="custom-value-grid"></div>
-    </section>
 
     <section class="panel">
       <div class="panel-head">
@@ -1133,6 +1145,8 @@ WEB_DASHBOARD = r"""<!doctype html>
         liveCharts: 'Графіки в реальному часі', noValuesSelected: 'Значення не вибрано',
         selectValues: 'Виберіть значення зі списку, щоб запустити графіки в реальному часі.',
         dashboardChart: 'Панель + графік', removeDashboard: 'Видалити з панелі',
+        emptyDashboard: 'Панель порожня. Натисніть «Додати значення» та виберіть регістри для відображення.',
+        dragGauge: 'Перетягніть, щоб змінити порядок',
         selectedSummary: 'Вибрано значень: {count} · останні 2 хвилини',
         chartAria: 'Графік у реальному часі для {label}',
         waiting: 'Очікування…', noData: 'Немає даних',
@@ -1177,6 +1191,8 @@ WEB_DASHBOARD = r"""<!doctype html>
         liveCharts: 'Графики в реальном времени', noValuesSelected: 'Значения не выбраны',
         selectValues: 'Выберите значения из списка, чтобы запустить графики в реальном времени.',
         dashboardChart: 'Панель + график', removeDashboard: 'Удалить с панели',
+        emptyDashboard: 'Панель пуста. Нажмите «Добавить значения» и выберите регистры для отображения.',
+        dragGauge: 'Перетащите, чтобы изменить порядок',
         selectedSummary: 'Выбрано значений: {count} · последние 2 минуты',
         chartAria: 'График в реальном времени для {label}',
         waiting: 'Ожидание…', noData: 'Нет данных',
@@ -1221,6 +1237,8 @@ WEB_DASHBOARD = r"""<!doctype html>
         liveCharts: 'Live charts', noValuesSelected: 'No values selected',
         selectValues: 'Select values from the list to start real-time charts.',
         dashboardChart: 'Dashboard + chart', removeDashboard: 'Remove from dashboard',
+        emptyDashboard: 'No gauges selected. Click Add values and select the registers to display.',
+        dragGauge: 'Drag to reorder',
         selectedSummary: '{count} values selected · last 2 minutes',
         chartAria: 'Live chart for {label}',
         waiting: 'Waiting…', noData: 'No data',
@@ -1358,16 +1376,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         // The dashboard still works when browser storage is unavailable.
       }
     }
-    const chartSelections = savedSelections('inverter-chart-values');
-    const dashboardSelections = savedSelections('inverter-dashboard-values');
-    const combinedSelections = new Set([...chartSelections, ...dashboardSelections]);
-    chartSelections.clear();
-    dashboardSelections.clear();
-    combinedSelections.forEach(key => {
-      chartSelections.add(key);
-      dashboardSelections.add(key);
-    });
+    const chartSelections = savedSelections('inverter-chart-values-v2');
+    const dashboardSelections = savedSelections('inverter-dashboard-gauges-v2');
     const chartHistory = new Map();
+    const dashboardGaugeRanges = new Map();
     const chartWindowSeconds = 120;
     const chartWindowMilliseconds = chartWindowSeconds * 1000;
 
@@ -1381,6 +1393,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       data.meters.forEach(meter => {
         definitions.set(`meter-${meter.register}`, {
           key: `meter-${meter.register}`,
+          register: meter.register,
           label: localizeDataText(meter.label),
           detail: t('gaugeDetail', {
             unit: meter.unit || t('unitValue'),
@@ -1389,7 +1402,9 @@ WEB_DASHBOARD = r"""<!doctype html>
           unit: meter.unit,
           value: Number.isFinite(meter.value) ? meter.value : 0,
           minimum: meter.minimum,
-          maximum: meter.maximum
+          maximum: meter.maximum,
+          available: !String(meter.source || '').toLowerCase().includes('mbpoll'),
+          source: localizeDataText(meter.source)
         });
       });
       data.registers.forEach(register => {
@@ -1397,12 +1412,15 @@ WEB_DASHBOARD = r"""<!doctype html>
         if (value === null) return;
         definitions.set(`register-${register.register}`, {
           key: `register-${register.register}`,
+          register: register.register,
           label: localizeDataText(register.name),
           detail: `R${register.register} · ${localizeDataText(register.group)}`,
           unit: register.unit,
           value,
           minimum: null,
-          maximum: null
+          maximum: null,
+          available: register.available,
+          source: register.available ? `R${register.register}` : t('noData')
         });
       });
       return definitions;
@@ -1434,39 +1452,48 @@ WEB_DASHBOARD = r"""<!doctype html>
       if (!chartDemoRunning) renderDashboardValues();
     }
 
+    function niceGaugeLimit(value) {
+      const positive = Math.max(1, Math.abs(value));
+      const magnitude = 10 ** Math.floor(Math.log10(positive));
+      const normalized = positive / magnitude;
+      const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+      return step * magnitude;
+    }
+
+    function dashboardGaugeBounds(item) {
+      if (Number.isFinite(item.minimum) && Number.isFinite(item.maximum) && item.maximum > item.minimum) {
+        return {minimum: item.minimum, maximum: item.maximum};
+      }
+      const matchingMeter = chartDefinitions.get(`meter-${item.register}`);
+      if (matchingMeter && Number.isFinite(matchingMeter.minimum) && Number.isFinite(matchingMeter.maximum)) {
+        return {minimum: matchingMeter.minimum, maximum: matchingMeter.maximum};
+      }
+      if (item.unit === '%') return {minimum: 0, maximum: 100};
+
+      const value = Number.isFinite(item.value) ? item.value : 0;
+      const previousRange = dashboardGaugeRanges.get(item.key);
+      if (previousRange && value >= previousRange.minimum && value <= previousRange.maximum) return previousRange;
+
+      const range = value < 0
+        ? {minimum: -niceGaugeLimit(Math.abs(value) * 1.2), maximum: niceGaugeLimit(Math.abs(value) * 1.2)}
+        : {minimum: 0, maximum: niceGaugeLimit(Math.max(100, value * 1.2))};
+      dashboardGaugeRanges.set(item.key, range);
+      return range;
+    }
+
     function renderDashboardValues() {
-      const section = document.querySelector('#custom-values-section');
-      const grid = document.querySelector('#custom-value-grid');
       const selected = [...dashboardSelections].filter(key => chartDefinitions.has(key));
-      section.hidden = selected.length === 0;
       if (!selected.length) {
-        grid.innerHTML = '';
-        grid.dataset.keys = '';
+        const host = document.querySelector('#gauges');
+        host.innerHTML = `<div class="dashboard-empty">${t('emptyDashboard')}</div>`;
+        host.dataset.keys = `${currentLanguage}|empty`;
         return;
       }
-
-      const signature = `${currentLanguage}|${selected.join('|')}`;
-      if (grid.dataset.keys !== signature) {
-        grid.dataset.keys = signature;
-        grid.innerHTML = selected.map(key => {
-          const item = chartDefinitions.get(key);
-          return `<article class="custom-value-card" data-dashboard-key="${key}">
-            <button class="remove-value" type="button" data-remove-dashboard="${key}" title="${t('removeDashboard')}">×</button>
-            <div class="custom-value-label" title="${item.label}">${item.label}</div>
-            <div class="custom-value-reading"><span class="custom-value-number">0</span> <span class="unit">${item.unit}</span></div>
-            <div class="custom-value-detail">${item.detail}</div>
-          </article>`;
-        }).join('');
-      }
-
-      selected.forEach(key => {
+      const gauges = selected.map(key => {
         const item = chartDefinitions.get(key);
-        const card = grid.querySelector(`[data-dashboard-key="${key}"]`);
-        if (!card || !item) return;
-        const text = Number(item.value.toFixed(2)).toString();
-        const number = card.querySelector('.custom-value-number');
-        if (number.textContent !== text) number.textContent = text;
+        return {...item, ...dashboardGaugeBounds(item)};
       });
+      renderGauges(gauges);
     }
 
     function renderChartCards() {
@@ -1607,10 +1634,6 @@ WEB_DASHBOARD = r"""<!doctype html>
               available: true
             };
           }) : [];
-          const demoMeters = lastData ? lastData.meters.map(meter => {
-            const item = chartDefinitions.get(`meter-${meter.register}`);
-            return item ? {...meter, value: item.value, source: t('allDataDemo')} : meter;
-          }) : [];
           const elapsed = Math.min(
             chartWindowSeconds,
             Math.floor((now - demoStartedAt) / 1000)
@@ -1620,7 +1643,6 @@ WEB_DASHBOARD = r"""<!doctype html>
             seconds: chartWindowSeconds,
             count: registerKeys.length
           }));
-          renderGauges(demoMeters);
           renderDashboardValues();
           renderRegisters(demoRegisterRows);
           drawAllCharts();
@@ -1777,7 +1799,11 @@ WEB_DASHBOARD = r"""<!doctype html>
 
     function gaugeMarkup(meter, index) {
       const label = localizeDataText(meter.label);
-      return `<article class="gauge-card" id="g-${meter.register}" style="--accent:${colours[index % colours.length]}">
+      return `<article class="gauge-card" draggable="true" data-dashboard-key="${meter.key}" style="--accent:${colours[index % colours.length]}">
+        <div class="gauge-actions">
+          <button class="drag-handle" type="button" draggable="false" title="${t('dragGauge')}" aria-label="${t('dragGauge')}">⠿</button>
+          <button class="remove-value" type="button" draggable="false" data-remove-dashboard="${meter.key}" title="${t('removeDashboard')}" aria-label="${t('removeDashboard')}">×</button>
+        </div>
         <div class="gauge-title">${label}</div>
         <svg viewBox="0 0 240 145" role="img" aria-label="${label}">
           <path class="track" d="M20 120 A100 100 0 0 1 220 120"/>
@@ -1787,17 +1813,22 @@ WEB_DASHBOARD = r"""<!doctype html>
           <circle class="hub" cx="120" cy="120" r="7"/>
         </svg>
         <div class="reading"><span class="trend flat">•</span><span class="value">—</span><span class="unit">${meter.unit}</span></div>
-        <div class="source">${t('noData')}</div>
+        <div class="source">${meter.detail}</div>
       </article>`;
     }
 
     function renderGauges(meters) {
       const host = document.querySelector('#gauges');
-      if (!host.children.length) host.innerHTML = meters.map(gaugeMarkup).join('');
+      const signature = `${currentLanguage}|${meters.map(meter => `${meter.key}:${meter.minimum}:${meter.maximum}`).join('|')}`;
+      if (host.dataset.keys !== signature) {
+        host.dataset.keys = signature;
+        host.innerHTML = meters.map(gaugeMarkup).join('');
+      }
       meters.forEach(meter => {
-        const card = document.querySelector(`#g-${meter.register}`);
+        const card = host.querySelector(`[data-dashboard-key="${meter.key}"]`);
+        if (!card) return;
         const hasValue = Number.isFinite(meter.value);
-        const value = hasValue ? meter.value : null;
+        const value = hasValue ? meter.value : 0;
         const ratio = hasValue ? Math.max(0, Math.min(1, (value - meter.minimum) / (meter.maximum - meter.minimum))) : 0;
         const needleTransform = `rotate(${-90 + ratio * 180}deg)`;
         const progressOffset = `${283 * (1 - ratio)}`;
@@ -1810,10 +1841,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         if (needle.style.transform !== needleTransform) needle.style.transform = needleTransform;
         if (progress.style.strokeDashoffset !== progressOffset) progress.style.strokeDashoffset = progressOffset;
         if (valueElement.textContent !== valueText) valueElement.textContent = valueText;
-        const localizedSource = localizeDataText(meter.source);
+        const localizedSource = meter.available === false ? t('noData') : localizeDataText(meter.source || meter.detail);
         if (sourceElement.textContent !== localizedSource) sourceElement.textContent = localizedSource;
 
-        const old = previous.get(meter.register);
+        const old = previous.get(meter.key);
         const trend = card.querySelector('.trend');
         if (old === undefined) {
           trend.className = 'trend flat';
@@ -1823,7 +1854,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           trend.className = `trend ${up ? 'up' : 'down'}`;
           trend.textContent = up ? '↑' : '↓';
         }
-        if (hasValue) previous.set(meter.register, value);
+        if (hasValue) previous.set(meter.key, value);
       });
     }
 
@@ -1891,7 +1922,6 @@ WEB_DASHBOARD = r"""<!doctype html>
         ? t('connectionError', {error: localizeDataText(data.error)})
         : '';
       error.classList.toggle('show', Boolean(data.error));
-      renderGauges(data.meters);
       renderRegisters(data.registers);
       updateChartDefinitions(data);
     }
@@ -2100,20 +2130,66 @@ WEB_DASHBOARD = r"""<!doctype html>
         chartSelections.delete(key);
         chartHistory.delete(key);
       }
-      saveSelections('inverter-dashboard-values', dashboardSelections);
-      saveSelections('inverter-chart-values', chartSelections);
+      saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
+      saveSelections('inverter-chart-values-v2', chartSelections);
       renderDashboardValues();
       renderChartCards();
     });
-    document.querySelector('#custom-value-grid').addEventListener('click', event => {
+    const gaugeHost = document.querySelector('#gauges');
+    let draggedGauge = null;
+
+    function saveDashboardOrderFromCards() {
+      const orderedKeys = [...gaugeHost.querySelectorAll('[data-dashboard-key]')]
+        .map(card => card.dataset.dashboardKey)
+        .filter(key => dashboardSelections.has(key));
+      dashboardSelections.clear();
+      orderedKeys.forEach(key => dashboardSelections.add(key));
+      saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
+      renderDashboardValues();
+    }
+
+    gaugeHost.addEventListener('dragstart', event => {
+      const card = event.target.closest('.gauge-card[data-dashboard-key]');
+      if (!card) return;
+      draggedGauge = card;
+      card.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', card.dataset.dashboardKey);
+    });
+    gaugeHost.addEventListener('dragover', event => {
+      if (!draggedGauge) return;
+      event.preventDefault();
+      const target = event.target.closest('.gauge-card[data-dashboard-key]');
+      gaugeHost.querySelectorAll('.drag-target').forEach(card => card.classList.remove('drag-target'));
+      if (!target || target === draggedGauge) return;
+      target.classList.add('drag-target');
+      const bounds = target.getBoundingClientRect();
+      const sameRow = Math.abs(bounds.top - draggedGauge.getBoundingClientRect().top) < bounds.height / 2;
+      const placeAfter = sameRow
+        ? event.clientX > bounds.left + bounds.width / 2
+        : event.clientY > bounds.top + bounds.height / 2;
+      target[placeAfter ? 'after' : 'before'](draggedGauge);
+    });
+    gaugeHost.addEventListener('drop', event => {
+      if (!draggedGauge) return;
+      event.preventDefault();
+      saveDashboardOrderFromCards();
+    });
+    gaugeHost.addEventListener('dragend', () => {
+      gaugeHost.querySelectorAll('.dragging, .drag-target').forEach(card =>
+        card.classList.remove('dragging', 'drag-target'));
+      draggedGauge = null;
+    });
+
+    gaugeHost.addEventListener('click', event => {
       const button = event.target.closest('button[data-remove-dashboard]');
       if (!button) return;
       const key = button.dataset.removeDashboard;
       dashboardSelections.delete(key);
       chartSelections.delete(key);
       chartHistory.delete(key);
-      saveSelections('inverter-dashboard-values', dashboardSelections);
-      saveSelections('inverter-chart-values', chartSelections);
+      saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
+      saveSelections('inverter-chart-values-v2', chartSelections);
       renderDashboardValues();
       renderChartCards();
       renderChartValueList();
