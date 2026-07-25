@@ -1,0 +1,15 @@
+{
+  "domain": "solar_assistant",
+  "name": "SolarAssistant",
+  "after_dependencies": ["zeroconf"],
+  "codeowners": ["@Solar-Assistant"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/Solar-Assistant/ha_solar_assistant",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Solar-Assistant/ha_solar_assistant/issues",
+  "loggers": ["py_solar_assistant"],
+  "requirements": ["py-solar-assistant==0.3.0", "pymodbus>=3.0.0"],
+  "version": "0.2.0"
+}

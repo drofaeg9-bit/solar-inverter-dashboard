@@ -1,0 +1,12 @@
+2026-07-24 02:46:51.888 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration solar_assistant which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant
+2026-07-24 02:46:52.250 WARNING (MainThread) [aiohttp_fast_zlib] zlib_ng and isal are not available, falling back to zlib, performance will be degraded.
+2026-07-24 02:46:52.514 ERROR (MainThread) [habluetooth.manager] Missing required permissions for Bluetooth management: Missing NET_ADMIN/NET_RAW capabilities for Bluetooth management. Automatic adapter recovery is unavailable. Add NET_ADMIN and NET_RAW capabilities to the container to enable it
+2026-07-24 02:47:31.120 WARNING (MainThread) [homeassistant.helpers.translation] Failed to load integration for translation: Invalid domain mobile_app.notify
+2026-07-24 02:47:31.120 WARNING (MainThread) [homeassistant.helpers.translation] Failed to load integration for translation: Invalid domain sun.sensor
+2026-07-24 02:47:31.120 WARNING (MainThread) [homeassistant.helpers.translation] Failed to load integration for translation: Invalid domain cloud.tts
+2026-07-24 02:47:31.120 WARNING (MainThread) [homeassistant.helpers.translation] Failed to load integration for translation: Invalid domain homeassistant.scene
+2026-07-24 02:47:31.121 WARNING (MainThread) [homeassistant.helpers.translation] Failed to load integration for translation: Invalid domain energy.sensor
+2026-07-24 02:47:31.121 WARNING (MainThread) [homeassistant.helpers.translation] Failed to load integration for translation: Invalid domain sun.binary_sensor
+2026-07-24 02:47:31.121 WARNING (MainThread) [homeassistant.helpers.translation] Failed to load integration for translation: Invalid domain backup.sensor
+2026-07-24 02:47:31.121 WARNING (MainThread) [homeassistant.helpers.translation] Failed to load integration for translation: Invalid domain backup.event
+2026-07-24 03:04:11.012 ERROR (MainThread) [pymodbus.logging] Connection to (9600, 502) failed: timed out

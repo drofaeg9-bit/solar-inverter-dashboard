@@ -1,0 +1,11 @@
+# Home Assistant Configuration
+homeassistant:
+  name: Home
+  latitude: 51.5
+  longitude: -0.1
+  elevation: 10
+  unit_system: metric
+  time_zone: Europe/London
+
+# Enable default integrations
+default_config:

@@ -1,0 +1,89 @@
+2026-07-24 02:44:15.974 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration solar_assistant which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant
+2026-07-24 02:44:16.843 WARNING (MainThread) [aiohttp_fast_zlib] zlib_ng and isal are not available, falling back to zlib, performance will be degraded.
+2026-07-24 02:44:17.491 WARNING (Recorder) [homeassistant.components.recorder.util] The system could not validate that the sqlite3 database at //mnt/c/Users/oleks/Desktop/solar_assistant/config/home-assistant_v2.db was shutdown cleanly
+2026-07-24 02:44:17.524 WARNING (Recorder) [homeassistant.components.recorder.migration] The database is about to upgrade from schema version 47 to 48. Note: this may take several hours on large databases and slow machines. Home Assistant will not start until the upgrade is completed. Please be patient and do not turn off or restart Home Assistant while the upgrade is in progress!
+2026-07-24 02:44:17.524 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrading recorder db schema to version 48
+2026-07-24 02:44:17.532 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrade to version 48 done
+2026-07-24 02:44:17.864 ERROR (MainThread) [haffmpeg.core] FFmpeg fails [Errno 2] No such file or directory: 'ffmpeg'
+Traceback (most recent call last):
+  File "/home/santa/.venvs/homeassistant/lib/python3.13/site-packages/haffmpeg/core.py", line 130, in open
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/usr/lib/python3.13/asyncio/subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        stderr=stderr, **kwds)
+        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/asyncio/base_events.py", line 1794, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        protocol, popen_args, False, stdin, stdout, stderr,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        bufsize, **kwargs)
+        ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/asyncio/unix_events.py", line 213, in _make_subprocess_transport
+    transp = _UnixSubprocessTransport(self, protocol, args, shell,
+                                    stdin, stdout, stderr, bufsize,
+                                    waiter=waiter, extra=extra,
+                                    **kwargs)
+  File "/usr/lib/python3.13/asyncio/base_subprocess.py", line 39, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                stderr=stderr, bufsize=bufsize, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/asyncio/unix_events.py", line 855, in _start
+    self._proc = subprocess.Popen(
+                 ~~~~~~~~~~~~~~~~^
+        args, shell=shell, stdin=stdin, stdout=stdout, stderr=stderr,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        universal_newlines=False, bufsize=bufsize, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 1039, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/subprocess.py", line 1972, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+FileNotFoundError: [Errno 2] No such file or directory: 'ffmpeg'
+2026-07-24 02:44:17.868 WARNING (MainThread) [haffmpeg.tools] Error starting FFmpeg.
+2026-07-24 02:44:21.137 ERROR (MainThread) [habluetooth.manager] Missing required permissions for Bluetooth management: Missing NET_ADMIN/NET_RAW capabilities for Bluetooth management. Automatic adapter recovery is unavailable. Add NET_ADMIN and NET_RAW capabilities to the container to enable it
+2026-07-24 02:44:23.245 ERROR (ImportExecutor_0) [homeassistant.components.camera.img_util] Error loading libturbojpeg; Camera snapshot performance will be sub-optimal
+Traceback (most recent call last):
+  File "/home/santa/.venvs/homeassistant/lib/python3.13/site-packages/homeassistant/components/camera/img_util.py", line 93, in __init__
+    TurboJPEGSingleton.__instance = TurboJPEG()
+                                    ~~~~~~~~~^^
+  File "/home/santa/.venvs/homeassistant/lib/python3.13/site-packages/turbojpeg.py", line 301, in __init__
+    self.__find_turbojpeg() if lib_path is None else lib_path)
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/santa/.venvs/homeassistant/lib/python3.13/site-packages/turbojpeg.py", line 974, in __find_turbojpeg
+    raise RuntimeError(
+    ...<2 lines>...
+        'e.g. jpeg = TurboJPEG(lib_path)')
+RuntimeError: Unable to locate turbojpeg library automatically. You may specify the turbojpeg library path manually.
+e.g. jpeg = TurboJPEG(lib_path)
+2026-07-24 02:44:24.332 WARNING (Recorder) [homeassistant.components.recorder.migration] The database is about to upgrade from schema version 48 to 53
+2026-07-24 02:44:24.332 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrading recorder db schema to version 49
+2026-07-24 02:44:24.332 WARNING (Recorder) [homeassistant.components.recorder.migration] Adding columns mean_type to table statistics_meta. Note: this may take several minutes on large databases and slow machines. Please be patient!
+2026-07-24 02:44:24.337 WARNING (Recorder) [homeassistant.components.recorder.migration] Adding columns mean_weight to table statistics. Note: this may take several minutes on large databases and slow machines. Please be patient!
+2026-07-24 02:44:24.341 WARNING (Recorder) [homeassistant.components.recorder.migration] Adding columns mean_weight to table statistics_short_term. Note: this may take several minutes on large databases and slow machines. Please be patient!
+2026-07-24 02:44:24.350 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrade to version 49 done
+2026-07-24 02:44:24.350 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrading recorder db schema to version 50
+2026-07-24 02:44:24.353 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrade to version 50 done
+2026-07-24 02:44:24.353 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrading recorder db schema to version 51
+2026-07-24 02:44:24.355 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrade to version 51 done
+2026-07-24 02:44:24.355 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrading recorder db schema to version 52
+2026-07-24 02:44:24.355 WARNING (Recorder) [homeassistant.components.recorder.migration] Adding columns unit_class to table statistics_meta. Note: this may take several minutes on large databases and slow machines. Please be patient!
+2026-07-24 02:44:24.381 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrade to version 52 done
+2026-07-24 02:44:24.382 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrading recorder db schema to version 53
+2026-07-24 02:44:24.386 WARNING (Recorder) [homeassistant.components.recorder.migration] Upgrade to version 53 done
+2026-07-24 02:44:24.639 ERROR (SyncWorker_4) [aiodhcpwatcher] Cannot watch for dhcp packets without a functional packet filter: libpcap is not available. Cannot compile filter !
