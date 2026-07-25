@@ -24,6 +24,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from contextlib import closing
@@ -87,150 +88,150 @@ FAST_BLOCKS = [
 
 # name, scale, unit, signed, group
 REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
-    17: ("Код протокола/версии", 1.0, "", False, "System"),
-    18: ("Код конфигурации устройства", 1.0, "", False, "System"),
-    27: ("Слово прошивки/состояния", 1.0, "", False, "System"),
-    28: ("Флаг прошивки/состояния", 1.0, "", False, "System"),
-    58: ("Битовая маска возможностей/состояния", 1.0, "", False, "System"),
-    65: ("Слово прошивки/состояния", 1.0, "", False, "System"),
-    66: ("Код конфигурации", 1.0, "", False, "System"),
-    67: ("Код конфигурации", 1.0, "", False, "System"),
-    68: ("Значение прошивки/состояния", 1.0, "", False, "System"),
-    69: ("Знаковое значение состояния", 1.0, "", True, "System"),
+    17: ("Код протоколу/версії", 1.0, "", False, "Система"),
+    18: ("Код конфігурації пристрою", 1.0, "", False, "Система"),
+    27: ("Слово прошивки/стану", 1.0, "", False, "Система"),
+    28: ("Прапорець прошивки/стану", 1.0, "", False, "Система"),
+    58: ("Бітова маска можливостей/стану", 1.0, "", False, "Система"),
+    65: ("Слово прошивки/стану", 1.0, "", False, "Система"),
+    66: ("Код конфігурації", 1.0, "", False, "Система"),
+    67: ("Код конфігурації", 1.0, "", False, "Система"),
+    68: ("Значення прошивки/стану", 1.0, "", False, "Система"),
+    69: ("Знакове значення стану", 1.0, "", True, "Система"),
 
-    89: ("Напряжение AC", 0.1, "V", False, "AC"),
-    90: ("Входной ток AC / значение нагрузки", 1.0, "", False, "AC"),
+    89: ("Напруга AC", 0.1, "V", False, "AC"),
+    90: ("Вхідний струм AC / значення навантаження", 1.0, "", False, "AC"),
     91: ("Частота AC", 0.01, "Hz", False, "AC"),
-    92: ("Температура инвертора", 0.1, "°C", False, "AC"),
-    93: ("Напряжение батареи (данные LCD)", 0.1, "V", False, "Battery"),
-    94: ("Процент заряда батареи/нагрузки", 1.0, "%", False, "System"),
+    92: ("Температура інвертора", 0.1, "°C", False, "AC"),
+    93: ("Напруга батареї (дані LCD)", 0.1, "V", False, "Батарея"),
+    94: ("Відсоток заряду батареї/навантаження", 1.0, "%", False, "Система"),
 
-    129: ("Напряжение батареи", 0.1, "V", False, "Battery"),
-    130: ("Ток зарядки батареи", 0.1, "A", False, "Battery"),
-    133: ("Уровень заряда батареи", 1.0, "%", False, "Battery"),
-    134: ("Температура литиевой батареи", 0.1, "°C", False, "Battery"),
+    129: ("Напруга батареї", 0.1, "V", False, "Батарея"),
+    130: ("Струм заряджання батареї", 0.1, "A", False, "Батарея"),
+    133: ("Рівень заряду батареї", 1.0, "%", False, "Батарея"),
+    134: ("Температура літієвої батареї", 0.1, "°C", False, "Батарея"),
 
-    137: ("Напряжение литиевой батареи (P3)", 0.1, "V", False, "BMS"),
-    138: ("Ток литиевой батареи (P3)", 0.1, "A", True, "BMS"),
-    139: ("Уровень заряда литиевой батареи (P4)", 1.0, "%", False, "BMS"),
-    140: ("Температура литиевой батареи (P4)", 0.1, "°C", False, "BMS"),
-    141: ("Максимальное напряжение зарядки литиевой батареи (P6)", 0.1, "V", False, "BMS"),
-    142: ("Недоступное значение", 1.0, "", True, "BMS"),
-    143: ("Недоступное значение", 1.0, "", True, "BMS"),
-    144: ("Мощность/ток/состояние батареи", 1.0, "", False, "BMS"),
+    137: ("Напруга літієвої батареї (P3)", 0.1, "V", False, "BMS"),
+    138: ("Струм літієвої батареї (P3)", 0.1, "A", True, "BMS"),
+    139: ("Рівень заряду літієвої батареї (P4)", 1.0, "%", False, "BMS"),
+    140: ("Температура літієвої батареї (P4)", 0.1, "°C", False, "BMS"),
+    141: ("Максимальна напруга заряджання літієвої батареї (P6)", 0.1, "V", False, "BMS"),
+    142: ("Недоступне значення", 1.0, "", True, "BMS"),
+    143: ("Недоступне значення", 1.0, "", True, "BMS"),
+    144: ("Потужність/струм/стан батареї", 1.0, "", False, "BMS"),
 
-    157: ("Operating status code", 1.0, "", False, "System"),
-    158: ("Состояние/внутреннее значение", 1.0, "", False, "System"),
+    157: ("Код робочого стану", 1.0, "", False, "Система"),
+    158: ("Стан/внутрішнє значення", 1.0, "", False, "Система"),
 
-    321: ("Флаг канала/количества BMS", 1.0, "", False, "BMS"),
-    324: ("Код конфигурации BMS", 1.0, "", False, "BMS"),
-    325: ("Код конфигурации BMS", 1.0, "", False, "BMS"),
-    337: ("Код состояния BMS", 1.0, "", False, "BMS"),
-    339: ("Уровень заряда литиевой батареи", 1.0, "%", False, "BMS"),
-    341: ("Входное напряжение PV", 0.01, "V", False, "PV"),
-    342: ("Напряжение литиевой батареи", 0.1, "V", False, "BMS"),
-    343: ("Максимальный ток зарядки литиевой батареи", 0.1, "A", True, "BMS"),
-    344: ("Ток литиевой батареи", 0.1, "A", True, "BMS"),
-    345: ("Предел напряжения литиевой батареи", 0.1, "V", False, "BMS"),
-    346: ("Предел напряжения литиевой батареи", 0.1, "V", False, "BMS"),
-    349: ("Предел напряжения литиевой батареи", 0.1, "V", False, "BMS"),
-    350: ("Предел тока разрядки литиевой батареи", 0.1, "A", True, "BMS"),
+    321: ("Прапорець каналу/кількості BMS", 1.0, "", False, "BMS"),
+    324: ("Код конфігурації BMS", 1.0, "", False, "BMS"),
+    325: ("Код конфігурації BMS", 1.0, "", False, "BMS"),
+    337: ("Код стану BMS", 1.0, "", False, "BMS"),
+    339: ("Рівень заряду літієвої батареї", 1.0, "%", False, "BMS"),
+    341: ("Вхідна напруга PV", 0.01, "V", False, "PV"),
+    342: ("Напруга літієвої батареї", 0.1, "V", False, "BMS"),
+    343: ("Максимальний струм заряджання літієвої батареї", 0.1, "A", True, "BMS"),
+    344: ("Струм літієвої батареї", 0.1, "A", True, "BMS"),
+    345: ("Межа напруги літієвої батареї", 0.1, "V", False, "BMS"),
+    346: ("Межа напруги літієвої батареї", 0.1, "V", False, "BMS"),
+    349: ("Межа напруги літієвої батареї", 0.1, "V", False, "BMS"),
+    350: ("Межа струму розряджання літієвої батареї", 0.1, "A", True, "BMS"),
 
-    376: ("Настройка напряжения батареи", 0.1, "V", False, "Settings"),
-    377: ("Настройка напряжения батареи", 0.1, "V", False, "Settings"),
-    378: ("Настройка тока батареи", 0.1, "A", False, "Settings"),
-    379: ("Настройка тока батареи", 0.1, "A", False, "Settings"),
-    383: ("Настройка напряжения батареи", 0.1, "V", False, "Settings"),
-    385: ("Номинальная мощность / предел отдачи в сеть", 1.0, "W", False, "Settings"),
-    386: ("Настройка мощности / предел", 1.0, "W", False, "Settings"),
+    376: ("Налаштування напруги батареї", 0.1, "V", False, "Налаштування"),
+    377: ("Налаштування напруги батареї", 0.1, "V", False, "Налаштування"),
+    378: ("Налаштування струму батареї", 0.1, "A", False, "Налаштування"),
+    379: ("Налаштування струму батареї", 0.1, "A", False, "Налаштування"),
+    383: ("Налаштування напруги батареї", 0.1, "V", False, "Налаштування"),
+    385: ("Номінальна потужність / межа віддачі в мережу", 1.0, "W", False, "Налаштування"),
+    386: ("Налаштування потужності / межа", 1.0, "W", False, "Налаштування"),
 
-    401: ("Код BMS/состояния", 1.0, "", False, "BMS"),
-    402: ("Флаг BMS/состояния", 1.0, "", False, "BMS"),
-    403: ("Накопленное значение/мощность", 1.0, "", False, "BMS"),
-    404: ("Напряжение литиевой батареи", 0.1, "V", False, "BMS"),
-    405: ("Ток литиевой батареи", 0.1, "A", True, "BMS"),
-    406: ("Температура литиевой батареи", 0.1, "°C", False, "BMS"),
-    407: ("Уровень заряда литиевой батареи", 1.0, "%", False, "BMS"),
-    408: ("Оставшаяся/номинальная ёмкость литиевой батареи", 1.0, "%", False, "BMS"),
-    409: ("Недоступное значение", 1.0, "", True, "BMS"),
-    410: ("Недоступное значение", 1.0, "", True, "BMS"),
-    411: ("Максимальное напряжение зарядки литиевой батареи (P6)", 0.1, "V", False, "BMS"),
-    412: ("Максимальный ток литиевой батареи", 0.1, "A", False, "BMS"),
-    413: ("Мощность батареи/PV", 1.0, "W", False, "BMS"),
-    415: ("Предел настройки", 1.0, "", False, "Settings"),
-    416: ("Предел настройки", 1.0, "", False, "Settings"),
-    417: ("Предел настройки", 1.0, "", False, "Settings"),
+    401: ("Код BMS/стану", 1.0, "", False, "BMS"),
+    402: ("Прапорець BMS/стану", 1.0, "", False, "BMS"),
+    403: ("Накопичене значення/потужність", 1.0, "", False, "BMS"),
+    404: ("Напруга літієвої батареї", 0.1, "V", False, "BMS"),
+    405: ("Струм літієвої батареї", 0.1, "A", True, "BMS"),
+    406: ("Температура літієвої батареї", 0.1, "°C", False, "BMS"),
+    407: ("Рівень заряду літієвої батареї", 1.0, "%", False, "BMS"),
+    408: ("Залишкова/номінальна ємність літієвої батареї", 1.0, "%", False, "BMS"),
+    409: ("Недоступне значення", 1.0, "", True, "BMS"),
+    410: ("Недоступне значення", 1.0, "", True, "BMS"),
+    411: ("Максимальна напруга заряджання літієвої батареї (P6)", 0.1, "V", False, "BMS"),
+    412: ("Максимальний струм літієвої батареї", 0.1, "A", False, "BMS"),
+    413: ("Потужність батареї/PV", 1.0, "W", False, "BMS"),
+    415: ("Межа налаштування", 1.0, "", False, "Налаштування"),
+    416: ("Межа налаштування", 1.0, "", False, "Налаштування"),
+    417: ("Межа налаштування", 1.0, "", False, "Налаштування"),
 
-    449: ("Напряжение/значение", 0.1, "", False, "System"),
-    451: ("Упакованное значение/счётчик", 1.0, "", False, "System"),
-    453: ("Упакованное значение/счётчик", 1.0, "", False, "System"),
-    455: ("Упакованное знаковое значение", 1.0, "", True, "System"),
+    449: ("Напруга/значення", 0.1, "", False, "Система"),
+    451: ("Упаковане значення/лічильник", 1.0, "", False, "Система"),
+    453: ("Упаковане значення/лічильник", 1.0, "", False, "Система"),
+    455: ("Упаковане знакове значення", 1.0, "", True, "Система"),
 }
 
 METER_DEFINITIONS = [
-    (89, [], "Напряжение AC", 0.0, 300.0, "V"),
+    (89, [], "Напруга AC", 0.0, 300.0, "V"),
     (91, [], "Частота AC", 45.0, 55.0, "Hz"),
-    (92, [], "Температура инвертора", -20.0, 120.0, "°C"),
-    (341, [], "Входное напряжение PV", 0.0, 600.0, "V"),
-    (137, [404, 342, 129], "Напряжение батареи", 40.0, 65.0, "V"),
-    (138, [405, 344], "Ток батареи", -100.0, 100.0, "A"),
-    (130, [], "Ток зарядки батареи", 0.0, 150.0, "A"),
-    (139, [407, 339, 133], "Уровень заряда батареи", 0.0, 100.0, "%"),
-    (140, [406, 134], "Температура батареи", -20.0, 100.0, "°C"),
-    (408, [], "Состояние батареи SOH / предел", 0.0, 100.0, "%"),
-    (141, [411], "Макс. напряжение зарядки", 40.0, 65.0, "V"),
-    (343, [412], "Макс. ток зарядки", 0.0, 150.0, "A"),
-    (350, [], "Предел тока разрядки", -200.0, 200.0, "A"),
-    (413, [], "Мощность батареи / PV", 0.0, 15000.0, "W"),
-    (385, [], "Номинальная мощность", 0.0, 15000.0, "W"),
-    (386, [], "Предел мощности", 0.0, 15000.0, "W"),
+    (92, [], "Температура інвертора", -20.0, 120.0, "°C"),
+    (341, [], "Вхідна напруга PV", 0.0, 600.0, "V"),
+    (137, [404, 342, 129], "Напруга батареї", 40.0, 65.0, "V"),
+    (138, [405, 344], "Струм батареї", -100.0, 100.0, "A"),
+    (130, [], "Струм заряджання батареї", 0.0, 150.0, "A"),
+    (139, [407, 339, 133], "Рівень заряду батареї", 0.0, 100.0, "%"),
+    (140, [406, 134], "Температура батареї", -20.0, 100.0, "°C"),
+    (408, [], "Стан батареї SOH / межа", 0.0, 100.0, "%"),
+    (141, [411], "Макс. напруга заряджання", 40.0, 65.0, "V"),
+    (343, [412], "Макс. струм заряджання", 0.0, 150.0, "A"),
+    (350, [], "Межа струму розряджання", -200.0, 200.0, "A"),
+    (413, [], "Потужність батареї / PV", 0.0, 15000.0, "W"),
+    (385, [], "Номінальна потужність", 0.0, 15000.0, "W"),
+    (386, [], "Межа потужності", 0.0, 15000.0, "W"),
 ]
 
 
 # Fault and alarm meanings from the supplied inverter manual.
 FAULT_CODES = {
-    1: "Ошибка повышения напряжения шины",
-    2: "Перенапряжение шины",
-    3: "Пониженное напряжение шины",
-    4: "Сверхток батареи",
-    5: "Перегрев системы",
-    6: "Перенапряжение батареи",
-    7: "Ошибка плавного запуска шины",
-    8: "Короткое замыкание шины",
-    9: "Ошибка плавного запуска инвертора",
-    11: "Пониженное напряжение инвертора",
-    12: "Короткое замыкание инвертора",
-    13: "Отрицательная мощность инвертора",
-    14: "Перегрузка",
-    17: "Обновление программы",
-    18: "Обратная полярность PV",
-    26: "Ошибка BMS",
-    29: "Ненормальная нагрузка инвертора",
+    1: "Помилка підвищення напруги шини",
+    2: "Перенапруга шини",
+    3: "Знижена напруга шини",
+    4: "Надструм батареї",
+    5: "Перегрів системи",
+    6: "Перенапруга батареї",
+    7: "Помилка плавного запуску шини",
+    8: "Коротке замикання шини",
+    9: "Помилка плавного запуску інвертора",
+    11: "Знижена напруга інвертора",
+    12: "Коротке замикання інвертора",
+    13: "Від’ємна потужність інвертора",
+    14: "Перевантаження",
+    17: "Оновлення програми",
+    18: "Зворотна полярність PV",
+    26: "Помилка BMS",
+    29: "Ненормальне навантаження інвертора",
 }
 
 ALARM_CODES = {
-    50: "Батарея отключена",
-    51: "Пониженное напряжение батареи",
-    52: "Низкое напряжение батареи",
-    53: "Короткое замыкание при зарядке батареи",
-    56: "Потеря связи с BMS",
-    58: "Ошибка вентилятора",
-    59: "Ошибка EEPROM",
-    60: "Перегрузка",
-    62: "Недостаточная энергия PV",
-    68: "Отключение из-за низкого SOC",
-    69: "Предупреждение о низком SOC",
-    72: "Батарея не может запуститься",
-    77: "Нестабильная сеть",
-    78: "Потеря связи со счётчиком",
+    50: "Батарею відключено",
+    51: "Знижена напруга батареї",
+    52: "Низька напруга батареї",
+    53: "Коротке замикання під час заряджання батареї",
+    56: "Втрачено зв’язок із BMS",
+    58: "Помилка вентилятора",
+    59: "Помилка EEPROM",
+    60: "Перевантаження",
+    62: "Недостатньо енергії PV",
+    68: "Відключення через низький SOC",
+    69: "Попередження про низький SOC",
+    72: "Батарея не може запуститися",
+    77: "Нестабільна мережа",
+    78: "Втрачено зв’язок із лічильником",
 }
 
 OPERATING_STATUS = {
-    0: "Ожидание / неизвестно",
-    1: "Работа от сети / байпас",
-    2: "Работа инвертора от батареи или PV",
-    3: "Зарядка / активная работа",
-    4: "Ошибка или аварийное состояние",
+    0: "Очікування / невідомо",
+    1: "Робота від мережі / байпас",
+    2: "Робота інвертора від батареї або PV",
+    3: "Заряджання / активна робота",
+    4: "Помилка або аварійний стан",
 }
 
 VALUE_PATTERN = re.compile(r"\[(\d+)\]:\s*(-?\d+)")
@@ -239,7 +240,7 @@ state_lock = threading.Lock()
 poll_wake_event = threading.Event()
 state: dict[str, Any] = {
     "online": False,
-    "updated_at": "никогда",
+    "updated_at": "ніколи",
     "cycle_seconds": 0.0,
     "cycle_id": 0,
     "poll_rate_index": 2,
@@ -262,16 +263,16 @@ def signed16(raw: int) -> int:
 def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str]:
     if raw == 0xFFFF:
         name, _, _, _, group = REGISTER_CONFIG.get(
-            register, (f"Register {register}", 1.0, "", False, "Raw")
+            register, (f"Регістр {register}", 1.0, "", False, "Сире")
         )
-        return name, "N/A", "", None, group
+        return name, "Н/Д", "", None, group
 
     if register == 157:
-        label = OPERATING_STATUS.get(raw, f"Operating status code {raw}")
-        return "Рабочее состояние", label, "", float(raw), "System"
+        label = OPERATING_STATUS.get(raw, f"Код робочого стану {raw}")
+        return "Робочий стан", label, "", float(raw), "Система"
 
     name, scale, unit, use_signed, group = REGISTER_CONFIG.get(
-        register, (f"Register {register}", 1.0, "", False, "Raw")
+        register, (f"Регістр {register}", 1.0, "", False, "Сире")
     )
 
     base = signed16(raw) if use_signed else raw
@@ -326,9 +327,9 @@ def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return {}, "тайм-аут"
+        return {}, "перевищено час очікування"
     except FileNotFoundError:
-        return {}, "mbpoll не найден"
+        return {}, "mbpoll не знайдено"
     except Exception as error:
         return {}, str(error)
 
@@ -341,7 +342,7 @@ def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:
     if values:
         return values, None
 
-    return {}, output.strip() or "ошибка чтения"
+    return {}, output.strip() or "помилка читання"
 
 
 def read_fast() -> tuple[dict[int, int], int, int, str | None]:
@@ -428,7 +429,7 @@ def poll_worker() -> None:
             state["requests"] = requests
             state["successful"] = len(fresh)
             state["ошибок"] = failed
-            state["error"] = "" if fresh else (error or "ошибка чтения")
+            state["error"] = "" if fresh else (error or "помилка читання")
             state["identifier"] = decode_identifier(cached)
             state["values"] = dict(cached)
 
@@ -482,7 +483,7 @@ def meter_value(values: dict[int, int], register: int, fallbacks: list[int]) -> 
         if value is not None:
             return value, f"R{candidate} {display}"
 
-    return None, "N/A"
+    return None, "Н/Д"
 
 
 def draw(stdscr: curses.window, scroll: int) -> int:
@@ -496,23 +497,23 @@ def draw(stdscr: curses.window, scroll: int) -> int:
     online = snapshot["online"]
     status_attr = curses.color_pair(2) | curses.A_BOLD if online else curses.color_pair(1) | curses.A_BOLD
 
-    safe_addstr(stdscr, 0, 0, "ТЕРМИНАЛЬНАЯ ПАНЕЛЬ ИНВЕРТОРА", curses.A_BOLD)
-    safe_addstr(stdscr, 1, 0, "Состояние: ")
-    safe_addstr(stdscr, 1, 8, "В СЕТИ" if online else "НЕТ СВЯЗИ", status_attr)
+    safe_addstr(stdscr, 0, 0, "ТЕРМІНАЛЬНА ПАНЕЛЬ ІНВЕРТОРА", curses.A_BOLD)
+    safe_addstr(stdscr, 1, 0, "Стан: ")
+    safe_addstr(stdscr, 1, 6, "У МЕРЕЖІ" if online else "НЕМАЄ ЗВ’ЯЗКУ", status_attr)
     safe_addstr(
         stdscr,
         1,
         18,
-        f"Device: {snapshot['identifier'] or 'неизвестно'}  Updated: {snapshot['updated_at']}",
+        f"Пристрій: {snapshot['identifier'] or 'невідомо'}  Оновлено: {snapshot['updated_at']}",
     )
     safe_addstr(
         stdscr,
         2,
         0,
-        f"Cycle: {snapshot['cycle_id']}  Read: {snapshot['cycle_seconds']:.2f}s  "
-        f"Target: {POLL_RATES[snapshot['poll_rate_index']]:g}s  "
-        f"Mode: {snapshot['read_mode']}  Requests: {snapshot['requests']}  "
-        f"Reads: {snapshot['successful']} ok / {snapshot['ошибок']} failed",
+        f"Цикл: {snapshot['cycle_id']}  Читання: {snapshot['cycle_seconds']:.2f} с  "
+        f"Інтервал: {POLL_RATES[snapshot['poll_rate_index']]:g} с  "
+        f"Режим: {snapshot['read_mode']}  Запити: {snapshot['requests']}  "
+        f"Зчитано: {snapshot['successful']} успішно / {snapshot['ошибок']} помилок",
     )
     status_code = values.get(157)
     status_text = OPERATING_STATUS.get(status_code, "") if status_code is not None else ""
@@ -520,13 +521,13 @@ def draw(stdscr: curses.window, scroll: int) -> int:
         stdscr,
         3,
         0,
-        "Клавиши: q выход | r интервал | m режим | стрелки/PgUp/PgDn прокрутка"
-        + (f" | State: {status_text}" if status_text else ""),
+        "Клавіші: q вихід | r інтервал | m режим | стрілки/PgUp/PgDn прокручування"
+        + (f" | Стан: {status_text}" if status_text else ""),
         curses.A_DIM,
     )
 
     row = 5
-    safe_addstr(stdscr, row, 0, "ТЕКУЩИЕ ПОКАЗАТЕЛИ", curses.A_BOLD)
+    safe_addstr(stdscr, row, 0, "ПОТОЧНІ ПОКАЗНИКИ", curses.A_BOLD)
     row += 1
 
     meter_columns = 2 if width >= 90 else 1
@@ -539,13 +540,13 @@ def draw(stdscr: curses.window, scroll: int) -> int:
         y = row + line_group * 3
         x = col * meter_width
 
-        display = "N/A" if value is None else f"{value:.2f}".rstrip("0").rstrip(".")
+        display = "Н/Д" if value is None else f"{value:.2f}".rstrip("0").rstrip(".")
         safe_addstr(stdscr, y, x, f"{label}: {display} {unit}", curses.A_BOLD)
         safe_addstr(stdscr, y + 1, x, bar(value, minimum, maximum, min(24, meter_width - 8)))
         safe_addstr(stdscr, y + 2, x, f"{minimum:g}..{maximum:g} | {source}", curses.A_DIM)
 
     row += ((len(METER_DEFINITIONS) + meter_columns - 1) // meter_columns) * 3 + 1
-    safe_addstr(stdscr, row, 0, "НЕНУЛЕВЫЕ РЕГИСТРЫ", curses.A_BOLD)
+    safe_addstr(stdscr, row, 0, "НЕНУЛЬОВІ РЕГІСТРИ", curses.A_BOLD)
     row += 1
 
     entries = []
@@ -559,7 +560,7 @@ def draw(stdscr: curses.window, scroll: int) -> int:
     max_scroll = max(0, len(entries) - available_rows)
     scroll = max(0, min(scroll, max_scroll))
 
-    header = f"{'REG':>4}  {'ГРУППА':<9} {'НАЗВАНИЕ':<31} {'ЗНАЧЕНИЕ':>12} {'СЫРОЕ':>7} {'ЗНАК.':>7}"
+    header = f"{'РЕГ':>4}  {'ГРУПА':<9} {'НАЗВА':<31} {'ЗНАЧЕННЯ':>12} {'СИРЕ':>7} {'ЗНАК.':>7}"
     safe_addstr(stdscr, row, 0, header, curses.A_UNDERLINE)
     row += 1
 
@@ -574,7 +575,7 @@ def draw(stdscr: curses.window, scroll: int) -> int:
         row += 1
 
     if snapshot["error"]:
-        safe_addstr(stdscr, height - 1, 0, f"Error: {snapshot['error']}", curses.color_pair(1))
+        safe_addstr(stdscr, height - 1, 0, f"Помилка: {snapshot['error']}", curses.color_pair(1))
 
     stdscr.refresh()
     return scroll
@@ -636,7 +637,7 @@ def main(stdscr: curses.window) -> None:
 
 
 WEB_DASHBOARD = r"""<!doctype html>
-<html lang="en">
+<html lang="uk">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -754,6 +755,18 @@ WEB_DASHBOARD = r"""<!doctype html>
       content: "☀"; transform: translateX(19px); color: #412b00; background: var(--amber);
     }
     .theme-switch input:focus-visible + .theme-slider { outline: 3px solid rgba(56,189,248,.25); outline-offset: 2px }
+    .language-switch {
+      display: flex; align-items: center; gap: 3px; padding: 3px;
+      min-height: 40px; border: 1px solid var(--line); border-radius: 12px;
+      background: var(--control);
+    }
+    .language-option {
+      min-width: 38px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 9px;
+      color: var(--muted); background: transparent; font-size: 11px; font-weight: 800;
+    }
+    .language-option.active {
+      color: #06202a; background: var(--cyan); box-shadow: 0 3px 12px rgba(34,211,238,.22);
+    }
     #view-toggle {
       border-color: rgba(56,189,248,.38);
       background: linear-gradient(135deg, rgba(14,165,233,.2), rgba(34,211,238,.1));
@@ -1007,55 +1020,60 @@ WEB_DASHBOARD = r"""<!doctype html>
     <header>
       <div class="brand">
         <div class="logo">☀</div>
-        <div><h1>Solar Invertor Web</h1><div class="subtitle" id="identifier">Waiting for invertor…</div></div>
+        <div><h1>Solar Invertor Web</h1><div class="subtitle" id="identifier" data-i18n="waitingInverter">Очікування даних інвертора…</div></div>
       </div>
       <div class="header-actions">
         <label class="theme-switch">
-          <input id="theme-toggle" type="checkbox" role="switch" aria-label="Use light theme">
+          <input id="theme-toggle" type="checkbox" role="switch" aria-label="Увімкнути світлу тему" data-i18n-aria="themeAria">
           <span class="theme-slider" aria-hidden="true"></span>
-          <span id="theme-name">Dark</span>
+          <span id="theme-name">Темна</span>
         </label>
-        <button id="app-toggle" type="button">Stop monitoring</button>
-        <button id="view-toggle" type="button">View charts</button>
-        <div class="status" id="status"><span class="dot"></span><span class="status-label">OFFLINE</span></div>
+        <div class="language-switch" role="group" aria-label="Мова інтерфейсу" data-i18n-aria="languageAria">
+          <button class="language-option active" type="button" data-language="uk" aria-pressed="true">УКР</button>
+          <button class="language-option" type="button" data-language="ru" aria-pressed="false">РУС</button>
+          <button class="language-option" type="button" data-language="en" aria-pressed="false">ENG</button>
+        </div>
+        <button id="app-toggle" type="button">Зупинити моніторинг</button>
+        <button id="view-toggle" type="button">Переглянути графіки</button>
+        <div class="status" id="status"><span class="dot"></span><span class="status-label">НЕМАЄ ЗВ’ЯЗКУ</span></div>
       </div>
     </header>
 
     <section id="dashboard-view">
     <div class="toolbar">
-      <label class="chip">Request every&nbsp;
-        <select id="poll-rate" aria-label="Polling interval">
-          <option value="0">0.5 s</option><option value="1">1 s</option>
-          <option value="2">2 s</option><option value="3">5 s</option><option value="4">10 s</option>
+      <label class="chip"><span data-i18n="requestEvery">Запит кожні</span>&nbsp;
+        <select id="poll-rate" aria-label="Інтервал опитування" data-i18n-aria="pollAria">
+          <option value="0" data-i18n="interval05">0.5 с</option><option value="1" data-i18n="interval1">1 с</option>
+          <option value="2" data-i18n="interval2">2 с</option><option value="3" data-i18n="interval5">5 с</option><option value="4" data-i18n="interval10">10 с</option>
         </select>
       </label>
-      <label class="chip">Read mode&nbsp;
-        <select id="read-mode" aria-label="Read mode">
-          <option value="fast">Fast</option><option value="compatible">Compatible</option>
+      <label class="chip"><span data-i18n="readMode">Режим читання</span>&nbsp;
+        <select id="read-mode" aria-label="Режим читання" data-i18n-aria="readModeAria">
+          <option value="fast" data-i18n="fast">Швидкий</option><option value="compatible" data-i18n="compatible">Сумісний</option>
         </select>
       </label>
-      <button id="demo-button" class="all-data-demo-button" type="button">Run 120s demo · 79 values</button>
-      <button id="manage-values-button" type="button">＋ Add values</button>
-      <span class="chip" id="cycle">Cycle —</span>
-      <span class="chip" id="site-visits">Visitors — · —</span>
-      <span class="chip updated" id="updated">Not updated yet</span>
+      <button id="demo-button" class="all-data-demo-button" type="button">Запустити демо на 120 с · 79 значень</button>
+      <button id="manage-values-button" type="button" data-i18n="addValues">＋ Додати значення</button>
+      <span class="chip" id="cycle">Цикл —</span>
+      <span class="chip" id="site-visits">Відвідувачі — · —</span>
+      <span class="chip updated" id="updated">Ще не оновлено</span>
     </div>
 
     <div class="panel error" id="error"></div>
-    <section class="gauges" id="gauges" aria-label="Live inverter readings"></section>
+    <section class="gauges" id="gauges" aria-label="Поточні показники інвертора" data-i18n-aria="gaugesAria"></section>
     <section class="panel custom-values" id="custom-values-section" hidden>
-      <h2>Added dashboard values</h2>
+      <h2 data-i18n="addedValues">Додані значення панелі</h2>
       <div class="custom-value-grid" id="custom-value-grid"></div>
     </section>
 
     <section class="panel">
       <div class="panel-head">
-        <div><h2>Live registers</h2><span class="muted" id="register-count"></span></div>
-        <input id="search" type="search" placeholder="Search registers…" aria-label="Search registers">
+        <div><h2 data-i18n="liveRegisters">Поточні регістри</h2><span class="muted" id="register-count"></span></div>
+        <input id="search" type="search" placeholder="Пошук регістрів…" aria-label="Пошук регістрів" data-i18n-placeholder="searchRegisters" data-i18n-aria="searchRegisters">
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Register</th><th>Group</th><th>Name</th><th>Value</th><th>Raw</th></tr></thead>
+          <thead><tr><th data-i18n="register">Регістр</th><th data-i18n="group">Група</th><th data-i18n="name">Назва</th><th data-i18n="value">Значення</th><th data-i18n="raw">Сире</th></tr></thead>
           <tbody id="registers"></tbody>
         </table>
       </div>
@@ -1065,21 +1083,21 @@ WEB_DASHBOARD = r"""<!doctype html>
     <section id="charts-view" hidden>
       <div class="charts-layout">
         <aside class="panel chart-selector">
-          <h2>Available values</h2>
-          <div class="muted">Each selected reading is added to the dashboard and live charts.</div>
-          <input id="chart-search" type="search" placeholder="Search values…" aria-label="Search chart values">
+          <h2 data-i18n="availableValues">Доступні значення</h2>
+          <div class="muted" data-i18n="selectionHelp">Кожен вибраний показник додається на панель і до графіків у реальному часі.</div>
+          <input id="chart-search" type="search" placeholder="Пошук значень…" aria-label="Пошук значень графіка" data-i18n-placeholder="searchValues" data-i18n-aria="searchChartValues">
           <div class="value-list" id="chart-value-list"></div>
         </aside>
         <div class="charts-main">
           <div class="panel-head charts-head">
             <div>
-              <h2>Live charts</h2>
-              <span class="muted" id="chart-selection-count">No values selected</span>
+              <h2 data-i18n="liveCharts">Графіки в реальному часі</h2>
+              <span class="muted" id="chart-selection-count">Значення не вибрано</span>
             </div>
-            <button id="chart-demo-button" class="all-data-demo-button" type="button">Run 120s demo · 79 values</button>
+            <button id="chart-demo-button" class="all-data-demo-button" type="button">Запустити демо на 120 с · 79 значень</button>
           </div>
           <div class="chart-grid" id="chart-grid">
-            <div class="chart-empty">Select values from the list to start real-time charts.</div>
+            <div class="chart-empty">Виберіть значення зі списку, щоб запустити графіки в реальному часі.</div>
           </div>
         </div>
       </div>
@@ -1087,6 +1105,234 @@ WEB_DASHBOARD = r"""<!doctype html>
   </main>
   <script>
     const colours = ['#38bdf8','#22d3ee','#34d399','#fbbf24','#a78bfa','#fb7185','#60a5fa'];
+    const UI_TRANSLATIONS = {
+      uk: {
+        waitingInverter: 'Очікування даних інвертора…',
+        themeAria: 'Увімкнути світлу тему',
+        languageAria: 'Мова інтерфейсу',
+        themeDark: 'Темна', themeLight: 'Світла',
+        stopMonitoring: 'Зупинити моніторинг', startMonitoring: 'Запустити моніторинг',
+        viewCharts: 'Переглянути графіки', dashboard: '← Панель',
+        offline: 'НЕМАЄ ЗВ’ЯЗКУ', online: 'У МЕРЕЖІ', paused: 'ПРИЗУПИНЕНО',
+        requestEvery: 'Запит кожні', pollAria: 'Інтервал опитування',
+        interval05: '0.5 с', interval1: '1 с', interval2: '2 с', interval5: '5 с', interval10: '10 с',
+        readMode: 'Режим читання', readModeAria: 'Режим читання',
+        fast: 'Швидкий', compatible: 'Сумісний',
+        runDemo: 'Запустити демо на 120 с · 79 значень',
+        stopDemo: '■ Зупинити · {elapsed} / {seconds} с · {count} значень',
+        addValues: '＋ Додати значення',
+        cycleInitial: 'Цикл —', visitorsInitial: 'Відвідувачі — · —',
+        notUpdated: 'Ще не оновлено', gaugesAria: 'Поточні показники інвертора',
+        addedValues: 'Додані значення панелі', liveRegisters: 'Поточні регістри',
+        searchRegisters: 'Пошук регістрів…',
+        register: 'Регістр', group: 'Група', name: 'Назва', value: 'Значення', raw: 'Сире',
+        registerNumber: 'Регістр {number}', operatingStatusCode: 'Код робочого стану {number}',
+        availableValues: 'Доступні значення',
+        selectionHelp: 'Кожен вибраний показник додається на панель і до графіків у реальному часі.',
+        searchValues: 'Пошук значень…', searchChartValues: 'Пошук значень графіка',
+        liveCharts: 'Графіки в реальному часі', noValuesSelected: 'Значення не вибрано',
+        selectValues: 'Виберіть значення зі списку, щоб запустити графіки в реальному часі.',
+        dashboardChart: 'Панель + графік', removeDashboard: 'Видалити з панелі',
+        selectedSummary: 'Вибрано значень: {count} · останні 2 хвилини',
+        chartAria: 'Графік у реальному часі для {label}',
+        waiting: 'Очікування…', noData: 'Немає даних',
+        registerCount: 'Отримано: {available} · очікують даних: {waiting} · показано: {shown}',
+        unknownDevice: 'Невідомий пристрій', updated: 'Оновлено {time}',
+        cyclePaused: 'Цикл {cycle} · моніторинг призупинено',
+        cycleReads: 'Цикл {cycle} · {seconds} с · зчитано: {reads}',
+        visitors: 'Відвідувачі {count} · {date}',
+        connectionError: 'Помилка підключення: {error}',
+        connectionLost: 'Втрачено зв’язок із панеллю: {error}',
+        unitValue: 'значення', gaugeDetail: '{unit} · шкала R{register}',
+        allDataDemo: 'Випадкове демо всіх даних', direct: 'прямий перехід',
+        visitConsole: '[Відвідування Solar Invertor Web]',
+        totalVisitorsLabel: 'усього відвідувачів', dateLabel: 'дата', openedLabel: 'відкрито',
+        referrerLabel: 'джерело переходу', browserLanguageLabel: 'мова браузера',
+        browserLabel: 'браузер', viewportLabel: 'розмір вікна'
+      },
+      ru: {
+        waitingInverter: 'Ожидание данных инвертора…',
+        themeAria: 'Включить светлую тему',
+        languageAria: 'Язык интерфейса',
+        themeDark: 'Тёмная', themeLight: 'Светлая',
+        stopMonitoring: 'Остановить мониторинг', startMonitoring: 'Запустить мониторинг',
+        viewCharts: 'Просмотреть графики', dashboard: '← Панель',
+        offline: 'НЕТ СВЯЗИ', online: 'В СЕТИ', paused: 'ПРИОСТАНОВЛЕНО',
+        requestEvery: 'Запрос каждые', pollAria: 'Интервал опроса',
+        interval05: '0.5 с', interval1: '1 с', interval2: '2 с', interval5: '5 с', interval10: '10 с',
+        readMode: 'Режим чтения', readModeAria: 'Режим чтения',
+        fast: 'Быстрый', compatible: 'Совместимый',
+        runDemo: 'Запустить демо на 120 с · 79 значений',
+        stopDemo: '■ Остановить · {elapsed} / {seconds} с · {count} значений',
+        addValues: '＋ Добавить значения',
+        cycleInitial: 'Цикл —', visitorsInitial: 'Посетители — · —',
+        notUpdated: 'Ещё не обновлено', gaugesAria: 'Текущие показания инвертора',
+        addedValues: 'Добавленные значения панели', liveRegisters: 'Текущие регистры',
+        searchRegisters: 'Поиск регистров…',
+        register: 'Регистр', group: 'Группа', name: 'Название', value: 'Значение', raw: 'Сырое',
+        registerNumber: 'Регистр {number}', operatingStatusCode: 'Код рабочего состояния {number}',
+        availableValues: 'Доступные значения',
+        selectionHelp: 'Каждый выбранный показатель добавляется на панель и на графики в реальном времени.',
+        searchValues: 'Поиск значений…', searchChartValues: 'Поиск значений графика',
+        liveCharts: 'Графики в реальном времени', noValuesSelected: 'Значения не выбраны',
+        selectValues: 'Выберите значения из списка, чтобы запустить графики в реальном времени.',
+        dashboardChart: 'Панель + график', removeDashboard: 'Удалить с панели',
+        selectedSummary: 'Выбрано значений: {count} · последние 2 минуты',
+        chartAria: 'График в реальном времени для {label}',
+        waiting: 'Ожидание…', noData: 'Нет данных',
+        registerCount: 'Получено: {available} · ожидают данных: {waiting} · показано: {shown}',
+        unknownDevice: 'Неизвестное устройство', updated: 'Обновлено {time}',
+        cyclePaused: 'Цикл {cycle} · мониторинг приостановлен',
+        cycleReads: 'Цикл {cycle} · {seconds} с · считано: {reads}',
+        visitors: 'Посетители {count} · {date}',
+        connectionError: 'Ошибка подключения: {error}',
+        connectionLost: 'Потеряна связь с панелью: {error}',
+        unitValue: 'значение', gaugeDetail: '{unit} · шкала R{register}',
+        allDataDemo: 'Случайное демо всех данных', direct: 'прямой переход',
+        visitConsole: '[Посещение Solar Invertor Web]',
+        totalVisitorsLabel: 'всего посетителей', dateLabel: 'дата', openedLabel: 'открыто',
+        referrerLabel: 'источник перехода', browserLanguageLabel: 'язык браузера',
+        browserLabel: 'браузер', viewportLabel: 'размер окна'
+      },
+      en: {
+        waitingInverter: 'Waiting for inverter data…',
+        themeAria: 'Use light theme',
+        languageAria: 'Interface language',
+        themeDark: 'Dark', themeLight: 'Light',
+        stopMonitoring: 'Stop monitoring', startMonitoring: 'Start monitoring',
+        viewCharts: 'View charts', dashboard: '← Dashboard',
+        offline: 'OFFLINE', online: 'ONLINE', paused: 'PAUSED',
+        requestEvery: 'Request every', pollAria: 'Polling interval',
+        interval05: '0.5 s', interval1: '1 s', interval2: '2 s', interval5: '5 s', interval10: '10 s',
+        readMode: 'Read mode', readModeAria: 'Read mode',
+        fast: 'Fast', compatible: 'Compatible',
+        runDemo: 'Run 120s demo · 79 values',
+        stopDemo: '■ Stop · {elapsed} / {seconds}s · {count} values',
+        addValues: '＋ Add values',
+        cycleInitial: 'Cycle —', visitorsInitial: 'Visitors — · —',
+        notUpdated: 'Not updated yet', gaugesAria: 'Live inverter readings',
+        addedValues: 'Added dashboard values', liveRegisters: 'Live registers',
+        searchRegisters: 'Search registers…',
+        register: 'Register', group: 'Group', name: 'Name', value: 'Value', raw: 'Raw',
+        registerNumber: 'Register {number}', operatingStatusCode: 'Operating status code {number}',
+        availableValues: 'Available values',
+        selectionHelp: 'Each selected reading is added to the dashboard and live charts.',
+        searchValues: 'Search values…', searchChartValues: 'Search chart values',
+        liveCharts: 'Live charts', noValuesSelected: 'No values selected',
+        selectValues: 'Select values from the list to start real-time charts.',
+        dashboardChart: 'Dashboard + chart', removeDashboard: 'Remove from dashboard',
+        selectedSummary: '{count} values selected · last 2 minutes',
+        chartAria: 'Live chart for {label}',
+        waiting: 'Waiting…', noData: 'No data',
+        registerCount: '{available} received · {waiting} awaiting data · {shown} shown',
+        unknownDevice: 'Unknown device', updated: 'Updated {time}',
+        cyclePaused: 'Cycle {cycle} · monitoring paused',
+        cycleReads: 'Cycle {cycle} · {seconds} s · {reads} reads',
+        visitors: 'Visitors {count} · {date}',
+        connectionError: 'Connection error: {error}',
+        connectionLost: 'Dashboard connection lost: {error}',
+        unitValue: 'value', gaugeDetail: '{unit} · gauge R{register}',
+        allDataDemo: 'All-data random demo', direct: 'direct',
+        visitConsole: '[Solar Invertor Web visit]',
+        totalVisitorsLabel: 'total visitors', dateLabel: 'date', openedLabel: 'opened',
+        referrerLabel: 'referrer', browserLanguageLabel: 'browser language',
+        browserLabel: 'browser', viewportLabel: 'viewport'
+      }
+    };
+    const DATA_TRANSLATIONS = {
+      'Код протоколу/версії': {ru:'Код протокола/версии', en:'Protocol/version code'},
+      'Код конфігурації пристрою': {ru:'Код конфигурации устройства', en:'Device configuration code'},
+      'Слово прошивки/стану': {ru:'Слово прошивки/состояния', en:'Firmware/status word'},
+      'Прапорець прошивки/стану': {ru:'Флаг прошивки/состояния', en:'Firmware/status flag'},
+      'Бітова маска можливостей/стану': {ru:'Битовая маска возможностей/состояния', en:'Capability/status bitmask'},
+      'Код конфігурації': {ru:'Код конфигурации', en:'Configuration code'},
+      'Значення прошивки/стану': {ru:'Значение прошивки/состояния', en:'Firmware/status value'},
+      'Знакове значення стану': {ru:'Знаковое значение состояния', en:'Signed status value'},
+      'Напруга AC': {ru:'Напряжение AC', en:'AC voltage'},
+      'Вхідний струм AC / значення навантаження': {ru:'Входной ток AC / значение нагрузки', en:'AC input current / load value'},
+      'Частота AC': {ru:'Частота AC', en:'AC frequency'},
+      'Температура інвертора': {ru:'Температура инвертора', en:'Inverter temperature'},
+      'Напруга батареї (дані LCD)': {ru:'Напряжение батареи (данные LCD)', en:'Battery voltage (LCD data)'},
+      'Відсоток заряду батареї/навантаження': {ru:'Процент заряда батареи/нагрузки', en:'Battery/load percentage'},
+      'Напруга батареї': {ru:'Напряжение батареи', en:'Battery voltage'},
+      'Струм заряджання батареї': {ru:'Ток зарядки батареи', en:'Battery charging current'},
+      'Рівень заряду батареї': {ru:'Уровень заряда батареи', en:'Battery state of charge'},
+      'Температура літієвої батареї': {ru:'Температура литиевой батареи', en:'Lithium battery temperature'},
+      'Напруга літієвої батареї (P3)': {ru:'Напряжение литиевой батареи (P3)', en:'Lithium battery voltage (P3)'},
+      'Струм літієвої батареї (P3)': {ru:'Ток литиевой батареи (P3)', en:'Lithium battery current (P3)'},
+      'Рівень заряду літієвої батареї (P4)': {ru:'Уровень заряда литиевой батареи (P4)', en:'Lithium battery state of charge (P4)'},
+      'Температура літієвої батареї (P4)': {ru:'Температура литиевой батареи (P4)', en:'Lithium battery temperature (P4)'},
+      'Максимальна напруга заряджання літієвої батареї (P6)': {ru:'Максимальное напряжение зарядки литиевой батареи (P6)', en:'Maximum lithium battery charging voltage (P6)'},
+      'Недоступне значення': {ru:'Недоступное значение', en:'Unavailable value'},
+      'Потужність/струм/стан батареї': {ru:'Мощность/ток/состояние батареи', en:'Battery power/current/status'},
+      'Код робочого стану': {ru:'Код рабочего состояния', en:'Operating status code'},
+      'Стан/внутрішнє значення': {ru:'Состояние/внутреннее значение', en:'Status/internal value'},
+      'Прапорець каналу/кількості BMS': {ru:'Флаг канала/количества BMS', en:'BMS channel/count flag'},
+      'Код конфігурації BMS': {ru:'Код конфигурации BMS', en:'BMS configuration code'},
+      'Код стану BMS': {ru:'Код состояния BMS', en:'BMS status code'},
+      'Рівень заряду літієвої батареї': {ru:'Уровень заряда литиевой батареи', en:'Lithium battery state of charge'},
+      'Вхідна напруга PV': {ru:'Входное напряжение PV', en:'PV input voltage'},
+      'Напруга літієвої батареї': {ru:'Напряжение литиевой батареи', en:'Lithium battery voltage'},
+      'Максимальний струм заряджання літієвої батареї': {ru:'Максимальный ток зарядки литиевой батареи', en:'Maximum lithium battery charging current'},
+      'Струм літієвої батареї': {ru:'Ток литиевой батареи', en:'Lithium battery current'},
+      'Межа напруги літієвої батареї': {ru:'Предел напряжения литиевой батареи', en:'Lithium battery voltage limit'},
+      'Межа струму розряджання літієвої батареї': {ru:'Предел тока разрядки литиевой батареи', en:'Lithium battery discharge current limit'},
+      'Налаштування напруги батареї': {ru:'Настройка напряжения батареи', en:'Battery voltage setting'},
+      'Налаштування струму батареї': {ru:'Настройка тока батареи', en:'Battery current setting'},
+      'Номінальна потужність / межа віддачі в мережу': {ru:'Номинальная мощность / предел отдачи в сеть', en:'Rated power / grid export limit'},
+      'Налаштування потужності / межа': {ru:'Настройка мощности / предел', en:'Power setting / limit'},
+      'Код BMS/стану': {ru:'Код BMS/состояния', en:'BMS/status code'},
+      'Прапорець BMS/стану': {ru:'Флаг BMS/состояния', en:'BMS/status flag'},
+      'Накопичене значення/потужність': {ru:'Накопленное значение/мощность', en:'Accumulated value/power'},
+      'Залишкова/номінальна ємність літієвої батареї': {ru:'Оставшаяся/номинальная ёмкость литиевой батареи', en:'Remaining/rated lithium battery capacity'},
+      'Максимальний струм літієвої батареї': {ru:'Максимальный ток литиевой батареи', en:'Maximum lithium battery current'},
+      'Потужність батареї/PV': {ru:'Мощность батареи/PV', en:'Battery/PV power'},
+      'Межа налаштування': {ru:'Предел настройки', en:'Setting limit'},
+      'Напруга/значення': {ru:'Напряжение/значение', en:'Voltage/value'},
+      'Упаковане значення/лічильник': {ru:'Упакованное значение/счётчик', en:'Packed value/counter'},
+      'Упаковане знакове значення': {ru:'Упакованное знаковое значение', en:'Packed signed value'},
+      'Струм батареї': {ru:'Ток батареи', en:'Battery current'},
+      'Температура батареї': {ru:'Температура батареи', en:'Battery temperature'},
+      'Стан батареї SOH / межа': {ru:'Состояние батареи SOH / предел', en:'Battery SOH / limit'},
+      'Макс. напруга заряджання': {ru:'Макс. напряжение зарядки', en:'Max. charging voltage'},
+      'Макс. струм заряджання': {ru:'Макс. ток зарядки', en:'Max. charging current'},
+      'Межа струму розряджання': {ru:'Предел тока разрядки', en:'Discharge current limit'},
+      'Потужність батареї / PV': {ru:'Мощность батареи / PV', en:'Battery / PV power'},
+      'Номінальна потужність': {ru:'Номинальная мощность', en:'Rated power'},
+      'Межа потужності': {ru:'Предел мощности', en:'Power limit'},
+      'Система': {ru:'Система', en:'System'},
+      'Батарея': {ru:'Батарея', en:'Battery'},
+      'Налаштування': {ru:'Настройки', en:'Settings'},
+      'Сире': {ru:'Сырое', en:'Raw'},
+      'Робочий стан': {ru:'Рабочее состояние', en:'Operating status'},
+      'Очікування / невідомо': {ru:'Ожидание / неизвестно', en:'Standby / unknown'},
+      'Робота від мережі / байпас': {ru:'Работа от сети / байпас', en:'Grid / bypass operation'},
+      'Робота інвертора від батареї або PV': {ru:'Работа инвертора от батареи или PV', en:'Inverter operation from battery or PV'},
+      'Заряджання / активна робота': {ru:'Зарядка / активная работа', en:'Charging / active operation'},
+      'Помилка або аварійний стан': {ru:'Ошибка или аварийное состояние', en:'Fault or emergency state'},
+      'Немає даних mbpoll': {ru:'Нет данных mbpoll', en:'No mbpoll data'},
+      'перевищено час очікування': {ru:'превышено время ожидания', en:'request timed out'},
+      'mbpoll не знайдено': {ru:'mbpoll не найден', en:'mbpoll not found'},
+      'помилка читання': {ru:'ошибка чтения', en:'read error'},
+      'ніколи': {ru:'никогда', en:'never'},
+      'Н/Д': {ru:'Н/Д', en:'N/A'},
+      'Випадкове демо всіх даних': {ru:'Случайное демо всех данных', en:'All-data random demo'}
+    };
+    let currentLanguage = 'uk';
+    function t(key, replacements = {}) {
+      const template = UI_TRANSLATIONS[currentLanguage]?.[key] ?? UI_TRANSLATIONS.uk[key] ?? key;
+      return template.replace(/\{(\w+)\}/g, (_, name) =>
+        Object.prototype.hasOwnProperty.call(replacements, name) ? replacements[name] : `{${name}}`
+      );
+    }
+    function localizeDataText(text) {
+      if (!text || currentLanguage === 'uk') return text;
+      const registerMatch = /^Регістр (\d+)$/.exec(text);
+      if (registerMatch) return t('registerNumber', {number: registerMatch[1]});
+      const statusMatch = /^Код робочого стану (\d+)$/.exec(text);
+      if (statusMatch) return t('operatingStatusCode', {number: statusMatch[1]});
+      return DATA_TRANSLATIONS[text]?.[currentLanguage] ?? text;
+    }
     const previous = new Map();
     let lastData = null;
     let chartDemoRunning = false;
@@ -1135,8 +1381,11 @@ WEB_DASHBOARD = r"""<!doctype html>
       data.meters.forEach(meter => {
         definitions.set(`meter-${meter.register}`, {
           key: `meter-${meter.register}`,
-          label: meter.label,
-          detail: `${meter.unit || 'value'} · gauge R${meter.register}`,
+          label: localizeDataText(meter.label),
+          detail: t('gaugeDetail', {
+            unit: meter.unit || t('unitValue'),
+            register: meter.register
+          }),
           unit: meter.unit,
           value: Number.isFinite(meter.value) ? meter.value : 0,
           minimum: meter.minimum,
@@ -1148,8 +1397,8 @@ WEB_DASHBOARD = r"""<!doctype html>
         if (value === null) return;
         definitions.set(`register-${register.register}`, {
           key: `register-${register.register}`,
-          label: register.name,
-          detail: `R${register.register} · ${register.group}`,
+          label: localizeDataText(register.name),
+          detail: `R${register.register} · ${localizeDataText(register.group)}`,
           unit: register.unit,
           value,
           minimum: null,
@@ -1168,7 +1417,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       host.innerHTML = items.map(item => `<div class="value-option">
         <div class="value-name">${item.label}<small>${item.detail}</small></div>
         <div class="value-targets">
-          <label><input type="checkbox" data-value-key="${item.key}" ${chartSelections.has(item.key) && dashboardSelections.has(item.key) ? 'checked' : ''}> Dashboard + chart</label>
+          <label><input type="checkbox" data-value-key="${item.key}" ${chartSelections.has(item.key) && dashboardSelections.has(item.key) ? 'checked' : ''}> ${t('dashboardChart')}</label>
         </div>
       </div>`).join('');
     }
@@ -1196,13 +1445,13 @@ WEB_DASHBOARD = r"""<!doctype html>
         return;
       }
 
-      const signature = selected.join('|');
+      const signature = `${currentLanguage}|${selected.join('|')}`;
       if (grid.dataset.keys !== signature) {
         grid.dataset.keys = signature;
         grid.innerHTML = selected.map(key => {
           const item = chartDefinitions.get(key);
           return `<article class="custom-value-card" data-dashboard-key="${key}">
-            <button class="remove-value" type="button" data-remove-dashboard="${key}" title="Remove from dashboard">×</button>
+            <button class="remove-value" type="button" data-remove-dashboard="${key}" title="${t('removeDashboard')}">×</button>
             <div class="custom-value-label" title="${item.label}">${item.label}</div>
             <div class="custom-value-reading"><span class="custom-value-number">0</span> <span class="unit">${item.unit}</span></div>
             <div class="custom-value-detail">${item.detail}</div>
@@ -1225,10 +1474,10 @@ WEB_DASHBOARD = r"""<!doctype html>
       const selected = [...chartSelections].filter(key => chartDefinitions.has(key));
       document.querySelector('#chart-demo-button').disabled = false;
       document.querySelector('#chart-selection-count').textContent =
-        selected.length ? `${selected.length} value${selected.length === 1 ? '' : 's'} selected · last 2 minutes` : 'No values selected';
+        selected.length ? t('selectedSummary', {count: selected.length}) : t('noValuesSelected');
 
       if (!selected.length) {
-        grid.innerHTML = '<div class="chart-empty">Select values from the list to start real-time charts.</div>';
+        grid.innerHTML = `<div class="chart-empty">${t('selectValues')}</div>`;
         return;
       }
 
@@ -1240,7 +1489,7 @@ WEB_DASHBOARD = r"""<!doctype html>
             <div class="chart-latest" id="latest-${key}">—</div>
           </div>
           <div class="muted">${item.detail}</div>
-          <canvas id="chart-${key}" data-chart-key="${key}" aria-label="Live chart for ${item.label}"></canvas>
+          <canvas id="chart-${key}" data-chart-key="${key}" aria-label="${t('chartAria', {label: item.label})}"></canvas>
         </article>`;
       }).join('');
       requestAnimationFrame(drawAllCharts);
@@ -1279,7 +1528,8 @@ WEB_DASHBOARD = r"""<!doctype html>
     }
 
     function formatChartTime(timestamp) {
-      return new Date(timestamp).toLocaleTimeString([], {
+      const locale = currentLanguage === 'uk' ? 'uk-UA' : currentLanguage === 'ru' ? 'ru-RU' : 'en-GB';
+      return new Date(timestamp).toLocaleTimeString(locale, {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit'
@@ -1312,7 +1562,11 @@ WEB_DASHBOARD = r"""<!doctype html>
         const demoStartedAt = Date.now();
         while (Date.now() - demoStartedAt < chartWindowMilliseconds) {
           const elapsedBeforeWait = Math.floor((Date.now() - demoStartedAt) / 1000);
-          setButtonState(`■ Stop · ${elapsedBeforeWait} / ${chartWindowSeconds}s · ${registerKeys.length} values`);
+          setButtonState(t('stopDemo', {
+            elapsed: elapsedBeforeWait,
+            seconds: chartWindowSeconds,
+            count: registerKeys.length
+          }));
           const selectedIndex = Number(document.querySelector('#poll-rate').value);
           await wait(requestIntervals[selectedIndex] ?? 2000);
           if (chartDemoCancelRequested) break;
@@ -1355,13 +1609,17 @@ WEB_DASHBOARD = r"""<!doctype html>
           }) : [];
           const demoMeters = lastData ? lastData.meters.map(meter => {
             const item = chartDefinitions.get(`meter-${meter.register}`);
-            return item ? {...meter, value: item.value, source: 'All-data random demo'} : meter;
+            return item ? {...meter, value: item.value, source: t('allDataDemo')} : meter;
           }) : [];
           const elapsed = Math.min(
             chartWindowSeconds,
             Math.floor((now - demoStartedAt) / 1000)
           );
-          setButtonState(`■ Stop · ${elapsed} / ${chartWindowSeconds}s · ${registerKeys.length} values`);
+          setButtonState(t('stopDemo', {
+            elapsed,
+            seconds: chartWindowSeconds,
+            count: registerKeys.length
+          }));
           renderGauges(demoMeters);
           renderDashboardValues();
           renderRegisters(demoRegisterRows);
@@ -1371,7 +1629,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         chartDemoRunning = false;
         chartDemoCancelRequested = false;
         demoRegisterRows = null;
-        setButtonState('Run 120s demo · 79 values');
+        setButtonState(t('runDemo'));
         if (lastData) {
           recordChartSamples(lastData);
           render(lastData);
@@ -1469,7 +1727,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       const latest = document.querySelector(`#latest-${item.key}`);
       if (latest) latest.textContent = history.length
         ? `${Number(history.at(-1).value.toFixed(2))} ${item.unit}`.trim()
-        : 'Waiting…';
+        : t('waiting');
     }
 
     function drawAllCharts() {
@@ -1518,9 +1776,10 @@ WEB_DASHBOARD = r"""<!doctype html>
     }
 
     function gaugeMarkup(meter, index) {
+      const label = localizeDataText(meter.label);
       return `<article class="gauge-card" id="g-${meter.register}" style="--accent:${colours[index % colours.length]}">
-        <div class="gauge-title">${meter.label}</div>
-        <svg viewBox="0 0 240 145" role="img" aria-label="${meter.label}">
+        <div class="gauge-title">${label}</div>
+        <svg viewBox="0 0 240 145" role="img" aria-label="${label}">
           <path class="track" d="M20 120 A100 100 0 0 1 220 120"/>
           <path class="progress" d="M20 120 A100 100 0 0 1 220 120"/>
           ${scaleMarkup(meter)}
@@ -1528,7 +1787,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           <circle class="hub" cx="120" cy="120" r="7"/>
         </svg>
         <div class="reading"><span class="trend flat">•</span><span class="value">—</span><span class="unit">${meter.unit}</span></div>
-        <div class="source">No data</div>
+        <div class="source">${t('noData')}</div>
       </article>`;
     }
 
@@ -1551,7 +1810,8 @@ WEB_DASHBOARD = r"""<!doctype html>
         if (needle.style.transform !== needleTransform) needle.style.transform = needleTransform;
         if (progress.style.strokeDashoffset !== progressOffset) progress.style.strokeDashoffset = progressOffset;
         if (valueElement.textContent !== valueText) valueElement.textContent = valueText;
-        if (sourceElement.textContent !== meter.source) sourceElement.textContent = meter.source;
+        const localizedSource = localizeDataText(meter.source);
+        if (sourceElement.textContent !== localizedSource) sourceElement.textContent = localizedSource;
 
         const old = previous.get(meter.register);
         const trend = card.querySelector('.trend');
@@ -1570,51 +1830,66 @@ WEB_DASHBOARD = r"""<!doctype html>
     function renderRegisters(registers) {
       const query = document.querySelector('#search').value.trim().toLowerCase();
       const shown = registers.filter(item =>
-        `${item.register} ${item.group} ${item.name} ${item.display} ${item.unit}`.toLowerCase().includes(query)
+        `${item.register} ${localizeDataText(item.group)} ${localizeDataText(item.name)} ${localizeDataText(item.display)} ${item.unit}`.toLowerCase().includes(query)
       );
       const available = registers.filter(item => item.available).length;
       document.querySelector('#register-count').textContent =
-        `${available} received · ${registers.length - available} awaiting data · ${shown.length} shown`;
+        t('registerCount', {
+          available,
+          waiting: registers.length - available,
+          shown: shown.length
+        });
       document.querySelector('#registers').innerHTML = shown.map(item => `<tr class="${item.available ? '' : 'unavailable'}">
-        <td>R${item.register}</td><td>${item.group}</td><td>${item.name}</td>
-        <td>${item.display} ${item.unit}</td><td>${item.raw ?? '—'}</td></tr>`).join('');
+        <td>R${item.register}</td><td>${localizeDataText(item.group)}</td><td>${localizeDataText(item.name)}</td>
+        <td>${localizeDataText(item.display)} ${item.unit}</td><td>${item.raw ?? '—'}</td></tr>`).join('');
     }
 
     function render(data) {
       lastData = data;
-      document.querySelector('#identifier').textContent = data.identifier || 'Unknown device';
+      document.querySelector('#identifier').textContent = data.identifier || t('unknownDevice');
       const status = document.querySelector('#status');
       status.classList.toggle('online', data.online && !data.paused);
       status.classList.toggle('paused', data.paused);
       status.querySelector('.status-label').textContent =
-        data.paused ? 'PAUSED' : data.online ? 'ONLINE' : 'OFFLINE';
+        data.paused ? t('paused') : data.online ? t('online') : t('offline');
       const appToggle = document.querySelector('#app-toggle');
-      appToggle.textContent = data.paused ? 'Start monitoring' : 'Stop monitoring';
+      appToggle.textContent = data.paused ? t('startMonitoring') : t('stopMonitoring');
       appToggle.classList.toggle('start', data.paused);
-      document.querySelector('#updated').textContent = `Updated ${data.updated_at}`;
+      document.querySelector('#updated').textContent =
+        t('updated', {time: localizeDataText(data.updated_at)});
       document.querySelector('#cycle').textContent =
         data.paused
-          ? `Cycle ${data.cycle_id} · monitoring paused`
-          : `Cycle ${data.cycle_id} · ${data.cycle_seconds.toFixed(2)} s · ${data.successful} reads`;
+          ? t('cyclePaused', {cycle: data.cycle_id})
+          : t('cycleReads', {
+              cycle: data.cycle_id,
+              seconds: data.cycle_seconds.toFixed(2),
+              reads: data.successful
+            });
       const totalVisitors = Number(data.site_visits || 0);
+      const numberLocale = currentLanguage === 'uk' ? 'uk-UA' : currentLanguage === 'ru' ? 'ru-RU' : 'en-GB';
       document.querySelector('#site-visits').textContent =
-        `Visitors ${totalVisitors.toLocaleString()} · ${data.site_visits_date}`;
-      if (lastLoggedSiteVisits !== totalVisitors) {
-        console.log('[Solar Invertor Web visit]', {
-          totalVisitors,
-          date: data.site_visits_date,
-          openedAt: new Date().toISOString(),
-          referrer: document.referrer || 'direct',
-          language: navigator.language,
-          userAgent: navigator.userAgent,
-          viewport: `${window.innerWidth}x${window.innerHeight}`
+        t('visitors', {
+          count: totalVisitors.toLocaleString(numberLocale),
+          date: data.site_visits_date
         });
+      if (lastLoggedSiteVisits !== totalVisitors) {
+        const visitDetails = {};
+        visitDetails[t('totalVisitorsLabel')] = totalVisitors;
+        visitDetails[t('dateLabel')] = data.site_visits_date;
+        visitDetails[t('openedLabel')] = new Date().toISOString();
+        visitDetails[t('referrerLabel')] = document.referrer || t('direct');
+        visitDetails[t('browserLanguageLabel')] = navigator.language;
+        visitDetails[t('browserLabel')] = navigator.userAgent;
+        visitDetails[t('viewportLabel')] = `${window.innerWidth}x${window.innerHeight}`;
+        console.log(t('visitConsole'), visitDetails);
         lastLoggedSiteVisits = totalVisitors;
       }
       document.querySelector('#poll-rate').value = data.poll_rate_index;
       document.querySelector('#read-mode').value = data.read_mode;
       const error = document.querySelector('#error');
-      error.textContent = data.error ? `Connection error: ${data.error}` : '';
+      error.textContent = data.error
+        ? t('connectionError', {error: localizeDataText(data.error)})
+        : '';
       error.classList.toggle('show', Boolean(data.error));
       renderGauges(data.meters);
       renderRegisters(data.registers);
@@ -1638,7 +1913,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       } catch (error) {
         if (error.name === 'AbortError') return;
         const box = document.querySelector('#error');
-        box.textContent = `Dashboard connection lost: ${error.message}`;
+        box.textContent = t('connectionLost', {error: error.message});
         box.classList.add('show');
       } finally {
         refreshInFlight = false;
@@ -1683,8 +1958,69 @@ WEB_DASHBOARD = r"""<!doctype html>
       const showCharts = charts.hidden;
       dashboard.hidden = showCharts;
       charts.hidden = !showCharts;
-      document.querySelector('#view-toggle').textContent = showCharts ? '← Dashboard' : 'View charts';
+      document.querySelector('#view-toggle').textContent = showCharts ? t('dashboard') : t('viewCharts');
       if (showCharts) requestAnimationFrame(drawAllCharts);
+    }
+
+    function applyLanguage(language, save = true) {
+      currentLanguage = ['uk', 'ru', 'en'].includes(language) ? language : 'uk';
+      document.documentElement.lang = currentLanguage;
+      document.querySelectorAll('[data-i18n]').forEach(element => {
+        element.textContent = t(element.dataset.i18n);
+      });
+      document.querySelectorAll('[data-i18n-aria]').forEach(element => {
+        element.setAttribute('aria-label', t(element.dataset.i18nAria));
+      });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
+        element.setAttribute('placeholder', t(element.dataset.i18nPlaceholder));
+      });
+      document.querySelectorAll('.language-option').forEach(button => {
+        const active = button.dataset.language === currentLanguage;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+      document.querySelector('#theme-name').textContent =
+        document.documentElement.dataset.theme === 'light' ? t('themeLight') : t('themeDark');
+      document.querySelector('#view-toggle').textContent =
+        document.querySelector('#charts-view').hidden ? t('viewCharts') : t('dashboard');
+      if (!chartDemoRunning) {
+        document.querySelectorAll('.all-data-demo-button').forEach(button => {
+          button.textContent = t('runDemo');
+        });
+      }
+      if (save) {
+        try {
+          window.localStorage.setItem('solar-invertor-language', currentLanguage);
+        } catch {
+          // Language switching still works when browser storage is unavailable.
+        }
+      }
+      lastLoggedSiteVisits = null;
+      if (lastData) {
+        document.querySelector('#gauges').innerHTML = '';
+        render(lastData);
+        renderChartValueList();
+        renderChartCards();
+        renderDashboardValues();
+      } else {
+        document.querySelector('#app-toggle').textContent = t('stopMonitoring');
+        document.querySelector('#status .status-label').textContent = t('offline');
+        document.querySelector('#cycle').textContent = t('cycleInitial');
+        document.querySelector('#site-visits').textContent = t('visitorsInitial');
+        document.querySelector('#updated').textContent = t('notUpdated');
+        renderChartCards();
+      }
+      requestAnimationFrame(drawAllCharts);
+    }
+
+    function initialLanguage() {
+      try {
+        const savedLanguage = window.localStorage.getItem('solar-invertor-language');
+        if (['uk', 'ru', 'en'].includes(savedLanguage)) return savedLanguage;
+      } catch {
+        // Use Ukrainian when browser storage is unavailable.
+      }
+      return 'uk';
     }
 
     function applyTheme(theme, save = true) {
@@ -1692,7 +2028,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       document.documentElement.dataset.theme = selectedTheme;
       document.querySelector('#theme-toggle').checked = selectedTheme === 'light';
       document.querySelector('#theme-name').textContent =
-        selectedTheme === 'light' ? 'Light' : 'Dark';
+        selectedTheme === 'light' ? t('themeLight') : t('themeDark');
       if (save) {
         try {
           window.localStorage.setItem('inverter-theme', selectedTheme);
@@ -1714,6 +2050,7 @@ WEB_DASHBOARD = r"""<!doctype html>
     }
 
     applyTheme(initialTheme(), false);
+    applyLanguage(initialLanguage(), false);
 
     document.querySelector('#poll-rate').addEventListener('change', event =>
       updateSetting('poll_rate_index', Number(event.target.value)));
@@ -1745,6 +2082,10 @@ WEB_DASHBOARD = r"""<!doctype html>
     });
     document.querySelector('#theme-toggle').addEventListener('change', event =>
       applyTheme(event.target.checked ? 'light' : 'dark'));
+    document.querySelector('.language-switch').addEventListener('click', event => {
+      const button = event.target.closest('button[data-language]');
+      if (button) applyLanguage(button.dataset.language);
+    });
     document.querySelector('#chart-search').addEventListener('input', renderChartValueList);
     document.querySelector('#chart-value-list').addEventListener('change', event => {
       const checkbox = event.target.closest('input[data-value-key]');
@@ -1800,7 +2141,7 @@ def web_state() -> dict[str, Any]:
         value, source = meter_value(values, register, fallbacks)
         if value is None:
             value = 0.0
-            source = "No mbpoll data"
+            source = "Немає даних mbpoll"
         meters.append({
             "register": register,
             "label": label,
@@ -1817,7 +2158,7 @@ def web_state() -> dict[str, Any]:
         raw = values.get(register)
         if raw is None:
             name, _, unit, _, group = REGISTER_CONFIG.get(
-                register, (f"Register {register}", 1.0, "", False, "Raw")
+                register, (f"Регістр {register}", 1.0, "", False, "Сире")
             )
             display = "0"
         else:
@@ -1846,7 +2187,7 @@ def web_state() -> dict[str, Any]:
         "identifier": snapshot["identifier"],
         "paused": bool(snapshot["paused"]),
         "site_visits": site_visit_total,
-        "site_visits_date": datetime.now().astimezone().strftime("%d %b %Y"),
+        "site_visits_date": datetime.now().astimezone().strftime("%d.%m.%Y"),
         "meters": meters,
         "registers": registers,
     }
@@ -1916,6 +2257,15 @@ def visitor_was_counted(cookie_header: str) -> bool:
         return False
 
 
+def safe_console_print(message: str) -> None:
+    """Print localized text without failing on a legacy Windows code page."""
+    console_encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    safe_message = message.encode(
+        console_encoding, errors="backslashreplace"
+    ).decode(console_encoding)
+    print(safe_message, flush=True)
+
+
 def log_visit_to_console(
     handler: BaseHTTPRequestHandler, new_visitor: bool
 ) -> None:
@@ -1928,23 +2278,24 @@ def log_visit_to_console(
         else peer
     )
     details = {
-        "event": "dashboard_visit",
-        "date": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "total_visitors": site_visit_total,
-        "new_visitor": new_visitor,
-        "source": source[:100],
-        "identity": (
+        "подія": "відвідування_панелі",
+        "дата": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "усього_відвідувачів": site_visit_total,
+        "новий_відвідувач": new_visitor,
+        "джерело": source[:100],
+        "ідентифікатор": (
             handler.headers.get("Tailscale-User-Login")
             or handler.headers.get("Tailscale-User-Name")
-            or "public/anonymous"
+            or "публічний/анонімний"
         )[:160],
-        "referrer": handler.headers.get("Referer", "direct")[:500],
-        "user_agent": handler.headers.get("User-Agent", "unknown")[:500],
+        "джерело_переходу": handler.headers.get("Referer", "прямий перехід")[:500],
+        "браузер": handler.headers.get("User-Agent", "невідомо")[:500],
     }
-    print(
-        "VISITOR " + json.dumps(details, ensure_ascii=False, separators=(",", ":")),
-        flush=True,
+    message = (
+        "ВІДВІДУВАЧ "
+        + json.dumps(details, ensure_ascii=False, separators=(",", ":"))
     )
+    safe_console_print(message)
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -2014,11 +2365,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             body = json.dumps(web_state(), ensure_ascii=False).encode("utf-8")
             self.send_content(body, "application/json; charset=utf-8")
             return
-        self.send_content(b'{"error":"not found"}', "application/json", HTTPStatus.NOT_FOUND)
+        self.send_content(
+            '{"error":"не знайдено"}'.encode("utf-8"),
+            "application/json",
+            HTTPStatus.NOT_FOUND,
+        )
 
     def do_POST(self) -> None:
         if self.path != "/api/settings":
-            self.send_content(b'{"error":"not found"}', "application/json", HTTPStatus.NOT_FOUND)
+            self.send_content(
+                '{"error":"не знайдено"}'.encode("utf-8"),
+                "application/json",
+                HTTPStatus.NOT_FOUND,
+            )
             return
 
         try:
@@ -2028,17 +2387,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if "poll_rate_index" in payload:
                     index = int(payload["poll_rate_index"])
                     if not 0 <= index < len(POLL_RATES):
-                        raise ValueError("invalid polling interval")
+                        raise ValueError("неправильний інтервал опитування")
                     state["poll_rate_index"] = index
                 if "read_mode" in payload:
                     mode = str(payload["read_mode"])
                     if mode not in {"fast", "compatible"}:
-                        raise ValueError("invalid read mode")
+                        raise ValueError("неправильний режим читання")
                     state["read_mode"] = mode
                 if "paused" in payload:
                     paused = payload["paused"]
                     if not isinstance(paused, bool):
-                        raise ValueError("paused must be true or false")
+                        raise ValueError("paused має бути true або false")
                     state["paused"] = paused
             poll_wake_event.set()
             self.send_content(b'{"ok":true}', "application/json")
@@ -2057,12 +2416,16 @@ def run_web_dashboard() -> None:
     worker = threading.Thread(target=poll_worker, name="inverter-poller", daemon=True)
     worker.start()
     server = ThreadingHTTPServer((host, port), DashboardHandler)
-    print(f"Solar Invertor Web: http://localhost:{port}")
-    print(f"Listening on {host}:{port} — press Ctrl+C to stop")
+    safe_console_print(f"Solar Invertor Web: http://localhost:{port}")
+    safe_console_print(
+        f"Прослуховування {host}:{port} — натисніть Ctrl+C для зупинки"
+    )
     if stats_error:
-        print(f"Visit counter disabled: {stats_error}")
+        safe_console_print(f"Лічильник відвідувачів вимкнено: {stats_error}")
     else:
-        print(f"Visit counter: {site_visit_total} visits · {STATS_DB_PATH}")
+        safe_console_print(
+            f"Лічильник: {site_visit_total} відвідувачів · {STATS_DB_PATH}"
+        )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
