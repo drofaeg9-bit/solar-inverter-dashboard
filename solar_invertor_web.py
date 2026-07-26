@@ -637,7 +637,7 @@ def main(stdscr: curses.window) -> None:
 
 
 WEB_DASHBOARD = r"""<!doctype html>
-<html lang="uk">
+<html lang="uk" class="booting">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -685,6 +685,7 @@ WEB_DASHBOARD = r"""<!doctype html>
     }
     * { box-sizing: border-box }
     html { min-width: 280px; overflow-x: hidden }
+    html.booting body { visibility: hidden }
     [hidden] { display: none !important }
     body {
       margin: 0;
@@ -835,13 +836,35 @@ WEB_DASHBOARD = r"""<!doctype html>
       position: static; width: 27px; min-height: 27px; padding: 0; border: 0;
       background: transparent; color: var(--muted); font-size: 18px; line-height: 1;
     }
-    .drag-handle { cursor: grab; font-size: 17px }
+    .drag-handle { cursor: grab; font-size: 17px; touch-action: none; user-select: none; -webkit-user-select: none }
     .drag-handle:active { cursor: grabbing }
-    .dashboard-empty {
-      grid-column: 1 / -1; display: grid; place-items: center; min-height: 190px;
-      padding: 28px; border: 1px dashed rgba(148,163,184,.3); border-radius: 18px;
-      color: var(--muted); text-align: center;
+    .gauge-card.pointer-dragging { opacity: .55; transform: scale(.98); z-index: 3 }
+    .gauges.empty-dashboard { grid-template-columns: minmax(220px, 330px); justify-content: center }
+    .add-gauge-card {
+      display: grid; place-items: center; align-content: center; gap: 8px; min-height: 245px;
+      padding: 24px; border: 1px dashed rgba(56,189,248,.42); border-radius: 18px;
+      background: linear-gradient(145deg, rgba(56,189,248,.08), rgba(34,211,238,.035));
+      color: var(--muted); text-align: center; cursor: pointer;
     }
+    .add-gauge-card:hover { border-color: var(--cyan); color: var(--text); background: rgba(56,189,248,.12) }
+    .add-gauge-plus { color: var(--cyan); font-size: 54px; font-weight: 300; line-height: .9 }
+    .add-gauge-label { font-size: 13px; font-weight: 700 }
+    dialog.gauge-picker {
+      width: min(620px, calc(100vw - 24px)); max-height: min(760px, calc(100vh - 24px));
+      padding: 0; overflow: hidden; color: var(--text); border: 1px solid var(--line);
+      border-radius: 20px; background: var(--panel); box-shadow: 0 28px 90px rgba(0,0,0,.55);
+    }
+    dialog.gauge-picker::backdrop { background: rgba(2,6,23,.72); backdrop-filter: blur(5px) }
+    .gauge-picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; padding: 18px 18px 12px }
+    .gauge-picker-head h2 { margin-bottom: 5px }
+    .gauge-picker-close { width: 36px; min-height: 36px; padding: 0; font-size: 22px }
+    .gauge-picker-search { width: calc(100% - 36px); margin: 0 18px 12px }
+    .gauge-picker-list { max-height: min(590px, calc(100vh - 190px)); overflow-y: auto; padding: 0 18px 18px }
+    .gauge-picker-option { display: flex; align-items: center; gap: 11px; padding: 11px 5px; border-bottom: 1px solid var(--line); cursor: pointer }
+    .gauge-picker-option:hover { background: rgba(56,189,248,.05) }
+    .gauge-picker-option input { flex: 0 0 auto; width: 18px; min-height: 18px; margin: 0; accent-color: var(--cyan) }
+    .gauge-picker-name { min-width: 0; font-weight: 700 }
+    .gauge-picker-name small { display: block; margin-top: 3px; color: var(--muted); font-weight: 400 }
     svg { display: block; width: 100%; max-height: 150px; margin-top: 3px; overflow: visible }
     .track { fill: none; stroke: var(--gauge-track); stroke-width: 13; stroke-linecap: round }
     .progress {
@@ -1032,6 +1055,10 @@ WEB_DASHBOARD = r"""<!doctype html>
   </style>
 </head>
 <body>
+  <script>
+    // Fail-safe: never leave the interface hidden if later startup code fails.
+    window.setTimeout(() => document.documentElement.classList.remove('booting'), 2000);
+  </script>
   <main class="shell">
     <header>
       <div class="brand">
@@ -1069,14 +1096,14 @@ WEB_DASHBOARD = r"""<!doctype html>
         </select>
       </label>
       <button id="demo-button" class="all-data-demo-button" type="button">Запустити демо на 120 с · 79 значень</button>
-      <button id="manage-values-button" type="button" data-i18n="addValues">＋ Додати значення</button>
+      <button id="manage-values-button" type="button" data-i18n="addValues">＋ Додати індикатори</button>
       <span class="chip" id="cycle">Цикл —</span>
       <span class="chip" id="site-visits">Відвідувачі — · —</span>
       <span class="chip updated" id="updated">Ще не оновлено</span>
     </div>
 
     <div class="panel error" id="error"></div>
-    <section class="gauges" id="gauges" aria-label="Поточні показники інвертора" data-i18n-aria="gaugesAria"></section>
+    <section class="gauges" id="gauges" aria-label="Індикатори інвертора" data-i18n-aria="gaugesAria"></section>
 
     <section class="panel">
       <div class="panel-head">
@@ -1114,6 +1141,18 @@ WEB_DASHBOARD = r"""<!doctype html>
         </div>
       </div>
     </section>
+
+    <dialog class="gauge-picker" id="gauge-picker">
+      <div class="gauge-picker-head">
+        <div>
+          <h2 data-i18n="chooseGauges">Choose gauges</h2>
+          <div class="muted" data-i18n="gaugePickerHelp">Вибрані індикатори з’являться на панелі та у графіках.</div>
+        </div>
+        <button class="gauge-picker-close" type="button" data-close-gauge-picker aria-label="Закрити" data-i18n-aria="close">×</button>
+      </div>
+      <input class="gauge-picker-search" id="gauge-picker-search" type="search" placeholder="Пошук значень…" data-i18n-placeholder="searchValues" aria-label="Пошук значень" data-i18n-aria="searchValues">
+      <div class="gauge-picker-list" id="gauge-picker-list"></div>
+    </dialog>
   </main>
   <script>
     const colours = ['#38bdf8','#22d3ee','#34d399','#fbbf24','#a78bfa','#fb7185','#60a5fa'];
@@ -1132,10 +1171,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         fast: 'Швидкий', compatible: 'Сумісний',
         runDemo: 'Запустити демо на 120 с · 79 значень',
         stopDemo: '■ Зупинити · {elapsed} / {seconds} с · {count} значень',
-        addValues: '＋ Додати значення',
+        addValues: '＋ Додати індикатори',
         cycleInitial: 'Цикл —', visitorsInitial: 'Відвідувачі — · —',
-        notUpdated: 'Ще не оновлено', gaugesAria: 'Поточні показники інвертора',
-        addedValues: 'Додані значення панелі', liveRegisters: 'Поточні регістри',
+        notUpdated: 'Ще не оновлено', gaugesAria: 'Індикатори інвертора',
+        addedValues: 'Додані індикатори панелі', liveRegisters: 'Поточні регістри',
         searchRegisters: 'Пошук регістрів…',
         register: 'Регістр', group: 'Група', name: 'Назва', value: 'Значення', raw: 'Сире',
         registerNumber: 'Регістр {number}', operatingStatusCode: 'Код робочого стану {number}',
@@ -1145,8 +1184,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         liveCharts: 'Графіки в реальному часі', noValuesSelected: 'Значення не вибрано',
         selectValues: 'Виберіть значення зі списку, щоб запустити графіки в реальному часі.',
         dashboardChart: 'Панель + графік', removeDashboard: 'Видалити з панелі',
-        emptyDashboard: 'Панель порожня. Натисніть «Додати значення» та виберіть регістри для відображення.',
+        emptyDashboard: 'Індикатори не вибрано. Натисніть «Додати індикатори» та виберіть значення.',
         dragGauge: 'Перетягніть, щоб змінити порядок',
+        chooseGauges: 'Виберіть індикатори', gaugePickerHelp: 'Вибрані індикатори з’являться на панелі й у графіках.',
+        addGauge: 'Додати індикатор', close: 'Закрити',
         selectedSummary: 'Вибрано значень: {count} · останні 2 хвилини',
         chartAria: 'Графік у реальному часі для {label}',
         waiting: 'Очікування…', noData: 'Немає даних',
@@ -1178,10 +1219,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         fast: 'Быстрый', compatible: 'Совместимый',
         runDemo: 'Запустить демо на 120 с · 79 значений',
         stopDemo: '■ Остановить · {elapsed} / {seconds} с · {count} значений',
-        addValues: '＋ Добавить значения',
+        addValues: '＋ Добавить индикаторы',
         cycleInitial: 'Цикл —', visitorsInitial: 'Посетители — · —',
-        notUpdated: 'Ещё не обновлено', gaugesAria: 'Текущие показания инвертора',
-        addedValues: 'Добавленные значения панели', liveRegisters: 'Текущие регистры',
+        notUpdated: 'Ещё не обновлено', gaugesAria: 'Индикаторы инвертора',
+        addedValues: 'Добавленные индикаторы панели', liveRegisters: 'Текущие регистры',
         searchRegisters: 'Поиск регистров…',
         register: 'Регистр', group: 'Группа', name: 'Название', value: 'Значение', raw: 'Сырое',
         registerNumber: 'Регистр {number}', operatingStatusCode: 'Код рабочего состояния {number}',
@@ -1191,8 +1232,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         liveCharts: 'Графики в реальном времени', noValuesSelected: 'Значения не выбраны',
         selectValues: 'Выберите значения из списка, чтобы запустить графики в реальном времени.',
         dashboardChart: 'Панель + график', removeDashboard: 'Удалить с панели',
-        emptyDashboard: 'Панель пуста. Нажмите «Добавить значения» и выберите регистры для отображения.',
+        emptyDashboard: 'Индикаторы не выбраны. Нажмите «Добавить индикаторы» и выберите значения.',
         dragGauge: 'Перетащите, чтобы изменить порядок',
+        chooseGauges: 'Выберите индикаторы', gaugePickerHelp: 'Выбранные индикаторы появятся на панели и на графиках.',
+        addGauge: 'Добавить индикатор', close: 'Закрыть',
         selectedSummary: 'Выбрано значений: {count} · последние 2 минуты',
         chartAria: 'График в реальном времени для {label}',
         waiting: 'Ожидание…', noData: 'Нет данных',
@@ -1224,10 +1267,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         fast: 'Fast', compatible: 'Compatible',
         runDemo: 'Run 120s demo · 79 values',
         stopDemo: '■ Stop · {elapsed} / {seconds}s · {count} values',
-        addValues: '＋ Add values',
+        addValues: '＋ Add gauges',
         cycleInitial: 'Cycle —', visitorsInitial: 'Visitors — · —',
-        notUpdated: 'Not updated yet', gaugesAria: 'Live inverter readings',
-        addedValues: 'Added dashboard values', liveRegisters: 'Live registers',
+        notUpdated: 'Not updated yet', gaugesAria: 'Live inverter gauges',
+        addedValues: 'Added dashboard gauges', liveRegisters: 'Live registers',
         searchRegisters: 'Search registers…',
         register: 'Register', group: 'Group', name: 'Name', value: 'Value', raw: 'Raw',
         registerNumber: 'Register {number}', operatingStatusCode: 'Operating status code {number}',
@@ -1237,8 +1280,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         liveCharts: 'Live charts', noValuesSelected: 'No values selected',
         selectValues: 'Select values from the list to start real-time charts.',
         dashboardChart: 'Dashboard + chart', removeDashboard: 'Remove from dashboard',
-        emptyDashboard: 'No gauges selected. Click Add values and select the registers to display.',
+        emptyDashboard: 'No gauges selected. Click Add gauges and select the readings to display.',
         dragGauge: 'Drag to reorder',
+        chooseGauges: 'Choose gauges', gaugePickerHelp: 'Selected gauges appear on the dashboard and live charts.',
+        addGauge: 'Add gauge', close: 'Close',
         selectedSummary: '{count} values selected · last 2 minutes',
         chartAria: 'Live chart for {label}',
         waiting: 'Waiting…', noData: 'No data',
@@ -1376,10 +1421,26 @@ WEB_DASHBOARD = r"""<!doctype html>
         // The dashboard still works when browser storage is unavailable.
       }
     }
+    function savedMap(name) {
+      try {
+        const value = JSON.parse(window.localStorage.getItem(name) || '{}');
+        return new Map(Object.entries(value && typeof value === 'object' ? value : {}));
+      } catch {
+        return new Map();
+      }
+    }
+    function saveMap(name, values) {
+      try {
+        window.localStorage.setItem(name, JSON.stringify(Object.fromEntries(values)));
+      } catch {
+        // Gauge appearance remains stable for the current page when storage is unavailable.
+      }
+    }
     const chartSelections = savedSelections('inverter-chart-values-v2');
     const dashboardSelections = savedSelections('inverter-dashboard-gauges-v2');
     const chartHistory = new Map();
-    const dashboardGaugeRanges = new Map();
+    const dashboardGaugeRanges = savedMap('inverter-dashboard-gauge-ranges-v2');
+    const dashboardGaugeColours = savedMap('inverter-dashboard-gauge-colours-v2');
     const chartWindowSeconds = 120;
     const chartWindowMilliseconds = chartWindowSeconds * 1000;
 
@@ -1440,6 +1501,26 @@ WEB_DASHBOARD = r"""<!doctype html>
       </div>`).join('');
     }
 
+    function renderGaugePickerList() {
+      const host = document.querySelector('#gauge-picker-list');
+      const query = document.querySelector('#gauge-picker-search').value.trim().toLowerCase();
+      const items = [...chartDefinitions.values()].filter(item =>
+        `${item.label} ${item.detail} ${item.unit}`.toLowerCase().includes(query)
+      );
+      host.innerHTML = items.map(item => `<label class="gauge-picker-option">
+        <input type="checkbox" data-picker-value-key="${item.key}" ${dashboardSelections.has(item.key) ? 'checked' : ''}>
+        <span class="gauge-picker-name">${item.label}<small>${item.detail}${item.unit ? ` · ${item.unit}` : ''}</small></span>
+      </label>`).join('');
+    }
+
+    function openGaugePicker() {
+      const picker = document.querySelector('#gauge-picker');
+      renderGaugePickerList();
+      if (typeof picker.showModal === 'function') picker.showModal();
+      else picker.setAttribute('open', '');
+      window.setTimeout(() => document.querySelector('#gauge-picker-search').focus(), 0);
+    }
+
     function updateChartDefinitions(data) {
       const next = collectChartDefinitions(data);
       const oldSignature = [...chartDefinitions.keys()].join('|');
@@ -1447,6 +1528,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       chartDefinitions = next;
       if (oldSignature !== nextSignature) {
         renderChartValueList();
+        renderGaugePickerList();
         renderChartCards();
       }
       if (!chartDemoRunning) renderDashboardValues();
@@ -1478,21 +1560,49 @@ WEB_DASHBOARD = r"""<!doctype html>
         ? {minimum: -niceGaugeLimit(Math.abs(value) * 1.2), maximum: niceGaugeLimit(Math.abs(value) * 1.2)}
         : {minimum: 0, maximum: niceGaugeLimit(Math.max(100, value * 1.2))};
       dashboardGaugeRanges.set(item.key, range);
+      saveMap('inverter-dashboard-gauge-ranges-v2', dashboardGaugeRanges);
       return range;
     }
 
+    function dashboardGaugeColour(key) {
+      const saved = dashboardGaugeColours.get(key);
+      if (colours.includes(saved)) return saved;
+      const activeColours = [...dashboardSelections]
+        .filter(selectedKey => selectedKey !== key)
+        .map(selectedKey => dashboardGaugeColours.get(selectedKey));
+      const colour = colours.reduce((best, candidate) => {
+        const uses = activeColours.filter(value => value === candidate).length;
+        const bestUses = activeColours.filter(value => value === best).length;
+        return uses < bestUses ? candidate : best;
+      }, colours[0]);
+      dashboardGaugeColours.set(key, colour);
+      saveMap('inverter-dashboard-gauge-colours-v2', dashboardGaugeColours);
+      return colour;
+    }
+
+    function dashboardGaugeItems() {
+      return [...dashboardSelections]
+        .filter(key => chartDefinitions.has(key))
+        .map(key => {
+          const item = chartDefinitions.get(key);
+          return {...item, ...dashboardGaugeBounds(item), colour: dashboardGaugeColour(key)};
+        });
+    }
+
+    function dashboardGaugeSignature(gauges) {
+      return `${currentLanguage}|${gauges.map(gauge =>
+        `${gauge.key}:${gauge.minimum}:${gauge.maximum}:${gauge.colour}`).join('|')}`;
+    }
+
     function renderDashboardValues() {
-      const selected = [...dashboardSelections].filter(key => chartDefinitions.has(key));
-      if (!selected.length) {
+      const gauges = dashboardGaugeItems();
+      if (!gauges.length) {
         const host = document.querySelector('#gauges');
-        host.innerHTML = `<div class="dashboard-empty">${t('emptyDashboard')}</div>`;
+        host.classList.add('empty-dashboard');
+        host.innerHTML = addGaugeMarkup(true);
         host.dataset.keys = `${currentLanguage}|empty`;
         return;
       }
-      const gauges = selected.map(key => {
-        const item = chartDefinitions.get(key);
-        return {...item, ...dashboardGaugeBounds(item)};
-      });
       renderGauges(gauges);
     }
 
@@ -1797,9 +1907,16 @@ WEB_DASHBOARD = r"""<!doctype html>
       return markup;
     }
 
-    function gaugeMarkup(meter, index) {
+    function addGaugeMarkup(empty = false) {
+      return `<button class="add-gauge-card" type="button" data-open-gauge-picker aria-label="${t('addGauge')}">
+        <span class="add-gauge-plus">+</span>
+        <span class="add-gauge-label">${empty ? t('emptyDashboard') : t('addGauge')}</span>
+      </button>`;
+    }
+
+    function gaugeMarkup(meter) {
       const label = localizeDataText(meter.label);
-      return `<article class="gauge-card" draggable="true" data-dashboard-key="${meter.key}" style="--accent:${colours[index % colours.length]}">
+      return `<article class="gauge-card" draggable="true" data-dashboard-key="${meter.key}" style="--accent:${meter.colour}">
         <div class="gauge-actions">
           <button class="drag-handle" type="button" draggable="false" title="${t('dragGauge')}" aria-label="${t('dragGauge')}">⠿</button>
           <button class="remove-value" type="button" draggable="false" data-remove-dashboard="${meter.key}" title="${t('removeDashboard')}" aria-label="${t('removeDashboard')}">×</button>
@@ -1819,10 +1936,11 @@ WEB_DASHBOARD = r"""<!doctype html>
 
     function renderGauges(meters) {
       const host = document.querySelector('#gauges');
-      const signature = `${currentLanguage}|${meters.map(meter => `${meter.key}:${meter.minimum}:${meter.maximum}`).join('|')}`;
+      host.classList.remove('empty-dashboard');
+      const signature = dashboardGaugeSignature(meters);
       if (host.dataset.keys !== signature) {
         host.dataset.keys = signature;
-        host.innerHTML = meters.map(gaugeMarkup).join('');
+        host.innerHTML = meters.map(gaugeMarkup).join('') + addGaugeMarkup();
       }
       meters.forEach(meter => {
         const card = host.querySelector(`[data-dashboard-key="${meter.key}"]`);
@@ -2030,6 +2148,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         document.querySelector('#gauges').innerHTML = '';
         render(lastData);
         renderChartValueList();
+        renderGaugePickerList();
         renderChartCards();
         renderDashboardValues();
       } else {
@@ -2088,10 +2207,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       updateSetting('read_mode', event.target.value));
     document.querySelector('#demo-button').addEventListener('click', fillChartExampleData);
     document.querySelector('#chart-demo-button').addEventListener('click', fillChartExampleData);
-    document.querySelector('#manage-values-button').addEventListener('click', () => {
-      if (document.querySelector('#charts-view').hidden) toggleView();
-      document.querySelector('#chart-search').focus();
-    });
+    document.querySelector('#manage-values-button').addEventListener('click', openGaugePicker);
     document.querySelector('#search').addEventListener('input', () =>
       demoRegisterRows
         ? renderRegisters(demoRegisterRows)
@@ -2134,9 +2250,37 @@ WEB_DASHBOARD = r"""<!doctype html>
       saveSelections('inverter-chart-values-v2', chartSelections);
       renderDashboardValues();
       renderChartCards();
+      renderGaugePickerList();
+    });
+    document.querySelector('#gauge-picker-search').addEventListener('input', renderGaugePickerList);
+    document.querySelector('#gauge-picker-list').addEventListener('change', event => {
+      const checkbox = event.target.closest('input[data-picker-value-key]');
+      if (!checkbox) return;
+      const key = checkbox.dataset.pickerValueKey;
+      if (checkbox.checked) {
+        dashboardSelections.add(key);
+        chartSelections.add(key);
+        chartHistory.set(key, []);
+      } else {
+        dashboardSelections.delete(key);
+        chartSelections.delete(key);
+        chartHistory.delete(key);
+      }
+      saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
+      saveSelections('inverter-chart-values-v2', chartSelections);
+      renderDashboardValues();
+      renderChartCards();
+      renderChartValueList();
+    });
+    document.querySelector('[data-close-gauge-picker]').addEventListener('click', () =>
+      document.querySelector('#gauge-picker').close());
+    document.querySelector('#gauge-picker').addEventListener('click', event => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
     });
     const gaugeHost = document.querySelector('#gauges');
     let draggedGauge = null;
+    let pointerDraggedGauge = null;
+    let pointerDragHandle = null;
 
     function saveDashboardOrderFromCards() {
       const orderedKeys = [...gaugeHost.querySelectorAll('[data-dashboard-key]')]
@@ -2145,7 +2289,20 @@ WEB_DASHBOARD = r"""<!doctype html>
       dashboardSelections.clear();
       orderedKeys.forEach(key => dashboardSelections.add(key));
       saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
-      renderDashboardValues();
+      gaugeHost.dataset.keys = dashboardGaugeSignature(dashboardGaugeItems());
+    }
+
+    function placeGaugeAtPointer(card, target, clientX, clientY) {
+      gaugeHost.querySelectorAll('.drag-target').forEach(item => item.classList.remove('drag-target'));
+      if (!target || target === card || !gaugeHost.contains(target)) return;
+      target.classList.add('drag-target');
+      const bounds = target.getBoundingClientRect();
+      const cardBounds = card.getBoundingClientRect();
+      const sameRow = Math.abs(bounds.top - cardBounds.top) < bounds.height / 2;
+      const placeAfter = sameRow
+        ? clientX > bounds.left + bounds.width / 2
+        : clientY > bounds.top + bounds.height / 2;
+      target[placeAfter ? 'after' : 'before'](card);
     }
 
     gaugeHost.addEventListener('dragstart', event => {
@@ -2160,15 +2317,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       if (!draggedGauge) return;
       event.preventDefault();
       const target = event.target.closest('.gauge-card[data-dashboard-key]');
-      gaugeHost.querySelectorAll('.drag-target').forEach(card => card.classList.remove('drag-target'));
-      if (!target || target === draggedGauge) return;
-      target.classList.add('drag-target');
-      const bounds = target.getBoundingClientRect();
-      const sameRow = Math.abs(bounds.top - draggedGauge.getBoundingClientRect().top) < bounds.height / 2;
-      const placeAfter = sameRow
-        ? event.clientX > bounds.left + bounds.width / 2
-        : event.clientY > bounds.top + bounds.height / 2;
-      target[placeAfter ? 'after' : 'before'](draggedGauge);
+      placeGaugeAtPointer(draggedGauge, target, event.clientX, event.clientY);
     });
     gaugeHost.addEventListener('drop', event => {
       if (!draggedGauge) return;
@@ -2181,7 +2330,52 @@ WEB_DASHBOARD = r"""<!doctype html>
       draggedGauge = null;
     });
 
+    gaugeHost.addEventListener('pointerdown', event => {
+      const handle = event.target.closest('.drag-handle');
+      if (!handle || event.button !== 0 || event.isPrimary === false) return;
+      const card = handle.closest('.gauge-card[data-dashboard-key]');
+      if (!card) return;
+      event.preventDefault();
+      pointerDraggedGauge = card;
+      pointerDragHandle = handle;
+      card.classList.add('pointer-dragging');
+      handle.setPointerCapture(event.pointerId);
+    });
+
+    gaugeHost.addEventListener('pointermove', event => {
+      if (!pointerDraggedGauge || !pointerDragHandle) return;
+      event.preventDefault();
+      if (event.clientY < 70) window.scrollBy(0, -14);
+      if (event.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
+
+      const previousVisibility = pointerDraggedGauge.style.visibility;
+      pointerDraggedGauge.style.visibility = 'hidden';
+      const elementBelow = document.elementFromPoint(event.clientX, event.clientY);
+      pointerDraggedGauge.style.visibility = previousVisibility;
+      const target = elementBelow?.closest('.gauge-card[data-dashboard-key]') || null;
+      placeGaugeAtPointer(pointerDraggedGauge, target, event.clientX, event.clientY);
+    });
+
+    function finishPointerGaugeDrag(event) {
+      if (!pointerDraggedGauge) return;
+      if (pointerDragHandle?.hasPointerCapture(event.pointerId)) {
+        pointerDragHandle.releasePointerCapture(event.pointerId);
+      }
+      pointerDraggedGauge.classList.remove('pointer-dragging');
+      gaugeHost.querySelectorAll('.drag-target').forEach(card => card.classList.remove('drag-target'));
+      pointerDraggedGauge = null;
+      pointerDragHandle = null;
+      saveDashboardOrderFromCards();
+    }
+
+    gaugeHost.addEventListener('pointerup', finishPointerGaugeDrag);
+    gaugeHost.addEventListener('pointercancel', finishPointerGaugeDrag);
+
     gaugeHost.addEventListener('click', event => {
+      if (event.target.closest('[data-open-gauge-picker]')) {
+        openGaugePicker();
+        return;
+      }
       const button = event.target.closest('button[data-remove-dashboard]');
       if (!button) return;
       const key = button.dataset.removeDashboard;
@@ -2193,13 +2387,23 @@ WEB_DASHBOARD = r"""<!doctype html>
       renderDashboardValues();
       renderChartCards();
       renderChartValueList();
+      renderGaugePickerList();
     });
     window.addEventListener('resize', () => {
       if (!document.querySelector('#charts-view').hidden) drawAllCharts();
     });
     const initialData = /*__INITIAL_STATE__*/null;
-    if (initialData) render(initialData);
-    refresh();
+    if (initialData) {
+      lastData = initialData;
+      render(initialData);
+      recordChartSamples(initialData);
+      if (!initialData.paused) {
+        window.addEventListener('load', () => scheduleRefresh(), {once: true});
+      }
+    } else {
+      refresh();
+    }
+    document.documentElement.classList.remove('booting');
   </script>
 </body>
 </html>
