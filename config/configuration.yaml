@@ -5,7 +5,7 @@ homeassistant:
   longitude: -0.1
   elevation: 10
   unit_system: metric
-  time_zone: Europe/London
+  time_zone: Europe/Madrid
 
 # Enable default integrations
 default_config:

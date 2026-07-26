@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="solar_background">#020617</color>
+    <color name="solar_panel">#0F172A</color>
+    <color name="solar_cyan">#22D3EE</color>
+</resources>

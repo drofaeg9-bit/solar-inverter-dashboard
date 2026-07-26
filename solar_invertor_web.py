@@ -19,6 +19,7 @@ Requirements:
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
@@ -33,12 +34,14 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
+from zoneinfo import ZoneInfo
 
 DEVICE = "/dev/ttyUSB0"
 SLAVE_ID = 1
 BAUD_RATE = 9600
 COMMAND_TIMEOUT_SECONDS = 3.0
+MADRID_TIME_ZONE = ZoneInfo("Europe/Madrid")
 FAVICON_PATH = Path(__file__).with_name("favicon.png")
 _stats_path_setting = os.environ.get("INVERTER_STATS_DB")
 _new_stats_path = Path(__file__).with_name("solar_invertor_web_stats.sqlite3")
@@ -54,6 +57,16 @@ stats_lock = threading.Lock()
 stats_error = ""
 site_visit_total = 0
 COUNTED_VISITOR_COOKIE = "inverter_counted"
+REGISTER_LOG_DIRECTORY = Path(__file__).with_name("register_logs")
+
+register_log_lock = threading.Lock()
+register_log_file: TextIO | None = None
+register_log_writer: Any = None
+register_log_path: Path | None = None
+register_log_started_at = ""
+register_log_changes = 0
+register_log_error = ""
+register_log_previous_values: dict[int, int] = {}
 
 POLL_RATES = [0.5, 1.0, 2.0, 5.0, 10.0]
 
@@ -86,105 +99,119 @@ FAST_BLOCKS = [
     (449, 7),
 ]
 
+# Register metadata is based on observed values. Conservative names such as
+# "channel" and "parameter" indicate meanings not confirmed by a vendor map.
 # name, scale, unit, signed, group
 REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
-    17: ("Код протоколу/версії", 1.0, "", False, "Система"),
+    **{
+        register: (
+            f"Ідентифікатор пристрою, слово {register}",
+            1.0,
+            "",
+            False,
+            "Ідентифікація",
+        )
+        for register in range(1, 10)
+    },
+    17: ("Код протоколу або версії", 1.0, "", False, "Система"),
     18: ("Код конфігурації пристрою", 1.0, "", False, "Система"),
-    27: ("Слово прошивки/стану", 1.0, "", False, "Система"),
-    28: ("Прапорець прошивки/стану", 1.0, "", False, "Система"),
-    58: ("Бітова маска можливостей/стану", 1.0, "", False, "Система"),
-    65: ("Слово прошивки/стану", 1.0, "", False, "Система"),
-    66: ("Код конфігурації", 1.0, "", False, "Система"),
-    67: ("Код конфігурації", 1.0, "", False, "Система"),
-    68: ("Значення прошивки/стану", 1.0, "", False, "Система"),
-    69: ("Знакове значення стану", 1.0, "", True, "Система"),
+    27: ("Системне слово 27", 1.0, "", False, "Система"),
+    28: ("Системний прапорець 28", 1.0, "", False, "Система"),
+    58: ("Бітова маска можливостей або стану", 1.0, "", False, "Система"),
+    65: ("Системне слово 65", 1.0, "", False, "Система"),
+    66: ("Код конфігурації 66", 1.0, "", False, "Система"),
+    67: ("Код конфігурації 67", 1.0, "", False, "Система"),
+    68: ("Системне значення 68", 1.0, "", False, "Система"),
+    69: ("Упаковане знакове значення 69", 1.0, "", True, "Система"),
 
     89: ("Напруга AC", 0.1, "V", False, "AC"),
-    90: ("Вхідний струм AC / значення навантаження", 1.0, "", False, "AC"),
+    90: ("Параметр AC 90", 1.0, "", False, "AC"),
     91: ("Частота AC", 0.01, "Hz", False, "AC"),
-    92: ("Температура інвертора", 0.1, "°C", False, "AC"),
-    93: ("Напруга батареї (дані LCD)", 0.1, "V", False, "Батарея"),
-    94: ("Відсоток заряду батареї/навантаження", 1.0, "%", False, "Система"),
+    92: ("Температурний канал інвертора", 0.1, "°C", False, "Температура"),
+    93: ("Канал напруги 93", 0.1, "V", False, "Система"),
+    94: ("Відсотковий параметр 94", 1.0, "%", False, "Система"),
 
-    129: ("Напруга батареї", 0.1, "V", False, "Батарея"),
-    130: ("Струм заряджання батареї", 0.1, "A", False, "Батарея"),
+    129: ("Напруга батареї, канал 129", 0.1, "V", False, "Батарея"),
+    130: ("Струм батареї без знаку", 0.1, "A", False, "Батарея"),
     133: ("Рівень заряду батареї", 1.0, "%", False, "Батарея"),
-    134: ("Температура літієвої батареї", 0.1, "°C", False, "Батарея"),
+    134: ("Температура батареї, канал 134", 0.1, "°C", False, "Температура"),
 
-    137: ("Напруга літієвої батареї (P3)", 0.1, "V", False, "BMS"),
-    138: ("Струм літієвої батареї (P3)", 0.1, "A", True, "BMS"),
-    139: ("Рівень заряду літієвої батареї (P4)", 1.0, "%", False, "BMS"),
-    140: ("Температура літієвої батареї (P4)", 0.1, "°C", False, "BMS"),
-    141: ("Максимальна напруга заряджання літієвої батареї (P6)", 0.1, "V", False, "BMS"),
-    142: ("Недоступне значення", 1.0, "", True, "BMS"),
-    143: ("Недоступне значення", 1.0, "", True, "BMS"),
-    144: ("Потужність/струм/стан батареї", 1.0, "", False, "BMS"),
+    137: ("Напруга батареї BMS", 0.1, "V", False, "BMS"),
+    138: ("Струм батареї BMS", 0.1, "A", True, "BMS"),
+    139: ("Рівень заряду батареї BMS", 1.0, "%", False, "BMS"),
+    140: ("Температура BMS, канал 140", 0.1, "°C", False, "Температура"),
+    141: ("Верхня напруга заряджання BMS", 0.1, "V", False, "BMS"),
+    142: ("Недоступний параметр BMS 142", 1.0, "", True, "BMS"),
+    143: ("Недоступний параметр BMS 143", 1.0, "", True, "BMS"),
+    144: ("Параметр BMS 144", 1.0, "", False, "BMS"),
 
     157: ("Код робочого стану", 1.0, "", False, "Система"),
-    158: ("Стан/внутрішнє значення", 1.0, "", False, "Система"),
+    158: ("Системний параметр стану 158", 1.0, "", False, "Система"),
 
-    321: ("Прапорець каналу/кількості BMS", 1.0, "", False, "BMS"),
-    324: ("Код конфігурації BMS", 1.0, "", False, "BMS"),
-    325: ("Код конфігурації BMS", 1.0, "", False, "BMS"),
-    337: ("Код стану BMS", 1.0, "", False, "BMS"),
-    339: ("Рівень заряду літієвої батареї", 1.0, "%", False, "BMS"),
-    341: ("Вхідна напруга PV", 0.01, "V", False, "PV"),
-    342: ("Напруга літієвої батареї", 0.1, "V", False, "BMS"),
-    343: ("Максимальний струм заряджання літієвої батареї", 0.1, "A", True, "BMS"),
-    344: ("Струм літієвої батареї", 0.1, "A", True, "BMS"),
-    345: ("Межа напруги літієвої батареї", 0.1, "V", False, "BMS"),
-    346: ("Межа напруги літієвої батареї", 0.1, "V", False, "BMS"),
-    349: ("Межа напруги літієвої батареї", 0.1, "V", False, "BMS"),
-    350: ("Межа струму розряджання літієвої батареї", 0.1, "A", True, "BMS"),
+    321: ("Прапорець каналу BMS", 1.0, "", False, "BMS"),
+    324: ("Код конфігурації BMS 324", 1.0, "", False, "BMS"),
+    325: ("Код конфігурації BMS 325", 1.0, "", False, "BMS"),
+    337: ("Код стану BMS 337", 1.0, "", False, "BMS"),
+    339: ("Рівень заряду батареї BMS", 1.0, "%", False, "BMS"),
+    341: ("Канал напруги 341, ймовірно PV", 0.01, "V", False, "PV"),
+    342: ("Напруга батареї BMS, канал 342", 0.1, "V", False, "BMS"),
+    343: ("Струм BMS, канал 343", 0.1, "A", True, "BMS"),
+    344: ("Струм батареї BMS, канал 344", 0.1, "A", True, "BMS"),
+    345: ("Верхня межа напруги BMS", 0.1, "V", False, "BMS"),
+    346: ("Нижня межа напруги BMS 1", 0.1, "V", False, "BMS"),
+    349: ("Нижня межа напруги BMS 2", 0.1, "V", False, "BMS"),
+    350: ("Знаковий струмовий параметр BMS", 0.1, "A", True, "BMS"),
 
-    376: ("Налаштування напруги батареї", 0.1, "V", False, "Налаштування"),
-    377: ("Налаштування напруги батареї", 0.1, "V", False, "Налаштування"),
-    378: ("Налаштування струму батареї", 0.1, "A", False, "Налаштування"),
-    379: ("Налаштування струму батареї", 0.1, "A", False, "Налаштування"),
-    383: ("Налаштування напруги батареї", 0.1, "V", False, "Налаштування"),
-    385: ("Номінальна потужність / межа віддачі в мережу", 1.0, "W", False, "Налаштування"),
-    386: ("Налаштування потужності / межа", 1.0, "W", False, "Налаштування"),
+    376: ("Напруга заряджання, налаштування 376", 0.1, "V", False, "Налаштування"),
+    377: ("Напруга заряджання, налаштування 377", 0.1, "V", False, "Налаштування"),
+    378: ("Ліміт струму 378", 0.1, "A", False, "Налаштування"),
+    379: ("Ліміт струму 379", 0.1, "A", False, "Налаштування"),
+    383: ("Верхня напруга батареї, налаштування 383", 0.1, "V", False, "Налаштування"),
+    385: ("Параметр потужності 385", 1.0, "W", False, "Потужність"),
+    386: ("Параметр потужності 386", 1.0, "W", False, "Потужність"),
 
-    401: ("Код BMS/стану", 1.0, "", False, "BMS"),
-    402: ("Прапорець BMS/стану", 1.0, "", False, "BMS"),
-    403: ("Накопичене значення/потужність", 1.0, "", False, "BMS"),
-    404: ("Напруга літієвої батареї", 0.1, "V", False, "BMS"),
-    405: ("Струм літієвої батареї", 0.1, "A", True, "BMS"),
-    406: ("Температура літієвої батареї", 0.1, "°C", False, "BMS"),
-    407: ("Рівень заряду літієвої батареї", 1.0, "%", False, "BMS"),
-    408: ("Залишкова/номінальна ємність літієвої батареї", 1.0, "%", False, "BMS"),
-    409: ("Недоступне значення", 1.0, "", True, "BMS"),
-    410: ("Недоступне значення", 1.0, "", True, "BMS"),
-    411: ("Максимальна напруга заряджання літієвої батареї (P6)", 0.1, "V", False, "BMS"),
-    412: ("Максимальний струм літієвої батареї", 0.1, "A", False, "BMS"),
-    413: ("Потужність батареї/PV", 1.0, "W", False, "BMS"),
-    415: ("Межа налаштування", 1.0, "", False, "Налаштування"),
-    416: ("Межа налаштування", 1.0, "", False, "Налаштування"),
-    417: ("Межа налаштування", 1.0, "", False, "Налаштування"),
+    401: ("Код BMS або стану 401", 1.0, "", False, "BMS"),
+    402: ("Прапорець BMS або стану 402", 1.0, "", False, "BMS"),
+    403: ("Упакований параметр BMS 403", 1.0, "", False, "BMS"),
+    404: ("Напруга батареї BMS, канал 404", 0.1, "V", False, "BMS"),
+    405: ("Струм батареї BMS, канал 405", 0.1, "A", True, "BMS"),
+    406: ("Температура BMS, канал 406", 0.1, "°C", False, "Температура"),
+    407: ("Рівень заряду батареї BMS", 1.0, "%", False, "BMS"),
+    408: ("Відсотковий параметр BMS, можливо SOH", 1.0, "%", False, "BMS"),
+    409: ("Недоступний параметр BMS 409", 1.0, "", True, "BMS"),
+    410: ("Недоступний параметр BMS 410", 1.0, "", True, "BMS"),
+    411: ("Верхня напруга заряджання BMS", 0.1, "V", False, "BMS"),
+    412: ("Ліміт струму BMS", 0.1, "A", False, "BMS"),
+    413: ("Параметр потужності BMS 413", 1.0, "W", False, "Потужність"),
+    415: ("Параметр налаштування 415", 1.0, "", False, "Налаштування"),
+    416: ("Параметр налаштування 416", 1.0, "", False, "Налаштування"),
+    417: ("Параметр налаштування 417", 1.0, "", False, "Налаштування"),
 
-    449: ("Напруга/значення", 0.1, "", False, "Система"),
-    451: ("Упаковане значення/лічильник", 1.0, "", False, "Система"),
-    453: ("Упаковане значення/лічильник", 1.0, "", False, "Система"),
-    455: ("Упаковане знакове значення", 1.0, "", True, "Система"),
+    449: ("Параметр системи 449", 1.0, "", False, "Система"),
+    451: ("Упаковане значення 451", 1.0, "", False, "Система"),
+    453: ("Упаковане значення 453", 1.0, "", False, "Система"),
+    455: ("Упаковане знакове значення 455", 1.0, "", True, "Система"),
 }
 
 METER_DEFINITIONS = [
     (89, [], "Напруга AC", 0.0, 300.0, "V"),
     (91, [], "Частота AC", 45.0, 55.0, "Hz"),
     (92, [], "Температура інвертора", -20.0, 120.0, "°C"),
-    (341, [], "Вхідна напруга PV", 0.0, 600.0, "V"),
+    (341, [], "Напруга каналу 341", 0.0, 600.0, "V"),
     (137, [404, 342, 129], "Напруга батареї", 40.0, 65.0, "V"),
-    (138, [405, 344], "Струм батареї", -100.0, 100.0, "A"),
-    (130, [], "Струм заряджання батареї", 0.0, 150.0, "A"),
+    (138, [405, 344], "Струм батареї", -150.0, 150.0, "A"),
+    (130, [], "Струм батареї без знаку", 0.0, 150.0, "A"),
     (139, [407, 339, 133], "Рівень заряду батареї", 0.0, 100.0, "%"),
-    (140, [406, 134], "Температура батареї", -20.0, 100.0, "°C"),
-    (408, [], "Стан батареї SOH / межа", 0.0, 100.0, "%"),
-    (141, [411], "Макс. напруга заряджання", 40.0, 65.0, "V"),
-    (343, [412], "Макс. струм заряджання", 0.0, 150.0, "A"),
-    (350, [], "Межа струму розряджання", -200.0, 200.0, "A"),
-    (413, [], "Потужність батареї / PV", 0.0, 15000.0, "W"),
-    (385, [], "Номінальна потужність", 0.0, 15000.0, "W"),
-    (386, [], "Межа потужності", 0.0, 15000.0, "W"),
+    (140, [406], "Температура BMS", -20.0, 100.0, "°C"),
+    (134, [], "Температура батареї", -20.0, 100.0, "°C"),
+    (408, [], "Відсотковий параметр BMS", 0.0, 100.0, "%"),
+    (141, [411, 376, 377], "Напруга заряджання / ліміт", 40.0, 65.0, "V"),
+    (343, [], "Струм BMS, канал 343", -150.0, 150.0, "A"),
+    (412, [378, 379], "Ліміт струму BMS", 0.0, 150.0, "A"),
+    (350, [], "Знаковий струмовий параметр", -200.0, 200.0, "A"),
+    (413, [], "Параметр потужності 413", 0.0, 15000.0, "W"),
+    (385, [], "Параметр потужності 385", 0.0, 15000.0, "W"),
+    (386, [], "Параметр потужності 386", 0.0, 15000.0, "W"),
 ]
 
 
@@ -227,11 +254,11 @@ ALARM_CODES = {
 }
 
 OPERATING_STATUS = {
-    0: "Очікування / невідомо",
-    1: "Робота від мережі / байпас",
-    2: "Робота інвертора від батареї або PV",
-    3: "Заряджання / активна робота",
-    4: "Помилка або аварійний стан",
+    0: "Очікування або невідомий стан",
+    1: "Ймовірно робота від мережі або байпас",
+    2: "Ймовірно робота інвертора від батареї або PV",
+    3: "Ймовірно заряджання або активна робота",
+    4: "Ймовірно помилка або аварійний стан",
 }
 
 VALUE_PATTERN = re.compile(r"\[(\d+)\]:\s*(-?\d+)")
@@ -393,6 +420,169 @@ def read_compatible() -> tuple[dict[int, int], int, int, str | None]:
     return values, failed, requests, last_error
 
 
+def register_log_status() -> dict[str, Any]:
+    """Return the current register change-log state for the web dashboard."""
+    with register_log_lock:
+        path = register_log_path
+        if path is None and REGISTER_LOG_DIRECTORY.exists():
+            path = max(
+                REGISTER_LOG_DIRECTORY.glob("register_changes_*.csv"),
+                key=lambda candidate: candidate.stat().st_mtime,
+                default=None,
+            )
+        size = path.stat().st_size if path is not None and path.exists() else 0
+        return {
+            "active": register_log_file is not None,
+            "filename": path.name if path is not None else "",
+            "started_at": register_log_started_at,
+            "changes": register_log_changes,
+            "size_bytes": size,
+            "available": path is not None and path.exists(),
+            "error": register_log_error,
+        }
+
+
+def start_register_log() -> dict[str, Any]:
+    """Start a new CSV file containing initial and changed register values."""
+    global register_log_file, register_log_writer, register_log_path
+    global register_log_started_at, register_log_changes, register_log_error
+    global register_log_previous_values
+
+    with register_log_lock:
+        if register_log_file is not None:
+            return register_log_status_unlocked()
+        try:
+            REGISTER_LOG_DIRECTORY.mkdir(parents=True, exist_ok=True)
+            now = datetime.now(MADRID_TIME_ZONE)
+            path = REGISTER_LOG_DIRECTORY / (
+                f"register_changes_{now.strftime('%Y%m%d_%H%M%S_%f')}.csv"
+            )
+            log_file = path.open("x", encoding="utf-8", newline="", buffering=1)
+            writer = csv.writer(log_file)
+            writer.writerow([
+                "timestamp_madrid",
+                "cycle",
+                "event",
+                "register",
+                "group",
+                "name",
+                "previous_raw",
+                "raw",
+                "display",
+                "unit",
+                "note",
+            ])
+            register_log_file = log_file
+            register_log_writer = writer
+            register_log_path = path
+            register_log_started_at = now.isoformat(timespec="seconds")
+            register_log_changes = 0
+            register_log_error = ""
+            register_log_previous_values = {}
+        except OSError as error:
+            register_log_error = str(error)
+        return register_log_status_unlocked()
+
+
+def stop_register_log() -> dict[str, Any]:
+    """Flush and close the active register change log."""
+    global register_log_file, register_log_writer, register_log_error
+    with register_log_lock:
+        try:
+            if register_log_file is not None:
+                register_log_file.flush()
+                register_log_file.close()
+        except OSError as error:
+            register_log_error = str(error)
+        finally:
+            register_log_file = None
+            register_log_writer = None
+        return register_log_status_unlocked()
+
+
+def register_log_status_unlocked() -> dict[str, Any]:
+    """Return log state while the caller holds ``register_log_lock``."""
+    path = register_log_path
+    size = path.stat().st_size if path is not None and path.exists() else 0
+    return {
+        "active": register_log_file is not None,
+        "filename": path.name if path is not None else "",
+        "started_at": register_log_started_at,
+        "changes": register_log_changes,
+        "size_bytes": size,
+        "available": path is not None and path.exists(),
+        "error": register_log_error,
+    }
+
+
+def record_register_changes(values: dict[int, int], cycle_id: int) -> None:
+    """Append the initial snapshot or values changed since the prior poll."""
+    global register_log_changes, register_log_error, register_log_previous_values
+    with register_log_lock:
+        if register_log_file is None or register_log_writer is None:
+            return
+        initial_snapshot = not register_log_previous_values
+        timestamp = datetime.now(MADRID_TIME_ZONE).isoformat(timespec="milliseconds")
+        try:
+            for register, raw in sorted(values.items()):
+                previous_raw = register_log_previous_values.get(register)
+                if not initial_snapshot and previous_raw == raw:
+                    continue
+                name, display, unit, _, group = normalize(register, raw)
+                register_log_writer.writerow([
+                    timestamp,
+                    cycle_id,
+                    "INITIAL" if initial_snapshot else "CHANGE",
+                    register,
+                    group,
+                    name,
+                    "" if previous_raw is None else previous_raw,
+                    raw,
+                    display,
+                    unit,
+                    "",
+                ])
+                register_log_changes += 1
+            register_log_file.flush()
+            register_log_previous_values = dict(values)
+            register_log_error = ""
+        except OSError as error:
+            register_log_error = str(error)
+
+
+def record_register_log_note(note: str, cycle_id: int) -> dict[str, Any]:
+    """Add a user-supplied experiment marker to the active CSV log."""
+    global register_log_changes, register_log_error
+    clean_note = " ".join(note.strip().split())
+    if not clean_note:
+        raise ValueError("нотатка не може бути порожньою")
+    if len(clean_note) > 500:
+        raise ValueError("нотатка не може перевищувати 500 символів")
+    with register_log_lock:
+        if register_log_file is None or register_log_writer is None:
+            raise ValueError("спочатку запустіть запис журналу")
+        try:
+            register_log_writer.writerow([
+                datetime.now(MADRID_TIME_ZONE).isoformat(timespec="milliseconds"),
+                cycle_id,
+                "NOTE",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                clean_note,
+            ])
+            register_log_file.flush()
+            register_log_changes += 1
+            register_log_error = ""
+        except OSError as error:
+            register_log_error = str(error)
+        return register_log_status_unlocked()
+
+
 def poll_worker() -> None:
     cached: dict[int, int] = {}
 
@@ -423,7 +613,9 @@ def poll_worker() -> None:
 
         with state_lock:
             state["online"] = bool(fresh)
-            state["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            state["updated_at"] = datetime.now(MADRID_TIME_ZONE).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
             state["cycle_seconds"] = duration
             state["cycle_id"] += 1
             state["requests"] = requests
@@ -432,12 +624,15 @@ def poll_worker() -> None:
             state["error"] = "" if fresh else (error or "помилка читання")
             state["identifier"] = decode_identifier(cached)
             state["values"] = dict(cached)
+            log_cycle_id = int(state["cycle_id"])
+            log_values = dict(cached)
 
             if state["stop"]:
                 return
 
             poll_rate = POLL_RATES[state["poll_rate_index"]]
 
+        record_register_changes(log_values, log_cycle_id)
         poll_wake_event.wait(max(0.0, poll_rate - duration))
         poll_wake_event.clear()
 
@@ -768,11 +963,9 @@ WEB_DASHBOARD = r"""<!doctype html>
     .language-option.active {
       color: #06202a; background: var(--cyan); box-shadow: 0 3px 12px rgba(34,211,238,.22);
     }
-    #view-toggle {
-      border-color: rgba(56,189,248,.38);
-      background: linear-gradient(135deg, rgba(14,165,233,.2), rgba(34,211,238,.1));
-      font-weight: 750;
-    }
+    .view-tabs { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 12px; background: var(--control) }
+    .view-tab { min-height: 32px; padding: 0 10px; border: 0; border-radius: 9px; color: var(--muted); background: transparent; font-size: 12px; font-weight: 750 }
+    .view-tab.active { color: #06202a; background: var(--cyan); box-shadow: 0 3px 12px rgba(34,211,238,.2) }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); box-shadow: 0 0 14px var(--red) }
     .online .dot { background: var(--green); box-shadow: 0 0 14px var(--green) }
     .paused .dot { background: var(--amber); box-shadow: 0 0 14px var(--amber) }
@@ -892,6 +1085,21 @@ WEB_DASHBOARD = r"""<!doctype html>
     .source { margin-top: 5px; color: var(--muted); text-align: center; font-size: 11px }
     .panel { padding: 18px; border-radius: 18px }
     .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px }
+    .register-logger { margin-bottom: 18px }
+    .logger-layout { display: flex; align-items: center; justify-content: space-between; gap: 18px }
+    .logger-copy { min-width: 0 }
+    .logger-status { margin-top: 7px; color: var(--muted); overflow-wrap: anywhere }
+    .logger-status.active { color: var(--green) }
+    .logger-status.error-text { color: var(--red) }
+    .logger-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px }
+    .logger-note { width: min(300px, 100%); flex: 1 1 220px }
+    .logger-actions button, .logger-download {
+      display: inline-flex; align-items: center; justify-content: center; min-height: 40px;
+      padding: 0 13px; border: 1px solid var(--line); border-radius: 12px;
+      color: var(--text); background: var(--control); text-decoration: none; font: inherit;
+    }
+    #register-log-start { border-color: rgba(52,211,153,.4); background: rgba(16,185,129,.16) }
+    #register-log-stop { border-color: rgba(251,113,133,.4); background: rgba(127,29,29,.18) }
     h2 { margin: 0; font-size: 16px }
     input { width: min(270px, 46vw); outline: none }
     input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(56,189,248,.12) }
@@ -904,6 +1112,48 @@ WEB_DASHBOARD = r"""<!doctype html>
     td:nth-child(1), td:nth-child(4), td:nth-child(5) { white-space: nowrap }
     .error { display: none; margin-bottom: 15px; color: #fecdd3; border-color: rgba(251,113,133,.35); background: rgba(127,29,29,.24) }
     .error.show { display: block }
+    .lcd-panel { max-width: 1080px; margin: 0 auto }
+    .lcd-screen {
+      overflow: hidden; padding: clamp(16px, 3vw, 32px); border: 8px solid #263238;
+      border-radius: 22px; color: #10241d; background: linear-gradient(145deg, #c9e3c4, #a9caa7);
+      box-shadow: inset 0 0 35px rgba(24,54,40,.2), 0 22px 65px rgba(0,0,0,.35);
+      font-family: "Courier New", ui-monospace, monospace; font-variant-numeric: tabular-nums;
+    }
+    .lcd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 2px solid rgba(16,36,29,.25) }
+    .lcd-head h2 { font: 900 clamp(18px,3vw,28px)/1.1 inherit; letter-spacing: .08em }
+    .lcd-subtitle { margin-top: 4px; opacity: .68; font-size: 12px }
+    .lcd-mode { padding: 5px 10px; border: 2px solid currentColor; border-radius: 6px; font-weight: 900; text-transform: uppercase }
+    .lcd-flow { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 9px; margin: 24px 0 }
+    .lcd-node { min-width: 0; padding: 12px 8px; border: 2px solid rgba(16,36,29,.34); border-radius: 9px; text-align: center; opacity: .52 }
+    .lcd-node.active { opacity: 1; border-color: currentColor; box-shadow: inset 0 0 0 2px rgba(16,36,29,.1) }
+    .lcd-node-icon { display: block; font: 900 25px/1 system-ui; margin-bottom: 5px }
+    .lcd-node-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 900; text-transform: uppercase }
+    .lcd-node-value { display: block; margin-top: 3px; font-size: clamp(14px,2vw,20px); font-weight: 900 }
+    .lcd-arrow { text-align: center; font-size: 25px; font-weight: 900; opacity: .35 }
+    .lcd-arrow.active { opacity: 1; animation: lcd-pulse 1.2s ease-in-out infinite }
+    .lcd-main { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin-bottom: 14px }
+    .lcd-primary { padding: 15px; border: 2px solid rgba(16,36,29,.3); border-radius: 9px; text-align: center }
+    .lcd-primary.active { border-color: currentColor; box-shadow: inset 0 0 0 2px rgba(16,36,29,.1) }
+    .lcd-primary-label, .lcd-readout-label { display: block; font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; opacity: .7 }
+    .lcd-primary-value { display: block; margin-top: 4px; font-size: clamp(26px,5vw,46px); font-weight: 900; letter-spacing: -.06em }
+    .lcd-readouts { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px }
+    .lcd-readout { min-width: 0; padding: 11px; border-top: 2px solid rgba(16,36,29,.28) }
+    .lcd-readout-value { display: block; margin-top: 3px; overflow-wrap: anywhere; font-size: clamp(14px,2vw,20px); font-weight: 900 }
+    .lcd-status-line { margin-top: 16px; padding-top: 13px; border-top: 2px solid rgba(16,36,29,.25); font-weight: 900 }
+    .lcd-page-panel { margin-top: 17px; padding: 14px; border: 2px solid rgba(16,36,29,.35); border-radius: 9px; background: rgba(220,239,211,.22) }
+    .lcd-page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px }
+    .lcd-page-code { padding: 2px 7px; border: 2px solid currentColor; border-radius: 5px; font-size: 18px; font-weight: 900 }
+    .lcd-page-title { text-align: right; font-weight: 900; text-transform: uppercase }
+    .lcd-page-values { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; margin-top: 12px }
+    .lcd-page-reading { padding-top: 9px; border-top: 2px solid rgba(16,36,29,.24) }
+    .lcd-page-description { margin-top: 10px; min-height: 2.8em; font: 600 12px/1.4 system-ui,sans-serif; opacity: .75 }
+    .lcd-controls-wrap { margin-top: 16px; padding-top: 16px; border-top: 2px solid rgba(16,36,29,.25) }
+    .lcd-controls-title { font: 900 11px/1.2 system-ui,sans-serif; letter-spacing: .08em; text-transform: uppercase; opacity: .7 }
+    .lcd-controls { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; margin-top: 9px }
+    .lcd-key { min-height: 48px; border: 3px solid #17231f; border-radius: 9px; color: #d4e8d0; background: #263731; box-shadow: inset 0 -4px rgba(0,0,0,.24), 0 3px 0 #101915; font: 900 13px/1 system-ui,sans-serif }
+    .lcd-key:active { transform: translateY(2px); box-shadow: inset 0 -2px rgba(0,0,0,.2), 0 1px 0 #101915 }
+    .lcd-controls-note { margin-top: 10px; font: 600 11px/1.4 system-ui,sans-serif; opacity: .68 }
+    @keyframes lcd-pulse { 50% { transform: translateX(3px); opacity: .55 } }
     .charts-layout {
       display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px;
       align-items: start;
@@ -960,6 +1210,8 @@ WEB_DASHBOARD = r"""<!doctype html>
       .header-actions { justify-content: flex-start }
       .status { margin-left: auto }
       .gauges, .custom-value-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+      .logger-layout { align-items: stretch; flex-direction: column }
+      .logger-actions > * { flex: 1 1 140px }
       .charts-layout { grid-template-columns: 1fr }
       .chart-selector { position: static; max-height: none }
       .value-list { max-height: min(42vh, 360px) }
@@ -975,6 +1227,8 @@ WEB_DASHBOARD = r"""<!doctype html>
         gap: 8px;
       }
       .header-actions button { width: 100%; min-width: 0; padding-inline: 8px }
+      .view-tabs { grid-column: 1 / -1; width: 100% }
+      .view-tab { flex: 1 1 0 }
       .theme-switch { min-height: 44px }
       .status { justify-self: end; margin-left: 0; min-height: 44px }
       .toolbar {
@@ -1007,6 +1261,14 @@ WEB_DASHBOARD = r"""<!doctype html>
       .chart-latest { font-size: 17px }
       .chart-card canvas { height: 190px }
       .chart-empty { min-height: 220px }
+      .lcd-screen { border-width: 5px; border-radius: 16px }
+      .lcd-flow { gap: 5px }
+      .lcd-node { padding: 9px 4px }
+      .lcd-node-icon { font-size: 20px }
+      .lcd-arrow { font-size: 18px }
+      .lcd-main { grid-template-columns: 1fr }
+      .lcd-readouts { grid-template-columns: repeat(2,minmax(0,1fr)) }
+      .lcd-controls { grid-template-columns: repeat(2,minmax(0,1fr)) }
       .table-wrap { max-height: none; overflow: visible }
       table, tbody { display: block; width: 100% }
       thead { display: none }
@@ -1077,7 +1339,11 @@ WEB_DASHBOARD = r"""<!doctype html>
           <button class="language-option" type="button" data-language="en" aria-pressed="false">ENG</button>
         </div>
         <button id="app-toggle" type="button">Зупинити моніторинг</button>
-        <button id="view-toggle" type="button">Переглянути графіки</button>
+        <div class="view-tabs" role="tablist" aria-label="Розділи" data-i18n-aria="viewTabsAria">
+          <button class="view-tab active" id="dashboard-tab" type="button" role="tab" data-view="dashboard" aria-selected="true" data-i18n="dashboardTab">Панель</button>
+          <button class="view-tab" id="charts-tab" type="button" role="tab" data-view="charts" aria-selected="false" data-i18n="chartsTab">Графіки</button>
+          <button class="view-tab" id="lcd-tab" type="button" role="tab" data-view="lcd" aria-selected="false" data-i18n="lcdTab">LCD</button>
+        </div>
         <div class="status" id="status"><span class="dot"></span><span class="status-label">НЕМАЄ ЗВ’ЯЗКУ</span></div>
       </div>
     </header>
@@ -1095,7 +1361,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           <option value="fast" data-i18n="fast">Швидкий</option><option value="compatible" data-i18n="compatible">Сумісний</option>
         </select>
       </label>
-      <button id="demo-button" class="all-data-demo-button" type="button">Запустити демо на 120 с · 79 значень</button>
+      <button id="demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
       <button id="manage-values-button" type="button" data-i18n="addValues">＋ Додати індикатори</button>
       <span class="chip" id="cycle">Цикл —</span>
       <span class="chip" id="site-visits">Відвідувачі — · —</span>
@@ -1104,6 +1370,23 @@ WEB_DASHBOARD = r"""<!doctype html>
 
     <div class="panel error" id="error"></div>
     <section class="gauges" id="gauges" aria-label="Індикатори інвертора" data-i18n-aria="gaugesAria"></section>
+
+    <section class="panel register-logger">
+      <div class="logger-layout">
+        <div class="logger-copy">
+          <h2 data-i18n="registerLogger">Журнал змін регістрів</h2>
+          <div class="muted" data-i18n="registerLoggerHelp">Записує початковий знімок і лише змінені значення у CSV з часом Мадрида.</div>
+          <div class="logger-status" id="register-log-status" aria-live="polite">Запис не запущено</div>
+        </div>
+        <div class="logger-actions">
+          <input class="logger-note" id="register-log-note" type="text" maxlength="500" placeholder="Напр. панелі вимкнено" data-i18n-placeholder="registerLogNotePlaceholder" disabled>
+          <button id="register-log-mark" type="button" data-i18n="markRegisterLog" disabled>＋ Додати позначку</button>
+          <button id="register-log-start" type="button" data-i18n="startRegisterLog">● Почати запис</button>
+          <button id="register-log-stop" type="button" data-i18n="stopRegisterLog" disabled>■ Зупинити</button>
+          <a class="logger-download" id="register-log-download" href="/api/register-log/download" data-i18n="downloadRegisterLog" hidden>↓ Завантажити CSV</a>
+        </div>
+      </div>
+    </section>
 
     <section class="panel">
       <div class="panel-head">
@@ -1117,6 +1400,58 @@ WEB_DASHBOARD = r"""<!doctype html>
         </table>
       </div>
     </section>
+    </section>
+
+    <section id="lcd-view" hidden>
+      <div class="panel lcd-panel">
+        <div class="lcd-screen">
+          <div class="lcd-head">
+            <div><h2 data-i18n="lcdTitle">LCD ІНВЕРТОРА</h2><div class="lcd-subtitle" data-i18n="lcdSubtitle">Поточні показники з Modbus</div></div>
+            <span class="lcd-mode" id="lcd-mode">—</span>
+          </div>
+          <div class="lcd-flow">
+            <div class="lcd-node" id="lcd-grid-node"><span class="lcd-node-icon">∿</span><span class="lcd-node-label" data-i18n="grid">Мережа</span><span class="lcd-node-value" id="lcd-grid">—</span></div>
+            <div class="lcd-arrow" id="lcd-grid-arrow">→</div>
+            <div class="lcd-node" id="lcd-inverter-node"><span class="lcd-node-icon">▣</span><span class="lcd-node-label" data-i18n="inverter">Інвертор</span><span class="lcd-node-value" id="lcd-power">—</span></div>
+            <div class="lcd-arrow" id="lcd-load-arrow">→</div>
+            <div class="lcd-node" id="lcd-load-node"><span class="lcd-node-icon">⌂</span><span class="lcd-node-label" data-i18n="load">Навантаження</span><span class="lcd-node-value" id="lcd-load">—</span></div>
+          </div>
+          <div class="lcd-main">
+            <div class="lcd-primary" id="lcd-pv-card"><span class="lcd-primary-label" data-i18n="pvInput">Вхід PV</span><span class="lcd-primary-value" id="lcd-pv">—</span></div>
+            <div class="lcd-primary" id="lcd-battery-card"><span class="lcd-primary-label" data-i18n="batteryVoltage">Напруга батареї</span><span class="lcd-primary-value" id="lcd-battery-voltage">—</span></div>
+            <div class="lcd-primary" id="lcd-soc-card"><span class="lcd-primary-label" data-i18n="batterySoc">Заряд батареї</span><span class="lcd-primary-value" id="lcd-soc">—</span></div>
+          </div>
+          <div class="lcd-readouts">
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="frequency">Частота</span><span class="lcd-readout-value" id="lcd-frequency">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryCurrent">Струм батареї</span><span class="lcd-readout-value" id="lcd-battery-current">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryTemperature">Температура батареї</span><span class="lcd-readout-value" id="lcd-temperature">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="maxChargeVoltage">Макс. напруга заряду</span><span class="lcd-readout-value" id="lcd-charge-voltage">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="currentLimit">Ліміт струму</span><span class="lcd-readout-value" id="lcd-current-limit">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryState">Стан батареї</span><span class="lcd-readout-value" id="lcd-battery-state">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="inverterTemperature">Температура інвертора</span><span class="lcd-readout-value" id="lcd-inverter-temperature">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="systemStatus">Стан системи</span><span class="lcd-readout-value" id="lcd-system-status">—</span></div>
+          </div>
+          <div class="lcd-status-line" id="lcd-status-line">—</div>
+          <div class="lcd-page-panel" aria-live="polite">
+            <div class="lcd-page-head"><span class="lcd-page-code" id="lcd-page-code">LCD</span><span class="lcd-page-title" id="lcd-page-title">—</span></div>
+            <div class="lcd-page-values">
+              <div class="lcd-page-reading" id="lcd-page-reading-1"><span class="lcd-readout-label" id="lcd-page-label-1">—</span><span class="lcd-readout-value" id="lcd-page-value-1">—</span></div>
+              <div class="lcd-page-reading" id="lcd-page-reading-2"><span class="lcd-readout-label" id="lcd-page-label-2">—</span><span class="lcd-readout-value" id="lcd-page-value-2">—</span></div>
+            </div>
+            <div class="lcd-page-description" id="lcd-page-description">—</div>
+          </div>
+          <div class="lcd-controls-wrap">
+            <div class="lcd-controls-title" data-i18n="lcdControls">Керування LCD</div>
+            <div class="lcd-controls" role="group" aria-label="Керування LCD" data-i18n-aria="lcdControls">
+              <button class="lcd-key" type="button" data-lcd-key="escape" data-i18n-aria="lcdEscapeAria">ESC</button>
+              <button class="lcd-key" type="button" data-lcd-key="up" data-i18n-aria="lcdUpAria">▲ UP</button>
+              <button class="lcd-key" type="button" data-lcd-key="down" data-i18n-aria="lcdDownAria">▼ DOWN</button>
+              <button class="lcd-key" type="button" data-lcd-key="enter" data-i18n-aria="lcdEnterAria">ENTER</button>
+            </div>
+            <div class="lcd-controls-note" data-i18n="lcdControlsLocalOnly">Віртуальні клавіші керують лише сторінками в застосунку й не записують налаштування в інвертор.</div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section id="charts-view" hidden>
@@ -1133,7 +1468,7 @@ WEB_DASHBOARD = r"""<!doctype html>
               <h2 data-i18n="liveCharts">Графіки в реальному часі</h2>
               <span class="muted" id="chart-selection-count">Значення не вибрано</span>
             </div>
-            <button id="chart-demo-button" class="all-data-demo-button" type="button">Запустити демо на 120 с · 79 значень</button>
+            <button id="chart-demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
           </div>
           <div class="chart-grid" id="chart-grid">
             <div class="chart-empty">Виберіть значення зі списку, щоб запустити графіки в реальному часі.</div>
@@ -1164,14 +1499,45 @@ WEB_DASHBOARD = r"""<!doctype html>
         themeDark: 'Темна', themeLight: 'Світла',
         stopMonitoring: 'Зупинити моніторинг', startMonitoring: 'Запустити моніторинг',
         viewCharts: 'Переглянути графіки', dashboard: '← Панель',
-        offline: 'НЕМАЄ ЗВ’ЯЗКУ', online: 'У МЕРЕЖІ', paused: 'ПРИЗУПИНЕНО',
+        viewTabsAria: 'Розділи застосунку', dashboardTab: 'Панель', chartsTab: 'Графіки', lcdTab: 'LCD',
+        lcdTitle: 'LCD ІНВЕРТОРА', lcdSubtitle: 'Поточні показники з Modbus',
+        grid: 'Мережа', inverter: 'Інвертор', load: 'Навантаження', pvInput: 'Вхід PV',
+        batteryVoltage: 'Напруга батареї', batterySoc: 'Заряд батареї', frequency: 'Частота',
+        batteryCurrent: 'Струм батареї', batteryTemperature: 'Температура батареї',
+        maxChargeVoltage: 'Макс. напруга заряду', currentLimit: 'Ліміт струму', batteryState: 'Стан батареї',
+        inverterTemperature: 'Температура інвертора', systemStatus: 'Стан системи',
+        charging: 'ЗАРЯДЖАННЯ', discharging: 'РОЗРЯДЖАННЯ', batteryIdle: 'ОЧІКУВАННЯ',
+        lcdControls: 'Керування LCD', lcdEscapeAria: 'Повернутися на головний екран LCD',
+        lcdUpAria: 'Попередня інформаційна сторінка LCD', lcdDownAria: 'Наступна інформаційна сторінка LCD',
+        lcdEnterAria: 'Відкрити вибрану сторінку LCD',
+        lcdControlsLocalOnly: 'Віртуальні клавіші керують лише сторінками в застосунку й не записують налаштування в інвертор.',
+        mainDisplay: 'Головний екран', dailyPvEnergy: 'Сонячна енергія за день', totalPvEnergy: 'Загальна сонячна енергія',
+        ratedCapacity: 'Номінальна ємність', remainingCapacity: 'Залишкова ємність',
+        minDischargeVoltage: 'Мін. напруга розряду', maxChargeCurrent: 'Макс. струм заряду',
+        maxDischargeCurrent: 'Макс. струм розряду', alarmFault: 'Аварії та попередження', faultCode: 'Код аварії', alarmCode: 'Код попередження', firmwareVersion: 'Версія прошивки',
+        lcdMainPageHelp: 'ESC повертає на цей екран. UP і DOWN перемикають інформаційні сторінки P1–P9 з інструкції.',
+        lcdP1Help: 'P1 показує денне вироблення сонячної енергії. Відповідний Modbus-регістр у документації не вказано.',
+        lcdP2Help: 'P2 показує загальне вироблення сонячної енергії. Відповідний Modbus-регістр у документації не вказано.',
+        lcdP3Help: 'P3 показує напругу та струм літієвої батареї.', lcdP4Help: 'P4 показує температуру та SOC літієвої батареї.',
+        lcdP5Help: 'P5 показує номінальну та залишкову ємність батареї.', lcdP6Help: 'P6 показує максимальну напругу заряду та мінімальну напругу розряду.',
+        lcdP7Help: 'P7 показує максимальний струм заряду та розряду.', lcdP8Help: 'P8 показує коди аварій і попереджень батареї.',
+        lcdP9Help: 'P9 показує версію прошивки інвертора.', settingsReadOnly: 'Режим налаштувань недоступний: інструкція не містить безпечних Modbus-адрес для запису.',
+        offline: 'НЕМАЄ ЗВ’ЯЗКУ', online: 'У МЕРЕЖІ', paused: 'ПРИЗУПИНЕНО', demoMode: 'ДЕМО',
         requestEvery: 'Запит кожні', pollAria: 'Інтервал опитування',
         interval05: '0.5 с', interval1: '1 с', interval2: '2 с', interval5: '5 с', interval10: '10 с',
         readMode: 'Режим читання', readModeAria: 'Режим читання',
         fast: 'Швидкий', compatible: 'Сумісний',
-        runDemo: 'Запустити демо на 120 с · 79 значень',
+        runDemo: 'Запустити реалістичне демо на 120 с',
         stopDemo: '■ Зупинити · {elapsed} / {seconds} с · {count} значень',
         addValues: '＋ Додати індикатори',
+        registerLogger: 'Журнал змін регістрів',
+        registerLoggerHelp: 'Записує початковий знімок і лише змінені значення у CSV з часом Мадрида.',
+        registerLogNotePlaceholder: 'Напр. панелі вимкнено', markRegisterLog: '＋ Додати позначку',
+        startRegisterLog: '● Почати запис', stopRegisterLog: '■ Зупинити',
+        downloadRegisterLog: '↓ Завантажити CSV', registerLogIdle: 'Запис не запущено',
+        registerLogActive: 'Запис · {filename} · рядків: {changes} · {size}',
+        registerLogStopped: 'Зупинено · {filename} · рядків: {changes} · {size}',
+        registerLogError: 'Помилка журналу: {error}', registerLogRequestError: 'Не вдалося змінити стан журналу: {error}',
         cycleInitial: 'Цикл —', visitorsInitial: 'Відвідувачі — · —',
         notUpdated: 'Ще не оновлено', gaugesAria: 'Індикатори інвертора',
         addedValues: 'Додані індикатори панелі', liveRegisters: 'Поточні регістри',
@@ -1199,7 +1565,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         connectionError: 'Помилка підключення: {error}',
         connectionLost: 'Втрачено зв’язок із панеллю: {error}',
         unitValue: 'значення', gaugeDetail: '{unit} · шкала R{register}',
-        allDataDemo: 'Випадкове демо всіх даних', direct: 'прямий перехід',
+        allDataDemo: 'Реалістичне демо даних', direct: 'прямий перехід',
         visitConsole: '[Відвідування Solar Invertor Web]',
         totalVisitorsLabel: 'усього відвідувачів', dateLabel: 'дата', openedLabel: 'відкрито',
         referrerLabel: 'джерело переходу', browserLanguageLabel: 'мова браузера',
@@ -1212,14 +1578,45 @@ WEB_DASHBOARD = r"""<!doctype html>
         themeDark: 'Тёмная', themeLight: 'Светлая',
         stopMonitoring: 'Остановить мониторинг', startMonitoring: 'Запустить мониторинг',
         viewCharts: 'Просмотреть графики', dashboard: '← Панель',
-        offline: 'НЕТ СВЯЗИ', online: 'В СЕТИ', paused: 'ПРИОСТАНОВЛЕНО',
+        viewTabsAria: 'Разделы приложения', dashboardTab: 'Панель', chartsTab: 'Графики', lcdTab: 'LCD',
+        lcdTitle: 'LCD ИНВЕРТОРА', lcdSubtitle: 'Текущие показатели из Modbus',
+        grid: 'Сеть', inverter: 'Инвертор', load: 'Нагрузка', pvInput: 'Вход PV',
+        batteryVoltage: 'Напряжение батареи', batterySoc: 'Заряд батареи', frequency: 'Частота',
+        batteryCurrent: 'Ток батареи', batteryTemperature: 'Температура батареи',
+        maxChargeVoltage: 'Макс. напряжение заряда', currentLimit: 'Предел тока', batteryState: 'Состояние батареи',
+        inverterTemperature: 'Температура инвертора', systemStatus: 'Состояние системы',
+        charging: 'ЗАРЯДКА', discharging: 'РАЗРЯДКА', batteryIdle: 'ОЖИДАНИЕ',
+        lcdControls: 'Управление LCD', lcdEscapeAria: 'Вернуться на главный экран LCD',
+        lcdUpAria: 'Предыдущая информационная страница LCD', lcdDownAria: 'Следующая информационная страница LCD',
+        lcdEnterAria: 'Открыть выбранную страницу LCD',
+        lcdControlsLocalOnly: 'Виртуальные клавиши управляют только страницами в приложении и не записывают настройки в инвертор.',
+        mainDisplay: 'Главный экран', dailyPvEnergy: 'Солнечная энергия за день', totalPvEnergy: 'Общая солнечная энергия',
+        ratedCapacity: 'Номинальная ёмкость', remainingCapacity: 'Оставшаяся ёмкость',
+        minDischargeVoltage: 'Мин. напряжение разряда', maxChargeCurrent: 'Макс. ток заряда',
+        maxDischargeCurrent: 'Макс. ток разряда', alarmFault: 'Аварии и предупреждения', faultCode: 'Код аварии', alarmCode: 'Код предупреждения', firmwareVersion: 'Версия прошивки',
+        lcdMainPageHelp: 'ESC возвращает на этот экран. UP и DOWN переключают информационные страницы P1–P9 из инструкции.',
+        lcdP1Help: 'P1 показывает дневную выработку солнечной энергии. Соответствующий Modbus-регистр в документации не указан.',
+        lcdP2Help: 'P2 показывает общую выработку солнечной энергии. Соответствующий Modbus-регистр в документации не указан.',
+        lcdP3Help: 'P3 показывает напряжение и ток литиевой батареи.', lcdP4Help: 'P4 показывает температуру и SOC литиевой батареи.',
+        lcdP5Help: 'P5 показывает номинальную и оставшуюся ёмкость батареи.', lcdP6Help: 'P6 показывает максимальное напряжение заряда и минимальное напряжение разряда.',
+        lcdP7Help: 'P7 показывает максимальный ток заряда и разряда.', lcdP8Help: 'P8 показывает коды аварий и предупреждений батареи.',
+        lcdP9Help: 'P9 показывает версию прошивки инвертора.', settingsReadOnly: 'Режим настроек недоступен: инструкция не содержит безопасных Modbus-адресов для записи.',
+        offline: 'НЕТ СВЯЗИ', online: 'В СЕТИ', paused: 'ПРИОСТАНОВЛЕНО', demoMode: 'ДЕМО',
         requestEvery: 'Запрос каждые', pollAria: 'Интервал опроса',
         interval05: '0.5 с', interval1: '1 с', interval2: '2 с', interval5: '5 с', interval10: '10 с',
         readMode: 'Режим чтения', readModeAria: 'Режим чтения',
         fast: 'Быстрый', compatible: 'Совместимый',
-        runDemo: 'Запустить демо на 120 с · 79 значений',
+        runDemo: 'Запустить реалистичное демо на 120 с',
         stopDemo: '■ Остановить · {elapsed} / {seconds} с · {count} значений',
         addValues: '＋ Добавить индикаторы',
+        registerLogger: 'Журнал изменений регистров',
+        registerLoggerHelp: 'Записывает начальный снимок и только изменённые значения в CSV со временем Мадрида.',
+        registerLogNotePlaceholder: 'Напр. панели выключены', markRegisterLog: '＋ Добавить отметку',
+        startRegisterLog: '● Начать запись', stopRegisterLog: '■ Остановить',
+        downloadRegisterLog: '↓ Скачать CSV', registerLogIdle: 'Запись не запущена',
+        registerLogActive: 'Запись · {filename} · строк: {changes} · {size}',
+        registerLogStopped: 'Остановлено · {filename} · строк: {changes} · {size}',
+        registerLogError: 'Ошибка журнала: {error}', registerLogRequestError: 'Не удалось изменить журнал: {error}',
         cycleInitial: 'Цикл —', visitorsInitial: 'Посетители — · —',
         notUpdated: 'Ещё не обновлено', gaugesAria: 'Индикаторы инвертора',
         addedValues: 'Добавленные индикаторы панели', liveRegisters: 'Текущие регистры',
@@ -1247,7 +1644,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         connectionError: 'Ошибка подключения: {error}',
         connectionLost: 'Потеряна связь с панелью: {error}',
         unitValue: 'значение', gaugeDetail: '{unit} · шкала R{register}',
-        allDataDemo: 'Случайное демо всех данных', direct: 'прямой переход',
+        allDataDemo: 'Реалистичное демо данных', direct: 'прямой переход',
         visitConsole: '[Посещение Solar Invertor Web]',
         totalVisitorsLabel: 'всего посетителей', dateLabel: 'дата', openedLabel: 'открыто',
         referrerLabel: 'источник перехода', browserLanguageLabel: 'язык браузера',
@@ -1260,14 +1657,45 @@ WEB_DASHBOARD = r"""<!doctype html>
         themeDark: 'Dark', themeLight: 'Light',
         stopMonitoring: 'Stop monitoring', startMonitoring: 'Start monitoring',
         viewCharts: 'View charts', dashboard: '← Dashboard',
-        offline: 'OFFLINE', online: 'ONLINE', paused: 'PAUSED',
+        viewTabsAria: 'Application sections', dashboardTab: 'Dashboard', chartsTab: 'Charts', lcdTab: 'LCD',
+        lcdTitle: 'INVERTER LCD', lcdSubtitle: 'Live readings from Modbus',
+        grid: 'Grid', inverter: 'Inverter', load: 'Load', pvInput: 'PV input',
+        batteryVoltage: 'Battery voltage', batterySoc: 'Battery charge', frequency: 'Frequency',
+        batteryCurrent: 'Battery current', batteryTemperature: 'Battery temperature',
+        maxChargeVoltage: 'Max. charge voltage', currentLimit: 'Current limit', batteryState: 'Battery state',
+        inverterTemperature: 'Inverter temperature', systemStatus: 'System status',
+        charging: 'CHARGING', discharging: 'DISCHARGING', batteryIdle: 'IDLE',
+        lcdControls: 'LCD controls', lcdEscapeAria: 'Return to the main LCD screen',
+        lcdUpAria: 'Previous LCD information page', lcdDownAria: 'Next LCD information page',
+        lcdEnterAria: 'Open the selected LCD page',
+        lcdControlsLocalOnly: 'The virtual keys control app pages only and do not write settings to the inverter.',
+        mainDisplay: 'Main display', dailyPvEnergy: 'Daily solar energy', totalPvEnergy: 'Total solar energy',
+        ratedCapacity: 'Rated capacity', remainingCapacity: 'Remaining capacity',
+        minDischargeVoltage: 'Min. discharge voltage', maxChargeCurrent: 'Max. charging current',
+        maxDischargeCurrent: 'Max. discharging current', alarmFault: 'Faults and alarms', faultCode: 'Fault code', alarmCode: 'Alarm code', firmwareVersion: 'Firmware version',
+        lcdMainPageHelp: 'ESC returns to this screen. UP and DOWN browse the manual’s P1–P9 information pages.',
+        lcdP1Help: 'P1 shows daily solar production. The manual does not provide its corresponding Modbus register.',
+        lcdP2Help: 'P2 shows total solar production. The manual does not provide its corresponding Modbus register.',
+        lcdP3Help: 'P3 shows lithium-battery voltage and current.', lcdP4Help: 'P4 shows lithium-battery temperature and SOC.',
+        lcdP5Help: 'P5 shows rated and remaining battery capacity.', lcdP6Help: 'P6 shows maximum charging and minimum discharging voltage.',
+        lcdP7Help: 'P7 shows maximum charging and discharging current.', lcdP8Help: 'P8 shows battery fault and alarm codes.',
+        lcdP9Help: 'P9 shows the inverter firmware version.', settingsReadOnly: 'Settings mode is unavailable because the manual provides no safe Modbus write addresses.',
+        offline: 'OFFLINE', online: 'ONLINE', paused: 'PAUSED', demoMode: 'DEMO',
         requestEvery: 'Request every', pollAria: 'Polling interval',
         interval05: '0.5 s', interval1: '1 s', interval2: '2 s', interval5: '5 s', interval10: '10 s',
         readMode: 'Read mode', readModeAria: 'Read mode',
         fast: 'Fast', compatible: 'Compatible',
-        runDemo: 'Run 120s demo · 79 values',
+        runDemo: 'Run realistic 120s demo',
         stopDemo: '■ Stop · {elapsed} / {seconds}s · {count} values',
         addValues: '＋ Add gauges',
+        registerLogger: 'Register change log',
+        registerLoggerHelp: 'Records an initial snapshot and changed values only in a Madrid-time CSV file.',
+        registerLogNotePlaceholder: 'E.g. panels switched off', markRegisterLog: '＋ Add marker',
+        startRegisterLog: '● Start recording', stopRegisterLog: '■ Stop',
+        downloadRegisterLog: '↓ Download CSV', registerLogIdle: 'Recording is not running',
+        registerLogActive: 'Recording · {filename} · rows: {changes} · {size}',
+        registerLogStopped: 'Stopped · {filename} · rows: {changes} · {size}',
+        registerLogError: 'Log error: {error}', registerLogRequestError: 'Could not change log state: {error}',
         cycleInitial: 'Cycle —', visitorsInitial: 'Visitors — · —',
         notUpdated: 'Not updated yet', gaugesAria: 'Live inverter gauges',
         addedValues: 'Added dashboard gauges', liveRegisters: 'Live registers',
@@ -1295,7 +1723,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         connectionError: 'Connection error: {error}',
         connectionLost: 'Dashboard connection lost: {error}',
         unitValue: 'value', gaugeDetail: '{unit} · gauge R{register}',
-        allDataDemo: 'All-data random demo', direct: 'direct',
+        allDataDemo: 'Realistic data demo', direct: 'direct',
         visitConsole: '[Solar Invertor Web visit]',
         totalVisitorsLabel: 'total visitors', dateLabel: 'date', openedLabel: 'opened',
         referrerLabel: 'referrer', browserLanguageLabel: 'browser language',
@@ -1303,6 +1731,102 @@ WEB_DASHBOARD = r"""<!doctype html>
       }
     };
     const DATA_TRANSLATIONS = {
+      'AC': {ru:'AC', en:'AC'},
+      'BMS': {ru:'BMS', en:'BMS'},
+      'PV': {ru:'PV', en:'PV'},
+      'Ідентифікація': {ru:'Идентификация', en:'Identification'},
+      'Ідентифікатор пристрою, слово 1': {ru:'Идентификатор устройства, слово 1', en:'Device identifier, word 1'},
+      'Ідентифікатор пристрою, слово 2': {ru:'Идентификатор устройства, слово 2', en:'Device identifier, word 2'},
+      'Ідентифікатор пристрою, слово 3': {ru:'Идентификатор устройства, слово 3', en:'Device identifier, word 3'},
+      'Ідентифікатор пристрою, слово 4': {ru:'Идентификатор устройства, слово 4', en:'Device identifier, word 4'},
+      'Ідентифікатор пристрою, слово 5': {ru:'Идентификатор устройства, слово 5', en:'Device identifier, word 5'},
+      'Ідентифікатор пристрою, слово 6': {ru:'Идентификатор устройства, слово 6', en:'Device identifier, word 6'},
+      'Ідентифікатор пристрою, слово 7': {ru:'Идентификатор устройства, слово 7', en:'Device identifier, word 7'},
+      'Ідентифікатор пристрою, слово 8': {ru:'Идентификатор устройства, слово 8', en:'Device identifier, word 8'},
+      'Ідентифікатор пристрою, слово 9': {ru:'Идентификатор устройства, слово 9', en:'Device identifier, word 9'},
+      'Код протоколу або версії': {ru:'Код протокола или версии', en:'Protocol or version code'},
+      'Системне слово 27': {ru:'Системное слово 27', en:'System word 27'},
+      'Системний прапорець 28': {ru:'Системный флаг 28', en:'System flag 28'},
+      'Бітова маска можливостей або стану': {ru:'Битовая маска возможностей или состояния', en:'Capability or status bitmask'},
+      'Системне слово 65': {ru:'Системное слово 65', en:'System word 65'},
+      'Код конфігурації 66': {ru:'Код конфигурации 66', en:'Configuration code 66'},
+      'Код конфігурації 67': {ru:'Код конфигурации 67', en:'Configuration code 67'},
+      'Системне значення 68': {ru:'Системное значение 68', en:'System value 68'},
+      'Упаковане знакове значення 69': {ru:'Упакованное знаковое значение 69', en:'Packed signed value 69'},
+      'Параметр AC 90': {ru:'Параметр AC 90', en:'AC parameter 90'},
+      'Температура': {ru:'Температура', en:'Temperature'},
+      'Температурний канал інвертора': {ru:'Температурный канал инвертора', en:'Inverter temperature channel'},
+      'Канал напруги 93': {ru:'Канал напряжения 93', en:'Voltage channel 93'},
+      'Відсотковий параметр 94': {ru:'Процентный параметр 94', en:'Percentage parameter 94'},
+      'Напруга батареї, канал 129': {ru:'Напряжение батареи, канал 129', en:'Battery voltage, channel 129'},
+      'Струм батареї без знаку': {ru:'Ток батареи без знака', en:'Unsigned battery current'},
+      'Температура батареї, канал 134': {ru:'Температура батареи, канал 134', en:'Battery temperature, channel 134'},
+      'Напруга батареї BMS': {ru:'Напряжение батареи BMS', en:'BMS battery voltage'},
+      'Струм батареї BMS': {ru:'Ток батареи BMS', en:'BMS battery current'},
+      'Рівень заряду батареї BMS': {ru:'Уровень заряда батареи BMS', en:'BMS battery state of charge'},
+      'Температура BMS': {ru:'Температура BMS', en:'BMS temperature'},
+      'Температура BMS, канал 140': {ru:'Температура BMS, канал 140', en:'BMS temperature, channel 140'},
+      'Верхня напруга заряджання BMS': {ru:'Верхнее напряжение зарядки BMS', en:'BMS upper charging voltage'},
+      'Недоступний параметр BMS 142': {ru:'Недоступный параметр BMS 142', en:'Unavailable BMS parameter 142'},
+      'Недоступний параметр BMS 143': {ru:'Недоступный параметр BMS 143', en:'Unavailable BMS parameter 143'},
+      'Параметр BMS 144': {ru:'Параметр BMS 144', en:'BMS parameter 144'},
+      'Системний параметр стану 158': {ru:'Системный параметр состояния 158', en:'System status parameter 158'},
+      'Прапорець каналу BMS': {ru:'Флаг канала BMS', en:'BMS channel flag'},
+      'Код конфігурації BMS 324': {ru:'Код конфигурации BMS 324', en:'BMS configuration code 324'},
+      'Код конфігурації BMS 325': {ru:'Код конфигурации BMS 325', en:'BMS configuration code 325'},
+      'Код стану BMS 337': {ru:'Код состояния BMS 337', en:'BMS status code 337'},
+      'Канал напруги 341, ймовірно PV': {ru:'Канал напряжения 341, вероятно PV', en:'Voltage channel 341, possibly PV'},
+      'Напруга каналу 341': {ru:'Напряжение канала 341', en:'Channel 341 voltage'},
+      'Напруга батареї BMS, канал 342': {ru:'Напряжение батареи BMS, канал 342', en:'BMS battery voltage, channel 342'},
+      'Струм BMS, канал 343': {ru:'Ток BMS, канал 343', en:'BMS current, channel 343'},
+      'Струм батареї BMS, канал 344': {ru:'Ток батареи BMS, канал 344', en:'BMS battery current, channel 344'},
+      'Верхня межа напруги BMS': {ru:'Верхний предел напряжения BMS', en:'BMS upper voltage limit'},
+      'Нижня межа напруги BMS 1': {ru:'Нижний предел напряжения BMS 1', en:'BMS lower voltage limit 1'},
+      'Нижня межа напруги BMS 2': {ru:'Нижний предел напряжения BMS 2', en:'BMS lower voltage limit 2'},
+      'Знаковий струмовий параметр BMS': {ru:'Знаковый параметр тока BMS', en:'Signed BMS current parameter'},
+      'Напруга заряджання, налаштування 376': {ru:'Напряжение зарядки, настройка 376', en:'Charging voltage, setting 376'},
+      'Напруга заряджання, налаштування 377': {ru:'Напряжение зарядки, настройка 377', en:'Charging voltage, setting 377'},
+      'Ліміт струму 378': {ru:'Предел тока 378', en:'Current limit 378'},
+      'Ліміт струму 379': {ru:'Предел тока 379', en:'Current limit 379'},
+      'Верхня напруга батареї, налаштування 383': {ru:'Верхнее напряжение батареи, настройка 383', en:'Upper battery voltage, setting 383'},
+      'Потужність': {ru:'Мощность', en:'Power'},
+      'Параметр потужності 385': {ru:'Параметр мощности 385', en:'Power parameter 385'},
+      'Параметр потужності 386': {ru:'Параметр мощности 386', en:'Power parameter 386'},
+      'Код BMS або стану 401': {ru:'Код BMS или состояния 401', en:'BMS or status code 401'},
+      'Прапорець BMS або стану 402': {ru:'Флаг BMS или состояния 402', en:'BMS or status flag 402'},
+      'Упакований параметр BMS 403': {ru:'Упакованный параметр BMS 403', en:'Packed BMS parameter 403'},
+      'Напруга батареї BMS, канал 404': {ru:'Напряжение батареи BMS, канал 404', en:'BMS battery voltage, channel 404'},
+      'Струм батареї BMS, канал 405': {ru:'Ток батареи BMS, канал 405', en:'BMS battery current, channel 405'},
+      'Температура BMS, канал 406': {ru:'Температура BMS, канал 406', en:'BMS temperature, channel 406'},
+      'Відсотковий параметр BMS': {ru:'Процентный параметр BMS', en:'BMS percentage parameter'},
+      'Відсотковий параметр BMS, можливо SOH': {ru:'Процентный параметр BMS, возможно SOH', en:'BMS percentage parameter, possibly SOH'},
+      'Недоступний параметр BMS 409': {ru:'Недоступный параметр BMS 409', en:'Unavailable BMS parameter 409'},
+      'Недоступний параметр BMS 410': {ru:'Недоступный параметр BMS 410', en:'Unavailable BMS parameter 410'},
+      'Ліміт струму BMS': {ru:'Предел тока BMS', en:'BMS current limit'},
+      'Параметр потужності BMS 413': {ru:'Параметр мощности BMS 413', en:'BMS power parameter 413'},
+      'Параметр потужності 413': {ru:'Параметр мощности 413', en:'Power parameter 413'},
+      'Параметр налаштування 415': {ru:'Параметр настройки 415', en:'Setting parameter 415'},
+      'Параметр налаштування 416': {ru:'Параметр настройки 416', en:'Setting parameter 416'},
+      'Параметр налаштування 417': {ru:'Параметр настройки 417', en:'Setting parameter 417'},
+      'Параметр системи 449': {ru:'Параметр системы 449', en:'System parameter 449'},
+      'Упаковане значення 451': {ru:'Упакованное значение 451', en:'Packed value 451'},
+      'Упаковане значення 453': {ru:'Упакованное значение 453', en:'Packed value 453'},
+      'Упаковане знакове значення 455': {ru:'Упакованное знаковое значение 455', en:'Packed signed value 455'},
+      'Напруга заряджання / ліміт': {ru:'Напряжение зарядки / предел', en:'Charging voltage / limit'},
+      'Знаковий струмовий параметр': {ru:'Знаковый параметр тока', en:'Signed current parameter'},
+      'Очікування або невідомий стан': {ru:'Ожидание или неизвестное состояние', en:'Standby or unknown state'},
+      'Ймовірно робота від мережі або байпас': {ru:'Вероятно работа от сети или байпас', en:'Possibly grid or bypass operation'},
+      'Ймовірно робота інвертора від батареї або PV': {ru:'Вероятно работа инвертора от батареи или PV', en:'Possibly inverter operation from battery or PV'},
+      'Ймовірно заряджання або активна робота': {ru:'Вероятно зарядка или активная работа', en:'Possibly charging or active operation'},
+      'Ймовірно помилка або аварійний стан': {ru:'Вероятно ошибка или аварийное состояние', en:'Possibly a fault or emergency state'},
+      'нотатка не може бути порожньою': {ru:'заметка не может быть пустой', en:'note cannot be empty'},
+      'нотатка не може перевищувати 500 символів': {ru:'заметка не может превышать 500 символов', en:'note cannot exceed 500 characters'},
+      'спочатку запустіть запис журналу': {ru:'сначала запустите запись журнала', en:'start log recording first'},
+      'action має бути start, stop або mark': {ru:'action должно быть start, stop или mark', en:'action must be start, stop, or mark'},
+      'неправильний інтервал опитування': {ru:'неправильный интервал опроса', en:'invalid polling interval'},
+      'неправильний режим читання': {ru:'неправильный режим чтения', en:'invalid read mode'},
+      'paused має бути true або false': {ru:'paused должно быть true или false', en:'paused must be true or false'},
+      'журнал ще не створено': {ru:'журнал ещё не создан', en:'log has not been created yet'},
       'Код протоколу/версії': {ru:'Код протокола/версии', en:'Protocol/version code'},
       'Код конфігурації пристрою': {ru:'Код конфигурации устройства', en:'Device configuration code'},
       'Слово прошивки/стану': {ru:'Слово прошивки/состояния', en:'Firmware/status word'},
@@ -1401,6 +1925,9 @@ WEB_DASHBOARD = r"""<!doctype html>
     let chartDemoRunning = false;
     let chartDemoCancelRequested = false;
     let demoRegisterRows = null;
+    let currentView = 'dashboard';
+    let lcdPageIndex = 0;
+    let lcdEnterNotice = false;
     let refreshInFlight = false;
     let refreshTimer = null;
     let refreshController = null;
@@ -1477,6 +2004,8 @@ WEB_DASHBOARD = r"""<!doctype html>
           label: localizeDataText(register.name),
           detail: `R${register.register} · ${localizeDataText(register.group)}`,
           unit: register.unit,
+          scale: Number(register.scale) || 1,
+          signed: Boolean(register.signed),
           value,
           minimum: null,
           maximum: null,
@@ -1650,13 +2179,119 @@ WEB_DASHBOARD = r"""<!doctype html>
       if (!document.querySelector('#charts-view').hidden) drawAllCharts();
     }
 
-    function randomChartValue(item) {
-      const hasRange = Number.isFinite(item.minimum) && Number.isFinite(item.maximum);
-      if (hasRange) {
-        return item.minimum + Math.random() * (item.maximum - item.minimum);
+    function interpolate(start, end, ratio) {
+      return start + (end - start) * Math.max(0, Math.min(1, ratio));
+    }
+
+    function realisticDemoScenario(elapsedSeconds) {
+      const second = elapsedSeconds % chartWindowSeconds;
+      const ripple = Math.sin(second * .37);
+      let gridAvailable = true;
+      let pvVoltage;
+      let pvPower;
+      let loadPower;
+      let batteryCurrent;
+      let batterySoc;
+      let statusCode;
+
+      if (second < 30) {
+        // Strong solar production: loads are supplied and the battery charges.
+        pvVoltage = 326 + ripple * 4;
+        pvPower = 6400 + Math.sin(second * .21) * 350;
+        loadPower = 2850 + Math.sin(second * .29) * 180;
+        batteryCurrent = -(pvPower - loadPower) / 54 * .82;
+        batterySoc = 76 + second * .06;
+        statusCode = 3;
+      } else if (second < 45) {
+        // Panels are switched off: voltage, power, and charging current decay together.
+        const transition = (second - 30) / 15;
+        pvVoltage = interpolate(326, 12, transition);
+        pvPower = interpolate(6300, 0, transition);
+        loadPower = 2750 + ripple * 120;
+        batteryCurrent = interpolate(-52, loadPower / 51.8, transition);
+        batterySoc = 77.8 - transition * .15;
+        statusCode = batteryCurrent < 0 ? 3 : 2;
+      } else if (second < 70) {
+        // No panels and no grid: the battery supplies the load.
+        gridAvailable = false;
+        pvVoltage = Math.max(0, 8 - (second - 45) * .5);
+        pvPower = 0;
+        loadPower = 2250 + Math.sin(second * .31) * 220;
+        batteryCurrent = loadPower / 51.7;
+        batterySoc = 77.65 - (second - 45) * .08;
+        statusCode = 2;
+      } else if (second < 95) {
+        // Grid/bypass operation after the grid returns; battery receives a small charge.
+        pvVoltage = 0;
+        pvPower = 0;
+        loadPower = 2450 + Math.sin(second * .27) * 160;
+        batteryCurrent = -8 + ripple * .8;
+        batterySoc = 75.65 + (second - 70) * .025;
+        statusCode = 1;
+      } else {
+        // Panels return and solar production ramps back up.
+        const transition = (second - 95) / 25;
+        pvVoltage = interpolate(20, 324, transition) + ripple * 2;
+        pvPower = interpolate(0, 6100, transition) + ripple * 120;
+        loadPower = 2700 + Math.sin(second * .25) * 170;
+        batteryCurrent = interpolate(-7, -(pvPower - loadPower) / 54 * .8, transition);
+        batterySoc = 76.28 + transition * 1.7;
+        statusCode = 3;
       }
-      const spread = Math.max(Math.abs(item.value) * .4, 10);
-      return item.value + (Math.random() * 2 - 1) * spread;
+
+      const gridVoltage = gridAvailable ? 230 + Math.sin(second * .19) * 1.4 : 0;
+      const gridFrequency = gridAvailable ? 50 + Math.sin(second * .17) * .025 : 0;
+      const batteryVoltage = 52.1 + (batterySoc - 75) * .09 - batteryCurrent * .018;
+      const batteryTemperature = 29.5 + Math.abs(batteryCurrent) * .055 + Math.sin(second * .08) * .3;
+      const inverterTemperature = 33 + loadPower / 1000 * 1.8 + Math.max(0, pvPower) / 1000 * .45;
+      const loadPercent = loadPower / 12000 * 100;
+      const batteryPower = Math.abs(batteryVoltage * batteryCurrent);
+
+      return {
+        statusCode,
+        values: new Map([
+          [89, gridVoltage], [90, gridVoltage], [91, gridFrequency],
+          [92, inverterTemperature], [93, batteryVoltage], [94, loadPercent],
+          [129, batteryVoltage], [130, Math.abs(batteryCurrent)],
+          [133, batterySoc], [134, batteryTemperature],
+          [137, batteryVoltage], [138, batteryCurrent], [139, batterySoc],
+          [140, batteryTemperature + .6], [141, 57.1], [144, 11.4],
+          [157, statusCode], [158, 190 + statusCode],
+          [321, 1], [324, 1], [325, 1], [337, 2], [339, batterySoc],
+          [341, Math.max(0, pvVoltage)], [342, batteryVoltage],
+          [343, batteryCurrent * 1.06], [344, batteryCurrent * .98],
+          [345, 61], [346, 48], [349, 48], [350, -1.5],
+          [376, 57.1], [377, 54.4], [378, 80], [379, 80], [383, 58.4],
+          [385, 7200], [386, 2160],
+          [401, 1], [402, 1], [403, batteryPower],
+          [404, batteryVoltage], [405, batteryCurrent],
+          [406, batteryTemperature + .6], [407, batterySoc], [408, 100],
+          [411, 57.1], [412, 80], [413, batteryPower],
+          [415, 20], [416, 50], [417, 90], [449, 584]
+        ])
+      };
+    }
+
+    function demoRawValue(register, value) {
+      const scale = Number(register.scale) || 1;
+      let raw = Math.round(value / scale);
+      if (register.signed && raw < 0) raw += 65536;
+      return Math.max(0, Math.min(65534, raw));
+    }
+
+    function demoDisplayValue(value, scale) {
+      if (scale === .01) return value.toFixed(2);
+      if (scale === .1) return value.toFixed(1);
+      if (scale === 1) return Math.round(value).toString();
+      return Number(value.toFixed(3)).toString();
+    }
+
+    function demoStatusText(statusCode) {
+      return ({
+        1: 'Ймовірно робота від мережі або байпас',
+        2: 'Ймовірно робота інвертора від батареї або PV',
+        3: 'Ймовірно заряджання або активна робота'
+      })[statusCode] || 'Очікування або невідомий стан';
     }
 
     function trimChartHistory(history, currentTime) {
@@ -1667,6 +2302,7 @@ WEB_DASHBOARD = r"""<!doctype html>
     function formatChartTime(timestamp) {
       const locale = currentLanguage === 'uk' ? 'uk-UA' : currentLanguage === 'ru' ? 'ru-RU' : 'en-GB';
       return new Date(timestamp).toLocaleTimeString(locale, {
+        timeZone: 'Europe/Madrid',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit'
@@ -1693,6 +2329,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       chartDemoRunning = true;
       chartDemoCancelRequested = false;
       demoKeys.forEach(key => chartHistory.set(key, []));
+      if (lastData) render(lastData);
       drawAllCharts();
 
       try {
@@ -1709,11 +2346,17 @@ WEB_DASHBOARD = r"""<!doctype html>
           if (chartDemoCancelRequested) break;
 
           const now = Date.now();
+          const elapsedSeconds = Math.min(
+            chartWindowSeconds - .001,
+            (now - demoStartedAt) / 1000
+          );
+          const scenario = realisticDemoScenario(elapsedSeconds);
           registerKeys.forEach(key => {
             const item = chartDefinitions.get(key);
             if (!item) return;
             const history = chartHistory.get(key) || [];
-            item.value = randomChartValue(item);
+            const scenarioValue = scenario.values.get(item.register);
+            if (Number.isFinite(scenarioValue)) item.value = scenarioValue;
             history.push({time: now, value: item.value});
             trimChartHistory(history, now);
             chartHistory.set(key, history);
@@ -1723,24 +2366,25 @@ WEB_DASHBOARD = r"""<!doctype html>
             if (!item) return;
             const registerKey = key.replace('meter-', 'register-');
             const registerItem = chartDefinitions.get(registerKey);
-            item.value = randomChartValue(item);
-            if (registerItem) {
-              registerItem.value = item.value;
-              const registerHistory = chartHistory.get(registerKey) || [];
-              if (registerHistory.length) registerHistory.at(-1).value = item.value;
-            }
+            const scenarioValue = scenario.values.get(item.register);
+            if (Number.isFinite(scenarioValue)) item.value = scenarioValue;
+            else if (registerItem) item.value = registerItem.value;
+            if (registerItem) registerItem.value = item.value;
             const history = chartHistory.get(key) || [];
             history.push({time: now, value: item.value});
             trimChartHistory(history, now);
             chartHistory.set(key, history);
           });
           demoRegisterRows = lastData ? lastData.registers.map(register => {
-            const item = chartDefinitions.get(`register-${register.register}`);
-            if (!item) return register;
+            const value = scenario.values.get(register.register);
+            if (!Number.isFinite(value)) return register;
+            const display = register.register === 157
+              ? demoStatusText(scenario.statusCode)
+              : demoDisplayValue(value, Number(register.scale) || 1);
             return {
               ...register,
-              display: Number(item.value.toFixed(2)).toString(),
-              raw: Math.round(item.value),
+              display,
+              raw: demoRawValue(register, value),
               available: true
             };
           }) : [];
@@ -1755,6 +2399,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           }));
           renderDashboardValues();
           renderRegisters(demoRegisterRows);
+          if (lastData) renderLcd(lastData, demoRegisterRows);
           drawAllCharts();
         }
       } finally {
@@ -1993,14 +2638,208 @@ WEB_DASHBOARD = r"""<!doctype html>
         <td>${localizeDataText(item.display)} ${item.unit}</td><td>${item.raw ?? '—'}</td></tr>`).join('');
     }
 
+    function formatFileSize(bytes) {
+      const value = Number(bytes || 0);
+      if (value < 1024) return `${value} B`;
+      if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+      return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function renderRegisterLog(log = {}) {
+      const status = document.querySelector('#register-log-status');
+      const active = Boolean(log.active);
+      status.classList.toggle('active', active && !log.error);
+      status.classList.toggle('error-text', Boolean(log.error));
+      if (log.error) {
+        status.textContent = t('registerLogError', {error: localizeDataText(log.error)});
+      } else if (active) {
+        status.textContent = t('registerLogActive', {
+          filename: log.filename,
+          changes: log.changes || 0,
+          size: formatFileSize(log.size_bytes)
+        });
+      } else if (log.available) {
+        status.textContent = t('registerLogStopped', {
+          filename: log.filename,
+          changes: log.changes || 0,
+          size: formatFileSize(log.size_bytes)
+        });
+      } else {
+        status.textContent = t('registerLogIdle');
+      }
+      document.querySelector('#register-log-start').disabled = active;
+      document.querySelector('#register-log-stop').disabled = !active;
+      document.querySelector('#register-log-note').disabled = !active;
+      document.querySelector('#register-log-mark').disabled = !active;
+      document.querySelector('#register-log-download').hidden = !log.available;
+    }
+
+    async function updateRegisterLog(action, note = '') {
+      const buttons = document.querySelectorAll('#register-log-start, #register-log-stop, #register-log-mark');
+      buttons.forEach(button => button.disabled = true);
+      try {
+        const response = await fetch('/api/register-log', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action, note})
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        if (lastData) lastData.register_log = result;
+        if (action === 'mark') document.querySelector('#register-log-note').value = '';
+        renderRegisterLog(result);
+      } catch (error) {
+        const status = document.querySelector('#register-log-status');
+        status.className = 'logger-status error-text';
+        status.textContent = t('registerLogRequestError', {error: localizeDataText(error.message)});
+        const active = Boolean(lastData?.register_log?.active);
+        document.querySelector('#register-log-start').disabled = active;
+        document.querySelector('#register-log-stop').disabled = !active;
+        document.querySelector('#register-log-mark').disabled = !active;
+      }
+    }
+
+    function renderLcd(data, registers = data.registers || []) {
+      const byNumber = new Map(registers.map(register => [register.register, register]));
+      const firstRegister = numbers => numbers
+        .map(number => byNumber.get(number))
+        .find(register => register?.available);
+      const numberValue = numbers => {
+        const register = firstRegister(numbers);
+        return register ? numericValue(register.display) : null;
+      };
+      const rawValue = (numbers, scale = 1) => {
+        const register = firstRegister(numbers);
+        const raw = Number(register?.raw);
+        return Number.isFinite(raw) && raw !== 65535 ? raw * scale : null;
+      };
+      const textValue = numbers => {
+        const register = firstRegister(numbers);
+        return register ? localizeDataText(register.display) : t('noData');
+      };
+      const reading = (value, unit, digits = 1) =>
+        Number.isFinite(value) ? `${value.toFixed(digits)} ${unit}`.trim() : t('noData');
+      const setText = (selector, value) => {
+        const element = document.querySelector(selector);
+        if (element) element.textContent = value;
+      };
+
+      const gridVoltage = numberValue([89]);
+      const frequency = numberValue([91]);
+      const pvVoltage = numberValue([341]);
+      const batteryVoltage = numberValue([137, 404, 342, 129, 93]);
+      const batteryCurrent = numberValue([138, 405, 344, 343, 130]);
+      const batterySoc = numberValue([139, 407, 339, 133]);
+      const batteryTemperature = numberValue([140, 406, 134]);
+      const inverterTemperature = numberValue([92]);
+      const maximumChargeVoltage = numberValue([141, 411, 376, 377]);
+      const currentLimit = numberValue([412, 378, 379]);
+      const loadPercent = numberValue([94]);
+      const power = numberValue([413, 385, 386]);
+      const statusText = textValue([157]);
+      const batteryState = !Number.isFinite(batteryCurrent) || Math.abs(batteryCurrent) < .3
+        ? t('batteryIdle')
+        : batteryCurrent < 0 ? t('charging') : t('discharging');
+
+      setText('#lcd-mode', chartDemoRunning ? t('demoMode') : data.online ? t('online') : t('offline'));
+      setText('#lcd-grid', reading(gridVoltage, 'V'));
+      setText('#lcd-frequency', reading(frequency, 'Hz', 2));
+      setText('#lcd-pv', reading(pvVoltage, 'V', 2));
+      setText('#lcd-battery-voltage', reading(batteryVoltage, 'V'));
+      setText('#lcd-battery-current', reading(batteryCurrent, 'A'));
+      setText('#lcd-soc', reading(batterySoc, '%', 0));
+      setText('#lcd-temperature', reading(batteryTemperature, '°C'));
+      setText('#lcd-inverter-temperature', reading(inverterTemperature, '°C'));
+      setText('#lcd-charge-voltage', reading(maximumChargeVoltage, 'V'));
+      setText('#lcd-current-limit', reading(currentLimit, 'A'));
+      setText('#lcd-load', reading(loadPercent, '%', 0));
+      setText('#lcd-power', reading(power, 'W', 0));
+      setText('#lcd-battery-state', batteryState);
+      setText('#lcd-system-status', statusText);
+      setText('#lcd-status-line', `${data.identifier || t('unknownDevice')} · ${t('updated', {time: data.updated_at})}`);
+
+      const pages = [
+        {
+          code: 'LCD', title: t('mainDisplay'),
+          label1: t('batteryVoltage'), value1: reading(batteryVoltage, 'V'),
+          label2: t('pvInput'), value2: reading(pvVoltage, 'V', 2), help: t('lcdMainPageHelp')
+        },
+        {
+          code: 'P1', title: t('dailyPvEnergy'),
+          label1: t('dailyPvEnergy'), value1: t('noData'), label2: '', value2: '', help: t('lcdP1Help')
+        },
+        {
+          code: 'P2', title: t('totalPvEnergy'),
+          label1: t('totalPvEnergy'), value1: t('noData'), label2: '', value2: '', help: t('lcdP2Help')
+        },
+        {
+          code: 'P3', title: t('batteryState'),
+          label1: t('batteryVoltage'), value1: reading(batteryVoltage, 'V'),
+          label2: t('batteryCurrent'), value2: reading(batteryCurrent, 'A'), help: t('lcdP3Help')
+        },
+        {
+          code: 'P4', title: t('batteryState'),
+          label1: t('batteryTemperature'), value1: reading(batteryTemperature, '°C'),
+          label2: t('batterySoc'), value2: reading(batterySoc, '%', 0), help: t('lcdP4Help')
+        },
+        {
+          code: 'P5', title: t('ratedCapacity'),
+          label1: t('ratedCapacity'), value1: reading(rawValue([408]), 'Ah', 0),
+          label2: t('remainingCapacity'), value2: reading(rawValue([409], .1), 'Ah'), help: t('lcdP5Help')
+        },
+        {
+          code: 'P6', title: t('maxChargeVoltage'),
+          label1: t('maxChargeVoltage'), value1: reading(maximumChargeVoltage, 'V'),
+          label2: t('minDischargeVoltage'), value2: reading(numberValue([410, 142]), 'V'), help: t('lcdP6Help')
+        },
+        {
+          code: 'P7', title: t('currentLimit'),
+          label1: t('maxChargeCurrent'), value1: reading(currentLimit, 'A'),
+          label2: t('maxDischargeCurrent'), value2: reading(rawValue([413], .1), 'A'), help: t('lcdP7Help')
+        },
+        {
+          code: 'P8', title: t('alarmFault'),
+          label1: t('faultCode'), value1: t('noData'),
+          label2: t('alarmCode'), value2: t('noData'), help: t('lcdP8Help')
+        },
+        {
+          code: 'P9', title: t('firmwareVersion'),
+          label1: t('firmwareVersion'), value1: textValue([17]),
+          label2: t('systemStatus'), value2: textValue([18]), help: t('lcdP9Help')
+        }
+      ];
+      const page = pages[lcdPageIndex] || pages[0];
+      setText('#lcd-page-code', page.code);
+      setText('#lcd-page-title', page.title);
+      setText('#lcd-page-label-1', page.label1);
+      setText('#lcd-page-value-1', page.value1);
+      setText('#lcd-page-label-2', page.label2);
+      setText('#lcd-page-value-2', page.value2);
+      setText('#lcd-page-description', lcdEnterNotice ? t('settingsReadOnly') : page.help);
+      document.querySelector('#lcd-page-reading-2').hidden = !page.label2;
+
+      const active = (selector, enabled) =>
+        document.querySelector(selector)?.classList.toggle('active', Boolean(enabled));
+      active('#lcd-grid-node', Number.isFinite(gridVoltage) && gridVoltage > 40);
+      active('#lcd-grid-arrow', Number.isFinite(gridVoltage) && gridVoltage > 40);
+      active('#lcd-inverter-node', chartDemoRunning || data.online);
+      active('#lcd-load-node', Number.isFinite(loadPercent) && loadPercent > 0);
+      active('#lcd-load-arrow', Number.isFinite(loadPercent) && loadPercent > 0);
+      active('#lcd-pv-card', Number.isFinite(pvVoltage) && pvVoltage > 20);
+      active('#lcd-battery-card', Number.isFinite(batteryVoltage) && batteryVoltage > 20);
+      active('#lcd-soc-card', Number.isFinite(batterySoc));
+    }
+
     function render(data) {
       lastData = data;
       document.querySelector('#identifier').textContent = data.identifier || t('unknownDevice');
       const status = document.querySelector('#status');
-      status.classList.toggle('online', data.online && !data.paused);
-      status.classList.toggle('paused', data.paused);
+      status.classList.toggle('online', chartDemoRunning || (data.online && !data.paused));
+      status.classList.toggle('paused', !chartDemoRunning && data.paused);
       status.querySelector('.status-label').textContent =
-        data.paused ? t('paused') : data.online ? t('online') : t('offline');
+        chartDemoRunning
+          ? t('demoMode')
+          : data.paused ? t('paused') : data.online ? t('online') : t('offline');
       const appToggle = document.querySelector('#app-toggle');
       appToggle.textContent = data.paused ? t('startMonitoring') : t('stopMonitoring');
       appToggle.classList.toggle('start', data.paused);
@@ -2036,11 +2875,14 @@ WEB_DASHBOARD = r"""<!doctype html>
       document.querySelector('#poll-rate').value = data.poll_rate_index;
       document.querySelector('#read-mode').value = data.read_mode;
       const error = document.querySelector('#error');
-      error.textContent = data.error
+      const connectionError = chartDemoRunning ? '' : data.error;
+      error.textContent = connectionError
         ? t('connectionError', {error: localizeDataText(data.error)})
         : '';
-      error.classList.toggle('show', Boolean(data.error));
+      error.classList.toggle('show', Boolean(connectionError));
+      renderRegisterLog(data.register_log);
       renderRegisters(data.registers);
+      renderLcd(data, chartDemoRunning && demoRegisterRows ? demoRegisterRows : data.registers);
       updateChartDefinitions(data);
     }
 
@@ -2060,6 +2902,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         if (!chartDemoRunning) render(data);
       } catch (error) {
         if (error.name === 'AbortError') return;
+        if (chartDemoRunning) return;
         const box = document.querySelector('#error');
         box.textContent = t('connectionLost', {error: error.message});
         box.classList.add('show');
@@ -2100,14 +2943,37 @@ WEB_DASHBOARD = r"""<!doctype html>
       return new Promise(resolve => setTimeout(resolve, milliseconds));
     }
 
-    function toggleView() {
-      const dashboard = document.querySelector('#dashboard-view');
-      const charts = document.querySelector('#charts-view');
-      const showCharts = charts.hidden;
-      dashboard.hidden = showCharts;
-      charts.hidden = !showCharts;
-      document.querySelector('#view-toggle').textContent = showCharts ? t('dashboard') : t('viewCharts');
-      if (showCharts) requestAnimationFrame(drawAllCharts);
+    function showView(view) {
+      currentView = ['dashboard', 'charts', 'lcd'].includes(view) ? view : 'dashboard';
+      document.querySelector('#dashboard-view').hidden = currentView !== 'dashboard';
+      document.querySelector('#charts-view').hidden = currentView !== 'charts';
+      document.querySelector('#lcd-view').hidden = currentView !== 'lcd';
+      document.querySelectorAll('.view-tab').forEach(button => {
+        const active = button.dataset.view === currentView;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      if (currentView === 'charts') requestAnimationFrame(drawAllCharts);
+    }
+
+    function handleLcdKey(key) {
+      if (key === 'escape') {
+        lcdPageIndex = 0;
+        lcdEnterNotice = false;
+      } else if (key === 'up') {
+        lcdPageIndex = lcdPageIndex <= 1 ? 9 : lcdPageIndex - 1;
+        lcdEnterNotice = false;
+      } else if (key === 'down') {
+        lcdPageIndex = lcdPageIndex === 0 || lcdPageIndex >= 9 ? 1 : lcdPageIndex + 1;
+        lcdEnterNotice = false;
+      } else if (key === 'enter') {
+        lcdEnterNotice = true;
+      } else {
+        return;
+      }
+      if (lastData) {
+        renderLcd(lastData, chartDemoRunning && demoRegisterRows ? demoRegisterRows : lastData.registers);
+      }
     }
 
     function applyLanguage(language, save = true) {
@@ -2129,8 +2995,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       });
       document.querySelector('#theme-name').textContent =
         document.documentElement.dataset.theme === 'light' ? t('themeLight') : t('themeDark');
-      document.querySelector('#view-toggle').textContent =
-        document.querySelector('#charts-view').hidden ? t('viewCharts') : t('dashboard');
+      showView(currentView);
       if (!chartDemoRunning) {
         document.querySelectorAll('.all-data-demo-button').forEach(button => {
           button.textContent = t('runDemo');
@@ -2208,11 +3073,32 @@ WEB_DASHBOARD = r"""<!doctype html>
     document.querySelector('#demo-button').addEventListener('click', fillChartExampleData);
     document.querySelector('#chart-demo-button').addEventListener('click', fillChartExampleData);
     document.querySelector('#manage-values-button').addEventListener('click', openGaugePicker);
+    document.querySelector('#register-log-start').addEventListener('click', () => updateRegisterLog('start'));
+    document.querySelector('#register-log-stop').addEventListener('click', () => updateRegisterLog('stop'));
+    document.querySelector('#register-log-mark').addEventListener('click', () =>
+      updateRegisterLog('mark', document.querySelector('#register-log-note').value));
+    document.querySelector('#register-log-note').addEventListener('keydown', event => {
+      if (event.key === 'Enter') updateRegisterLog('mark', event.currentTarget.value);
+    });
     document.querySelector('#search').addEventListener('input', () =>
       demoRegisterRows
         ? renderRegisters(demoRegisterRows)
         : lastData && renderRegisters(lastData.registers));
-    document.querySelector('#view-toggle').addEventListener('click', toggleView);
+    document.querySelector('.view-tabs').addEventListener('click', event => {
+      const tab = event.target.closest('.view-tab[data-view]');
+      if (tab) showView(tab.dataset.view);
+    });
+    document.querySelector('.lcd-controls').addEventListener('click', event => {
+      const button = event.target.closest('[data-lcd-key]');
+      if (button) handleLcdKey(button.dataset.lcdKey);
+    });
+    window.addEventListener('keydown', event => {
+      if (currentView !== 'lcd' || event.target?.closest?.('input, select, textarea')) return;
+      const key = ({Escape:'escape', ArrowUp:'up', ArrowDown:'down', Enter:'enter'})[event.key];
+      if (!key) return;
+      event.preventDefault();
+      handleLcdKey(key);
+    });
     document.querySelector('#app-toggle').addEventListener('click', async event => {
       if (!lastData) return;
       const toggleButton = event.currentTarget;
@@ -2436,10 +3322,10 @@ def web_state() -> dict[str, Any]:
     all_registers = sorted(set(KNOWN_REGISTERS) | set(values))
     for register in all_registers:
         raw = values.get(register)
+        name, scale, unit, signed, group = REGISTER_CONFIG.get(
+            register, (f"Регістр {register}", 1.0, "", False, "Сире")
+        )
         if raw is None:
-            name, _, unit, _, group = REGISTER_CONFIG.get(
-                register, (f"Регістр {register}", 1.0, "", False, "Сире")
-            )
             display = "0"
         else:
             name, display, unit, _, group = normalize(register, raw)
@@ -2449,6 +3335,8 @@ def web_state() -> dict[str, Any]:
             "name": name,
             "display": display,
             "unit": unit,
+            "scale": scale,
+            "signed": signed,
             "raw": raw,
             "available": raw is not None,
         })
@@ -2467,7 +3355,8 @@ def web_state() -> dict[str, Any]:
         "identifier": snapshot["identifier"],
         "paused": bool(snapshot["paused"]),
         "site_visits": site_visit_total,
-        "site_visits_date": datetime.now().astimezone().strftime("%d.%m.%Y"),
+        "site_visits_date": datetime.now(MADRID_TIME_ZONE).strftime("%d.%m.%Y"),
+        "register_log": register_log_status(),
         "meters": meters,
         "registers": registers,
     }
@@ -2559,7 +3448,7 @@ def log_visit_to_console(
     )
     details = {
         "подія": "відвідування_панелі",
-        "дата": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "дата": datetime.now(MADRID_TIME_ZONE).isoformat(timespec="seconds"),
         "усього_відвідувачів": site_visit_total,
         "новий_відвідувач": new_visitor,
         "джерело": source[:100],
@@ -2645,6 +3534,38 @@ class DashboardHandler(BaseHTTPRequestHandler):
             body = json.dumps(web_state(), ensure_ascii=False).encode("utf-8")
             self.send_content(body, "application/json; charset=utf-8")
             return
+        if request_path == "/api/register-log/download":
+            with register_log_lock:
+                path = register_log_path
+                if path is None and REGISTER_LOG_DIRECTORY.exists():
+                    path = max(
+                        REGISTER_LOG_DIRECTORY.glob("register_changes_*.csv"),
+                        key=lambda candidate: candidate.stat().st_mtime,
+                        default=None,
+                    )
+                if register_log_file is not None:
+                    register_log_file.flush()
+            if path is None or not path.exists():
+                self.send_content(
+                    '{"error":"журнал ще не створено"}'.encode("utf-8"),
+                    "application/json; charset=utf-8",
+                    HTTPStatus.NOT_FOUND,
+                )
+                return
+            try:
+                self.send_content(
+                    path.read_bytes(),
+                    "text/csv; charset=utf-8",
+                    extra_headers={
+                        "Content-Disposition": f'attachment; filename="{path.name}"'
+                    },
+                )
+            except OSError as error:
+                body = json.dumps({"error": str(error)}).encode("utf-8")
+                self.send_content(
+                    body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR
+                )
+            return
         self.send_content(
             '{"error":"не знайдено"}'.encode("utf-8"),
             "application/json",
@@ -2652,6 +3573,37 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def do_POST(self) -> None:
+        if self.path == "/api/register-log":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                action = payload.get("action")
+                if action == "start":
+                    result = start_register_log()
+                elif action == "stop":
+                    result = stop_register_log()
+                elif action == "mark":
+                    with state_lock:
+                        cycle_id = int(state["cycle_id"])
+                    result = record_register_log_note(
+                        str(payload.get("note", "")), cycle_id
+                    )
+                else:
+                    raise ValueError("action має бути start, stop або mark")
+                status = (
+                    HTTPStatus.INTERNAL_SERVER_ERROR
+                    if result.get("error")
+                    else HTTPStatus.OK
+                )
+                body = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", status)
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                body = json.dumps({"error": str(error)}).encode("utf-8")
+                self.send_content(
+                    body, "application/json; charset=utf-8", HTTPStatus.BAD_REQUEST
+                )
+            return
+
         if self.path != "/api/settings":
             self.send_content(
                 '{"error":"не знайдено"}'.encode("utf-8"),
@@ -2711,6 +3663,7 @@ def run_web_dashboard() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        stop_register_log()
         with state_lock:
             state["stop"] = True
         poll_wake_event.set()

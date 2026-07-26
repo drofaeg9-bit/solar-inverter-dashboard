@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- The existing dashboard requires JavaScript and is commonly served over HTTP on a private LAN. -->
+    <issue id="SetJavaScriptEnabled" severity="ignore" />
+    <issue id="InsecureBaseConfiguration" severity="ignore" />
+</lint>
