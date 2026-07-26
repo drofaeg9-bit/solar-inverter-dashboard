@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Solar Invertor</string>
+    <string name="app_name">Solar Inverter</string>
+    <string name="server_dialog_title">Solar Inverter server</string>
     <string name="dashboard_unavailable">Dashboard unavailable</string>
     <string name="load_error_details">%1$s\n\n%2$s</string>
 </resources>
