@@ -64,11 +64,30 @@ solar_energy_last_flush_monotonic = 0.0
 solar_energy_pending_wh: dict[str, float] = {}
 COUNTED_VISITOR_COOKIE = "inverter_counted"
 REGISTER_LOG_DIRECTORY = Path(__file__).with_name("register_logs")
-REGISTER_LOG_MIN_FREE_BYTES = int(
-    os.environ.get("INVERTER_LOG_MIN_FREE_BYTES", str(2 * 1024**3))
+
+
+def non_negative_int_environment(name: str, default: int) -> int:
+    """Read a non-negative integer setting, falling back on invalid input."""
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+REGISTER_LOG_MIN_FREE_BYTES = non_negative_int_environment(
+    "INVERTER_LOG_MIN_FREE_BYTES", 2 * 1024**3
+)
+REGISTER_LOG_CLEANUP_TARGET_BYTES = max(
+    REGISTER_LOG_MIN_FREE_BYTES,
+    non_negative_int_environment(
+        "INVERTER_LOG_CLEANUP_TARGET_BYTES",
+        REGISTER_LOG_MIN_FREE_BYTES + 512 * 1024**2,
+    ),
 )
 
-register_log_lock = threading.Lock()
+register_log_lock = threading.RLock()
+register_log_storage_stop_event = threading.Event()
 register_log_file: TextIO | None = None
 register_log_writer: Any = None
 register_log_path: Path | None = None
@@ -79,6 +98,39 @@ register_log_previous_values: dict[int, int] = {}
 register_log_free_bytes: int | None = None
 register_log_pruned_files = 0
 register_log_storage_checked_at = 0.0
+register_log_previous_poll_settings: tuple[int, str, bool] | None = None
+register_log_language = "uk"
+register_log_text_translations: dict[str, str] = {}
+
+REGISTER_LOG_CSV_LABELS = {
+    "uk": {
+        "headers": [
+            "час_мадрид", "цикл", "подія", "регістр", "група", "назва",
+            "попереднє_raw", "raw", "змінені_біти", "значення", "одиниця",
+            "кнопка_lcd", "сторінка_lcd", "сценарій_демо", "нотатка",
+        ],
+        "events": {"INITIAL": "ПОЧАТКОВИЙ", "CHANGE": "ЗМІНА", "NOTE": "НОТАТКА", "LCD_KEY": "КНОПКА_LCD"},
+        "register": "Регістр",
+    },
+    "ru": {
+        "headers": [
+            "время_мадрид", "цикл", "событие", "регистр", "группа", "название",
+            "предыдущее_raw", "raw", "изменённые_биты", "значение", "единица",
+            "кнопка_lcd", "страница_lcd", "сценарий_демо", "заметка",
+        ],
+        "events": {"INITIAL": "ИСХОДНОЕ", "CHANGE": "ИЗМЕНЕНИЕ", "NOTE": "ЗАМЕТКА", "LCD_KEY": "КНОПКА_LCD"},
+        "register": "Регистр",
+    },
+    "en": {
+        "headers": [
+            "timestamp_madrid", "cycle", "event", "register", "group", "name",
+            "previous_raw", "raw", "changed_bits", "display", "unit",
+            "lcd_key", "lcd_page", "demo_scenario", "note",
+        ],
+        "events": {"INITIAL": "INITIAL", "CHANGE": "CHANGE", "NOTE": "NOTE", "LCD_KEY": "LCD_KEY"},
+        "register": "Register",
+    },
+}
 
 POLL_RATES = [0.5, 1.0, 2.0, 5.0, 10.0]
 
@@ -433,64 +485,74 @@ def read_compatible() -> tuple[dict[int, int], int, int, str | None]:
 
 
 def maintain_register_log_storage(force: bool = False) -> bool:
-    """Delete oldest completed register logs when free space is below 2 GiB."""
+    """Delete oldest completed logs when disk space falls below the reserve."""
     global register_log_free_bytes, register_log_pruned_files
     global register_log_storage_checked_at, register_log_error
 
-    monotonic_now = time.monotonic()
-    if not force and monotonic_now - register_log_storage_checked_at < 60:
-        return (
-            register_log_free_bytes is None
-            or register_log_free_bytes >= REGISTER_LOG_MIN_FREE_BYTES
-        )
-
-    register_log_storage_checked_at = monotonic_now
-    try:
-        REGISTER_LOG_DIRECTORY.mkdir(parents=True, exist_ok=True)
-        root = REGISTER_LOG_DIRECTORY.resolve()
-        register_log_free_bytes = shutil.disk_usage(root).free
-        if register_log_free_bytes >= REGISTER_LOG_MIN_FREE_BYTES:
-            return True
-
-        active_path = (
-            register_log_path.resolve()
-            if register_log_file is not None and register_log_path is not None
-            else None
-        )
-        candidates: list[Path] = []
-        for candidate in REGISTER_LOG_DIRECTORY.glob("register_changes_*.csv"):
-            try:
-                resolved = candidate.resolve(strict=True)
-            except OSError:
-                continue
-            if (
-                resolved.parent != root
-                or resolved == active_path
-                or not resolved.name.startswith("register_changes_")
-                or resolved.suffix.lower() != ".csv"
-            ):
-                continue
-            candidates.append(resolved)
-
-        candidates.sort(key=lambda path: path.stat().st_mtime)
-        for candidate in candidates:
-            if register_log_free_bytes >= REGISTER_LOG_MIN_FREE_BYTES:
-                break
-            candidate.unlink()
-            register_log_pruned_files += 1
-            register_log_free_bytes = shutil.disk_usage(root).free
-
-        if register_log_free_bytes < REGISTER_LOG_MIN_FREE_BYTES:
-            register_log_error = (
-                "Register logging stopped: less than 2 GB free and no completed "
-                "register logs remain to remove"
+    with register_log_lock:
+        monotonic_now = time.monotonic()
+        if not force and monotonic_now - register_log_storage_checked_at < 60:
+            return (
+                register_log_free_bytes is None
+                or register_log_free_bytes >= REGISTER_LOG_MIN_FREE_BYTES
             )
+
+        register_log_storage_checked_at = monotonic_now
+        try:
+            REGISTER_LOG_DIRECTORY.mkdir(parents=True, exist_ok=True)
+            root = REGISTER_LOG_DIRECTORY.resolve()
+            register_log_free_bytes = shutil.disk_usage(root).free
+            if register_log_free_bytes >= REGISTER_LOG_MIN_FREE_BYTES:
+                return True
+
+            active_path = (
+                register_log_path.resolve()
+                if register_log_file is not None and register_log_path is not None
+                else None
+            )
+            candidates: list[tuple[float, Path]] = []
+            for candidate in REGISTER_LOG_DIRECTORY.glob("register_changes_*.csv"):
+                try:
+                    resolved = candidate.resolve(strict=True)
+                    modified_at = resolved.stat().st_mtime
+                except OSError:
+                    continue
+                if (
+                    resolved.parent != root
+                    or resolved == active_path
+                    or not resolved.name.startswith("register_changes_")
+                    or resolved.suffix.lower() != ".csv"
+                ):
+                    continue
+                candidates.append((modified_at, resolved))
+
+            candidates.sort(key=lambda item: item[0])
+            for _, candidate in candidates:
+                if register_log_free_bytes >= REGISTER_LOG_CLEANUP_TARGET_BYTES:
+                    break
+                candidate.unlink()
+                register_log_pruned_files += 1
+                register_log_free_bytes = shutil.disk_usage(root).free
+
+            if register_log_free_bytes < REGISTER_LOG_MIN_FREE_BYTES:
+                minimum_gib = REGISTER_LOG_MIN_FREE_BYTES / 1024**3
+                register_log_error = (
+                    "Register logging stopped: less than "
+                    f"{minimum_gib:g} GiB free and no completed register logs "
+                    "remain to remove"
+                )
+                return False
+            register_log_error = ""
+            return True
+        except OSError as error:
+            register_log_error = f"Register-log storage cleanup failed: {error}"
             return False
-        register_log_error = ""
-        return True
-    except OSError as error:
-        register_log_error = f"Register-log storage cleanup failed: {error}"
-        return False
+
+
+def register_log_storage_worker() -> None:
+    """Check log storage every minute, even when recording is inactive."""
+    while not register_log_storage_stop_event.wait(60):
+        maintain_register_log_storage(force=True)
 
 
 def register_log_status() -> dict[str, Any]:
@@ -515,51 +577,160 @@ def register_log_status() -> dict[str, Any]:
             "free_bytes": register_log_free_bytes,
             "minimum_free_bytes": REGISTER_LOG_MIN_FREE_BYTES,
             "pruned_files": register_log_pruned_files,
+            "physical_button_capture": register_log_file is not None,
+            "capture_interval_seconds": POLL_RATES[0],
+            "language": register_log_language,
         }
 
 
-def start_register_log() -> dict[str, Any]:
+def describe_changed_bits(previous_raw: int | None, raw: int) -> str:
+    """Describe changed bits in a 16-bit register value for signal discovery."""
+    if previous_raw is None:
+        return ""
+    previous_word = int(previous_raw) & 0xFFFF
+    current_word = int(raw) & 0xFFFF
+    changed_mask = previous_word ^ current_word
+    return "|".join(
+        f"b{bit}:{(previous_word >> bit) & 1}->{(current_word >> bit) & 1}"
+        for bit in range(16)
+        if changed_mask & (1 << bit)
+    )
+
+
+def configure_register_log_language(
+    language: str, translations: Any = None
+) -> None:
+    """Select and validate browser-provided translations for one CSV session."""
+    global register_log_language, register_log_text_translations
+    if language not in REGISTER_LOG_CSV_LABELS:
+        raise ValueError("language must be uk, ru, or en")
+    clean_translations: dict[str, str] = {}
+    if isinstance(translations, dict):
+        for source, translated in list(translations.items())[:500]:
+            if not isinstance(source, str) or not isinstance(translated, str):
+                continue
+            clean_source = " ".join(source.split())[:250]
+            clean_translated = " ".join(translated.split())[:250]
+            if clean_source and clean_translated:
+                clean_translations[clean_source] = clean_translated
+    register_log_language = language
+    register_log_text_translations = clean_translations
+
+
+def localize_register_log_text(text: str) -> str:
+    """Translate register metadata using the language selected when logging began."""
+    translated = register_log_text_translations.get(text)
+    if translated is None and text.startswith("Регістр "):
+        translated = f"{REGISTER_LOG_CSV_LABELS[register_log_language]['register']} {text[8:]}"
+    return safe_register_log_cell(translated if translated is not None else text)
+
+
+def safe_register_log_cell(value: str) -> str:
+    """Prevent user or translated text from becoming a spreadsheet formula."""
+    # Prevent spreadsheet applications from treating labels as formulas.
+    numeric = re.fullmatch(r"[+-]?\d+(?:\.\d+)?", value) is not None
+    return f"'{value}" if not numeric and value.startswith(("=", "+", "-", "@")) else value
+
+
+def register_log_event(event: str) -> str:
+    """Return a localized CSV event name."""
+    events = REGISTER_LOG_CSV_LABELS[register_log_language]["events"]
+    return str(events.get(event, event))
+
+
+def start_register_log(
+    language: str = "uk", translations: Any = None
+) -> dict[str, Any]:
     """Start a new CSV file containing initial and changed register values."""
     global register_log_file, register_log_writer, register_log_path
     global register_log_started_at, register_log_changes, register_log_error
     global register_log_previous_values
+    global register_log_previous_poll_settings
 
     with register_log_lock:
         if register_log_file is not None:
             return register_log_status_unlocked()
+        log_file: TextIO | None = None
         try:
+            configure_register_log_language(language, translations)
             REGISTER_LOG_DIRECTORY.mkdir(parents=True, exist_ok=True)
             if not maintain_register_log_storage(force=True):
                 return register_log_status_unlocked()
             now = datetime.now(MADRID_TIME_ZONE)
             path = REGISTER_LOG_DIRECTORY / (
-                f"register_changes_{now.strftime('%Y%m%d_%H%M%S_%f')}.csv"
+                f"register_changes_{register_log_language}_"
+                f"{now.strftime('%Y%m%d_%H%M%S_%f')}.csv"
             )
-            log_file = path.open("x", encoding="utf-8", newline="", buffering=1)
+            log_file = path.open("x", encoding="utf-8-sig", newline="", buffering=1)
             writer = csv.writer(log_file)
-            writer.writerow([
-                "timestamp_madrid",
-                "cycle",
-                "event",
-                "register",
-                "group",
-                "name",
-                "previous_raw",
-                "raw",
-                "display",
-                "unit",
-                "note",
-            ])
+            writer.writerow(REGISTER_LOG_CSV_LABELS[register_log_language]["headers"])
             register_log_file = log_file
             register_log_writer = writer
             register_log_path = path
             register_log_started_at = now.isoformat(timespec="seconds")
             register_log_changes = 0
             register_log_error = ""
-            register_log_previous_values = {}
+            with state_lock:
+                register_log_previous_poll_settings = (
+                    int(state["poll_rate_index"]),
+                    str(state["read_mode"]),
+                    bool(state["paused"]),
+                )
+                baseline_values = dict(state["values"])
+                baseline_cycle_id = int(state["cycle_id"])
+                state["poll_rate_index"] = 0
+                state["read_mode"] = "fast"
+                state["paused"] = False
+
+            baseline_timestamp = now.isoformat(timespec="milliseconds")
+            for register, raw in sorted(baseline_values.items()):
+                name, display, unit, _, group = normalize(register, raw)
+                writer.writerow([
+                    baseline_timestamp,
+                    baseline_cycle_id,
+                    register_log_event("INITIAL"),
+                    register,
+                    localize_register_log_text(group),
+                    localize_register_log_text(name),
+                    "",
+                    raw,
+                    "",
+                    localize_register_log_text(display),
+                    unit,
+                    "",
+                    "",
+                    "",
+                    "",
+                ])
+                register_log_changes += 1
+            log_file.flush()
+            register_log_previous_values = baseline_values
+            poll_wake_event.set()
         except OSError as error:
             register_log_error = str(error)
+            if log_file is not None:
+                try:
+                    log_file.close()
+                except OSError:
+                    pass
+            register_log_file = None
+            register_log_writer = None
+            restore_register_log_poll_settings()
         return register_log_status_unlocked()
+
+
+def restore_register_log_poll_settings() -> None:
+    """Restore polling settings that were active before capture started."""
+    global register_log_previous_poll_settings
+    if register_log_previous_poll_settings is None:
+        return
+    poll_rate_index, read_mode, paused = register_log_previous_poll_settings
+    with state_lock:
+        state["poll_rate_index"] = poll_rate_index
+        state["read_mode"] = read_mode
+        state["paused"] = paused
+    register_log_previous_poll_settings = None
+    poll_wake_event.set()
 
 
 def stop_register_log() -> dict[str, Any]:
@@ -575,6 +746,7 @@ def stop_register_log() -> dict[str, Any]:
         finally:
             register_log_file = None
             register_log_writer = None
+            restore_register_log_poll_settings()
         return register_log_status_unlocked()
 
 
@@ -593,6 +765,9 @@ def register_log_status_unlocked() -> dict[str, Any]:
         "free_bytes": register_log_free_bytes,
         "minimum_free_bytes": REGISTER_LOG_MIN_FREE_BYTES,
         "pruned_files": register_log_pruned_files,
+        "physical_button_capture": register_log_file is not None,
+        "capture_interval_seconds": POLL_RATES[0],
+        "language": register_log_language,
     }
 
 
@@ -611,6 +786,7 @@ def record_register_changes(values: dict[int, int], cycle_id: int) -> None:
                 pass
             register_log_file = None
             register_log_writer = None
+            restore_register_log_poll_settings()
             return
         initial_snapshot = not register_log_previous_values
         timestamp = datetime.now(MADRID_TIME_ZONE).isoformat(timespec="milliseconds")
@@ -623,14 +799,18 @@ def record_register_changes(values: dict[int, int], cycle_id: int) -> None:
                 register_log_writer.writerow([
                     timestamp,
                     cycle_id,
-                    "INITIAL" if initial_snapshot else "CHANGE",
+                    register_log_event("INITIAL" if initial_snapshot else "CHANGE"),
                     register,
-                    group,
-                    name,
+                    localize_register_log_text(group),
+                    localize_register_log_text(name),
                     "" if previous_raw is None else previous_raw,
                     raw,
-                    display,
+                    describe_changed_bits(previous_raw, raw),
+                    localize_register_log_text(display),
                     unit,
+                    "",
+                    "",
+                    "",
                     "",
                 ])
                 register_log_changes += 1
@@ -656,7 +836,7 @@ def record_register_log_note(note: str, cycle_id: int) -> dict[str, Any]:
             register_log_writer.writerow([
                 datetime.now(MADRID_TIME_ZONE).isoformat(timespec="milliseconds"),
                 cycle_id,
-                "NOTE",
+                register_log_event("NOTE"),
                 "",
                 "",
                 "",
@@ -664,7 +844,48 @@ def record_register_log_note(note: str, cycle_id: int) -> dict[str, Any]:
                 "",
                 "",
                 "",
-                clean_note,
+                "",
+                "",
+                "",
+                "",
+                safe_register_log_cell(clean_note),
+            ])
+            register_log_file.flush()
+            register_log_changes += 1
+            register_log_error = ""
+        except OSError as error:
+            register_log_error = str(error)
+        return register_log_status_unlocked()
+
+
+def record_demo_lcd_key(
+    key: str, page: str, demo_case: str, cycle_id: int
+) -> dict[str, Any]:
+    """Record a virtual LCD key press made while the browser demo is running."""
+    global register_log_changes, register_log_error
+    clean_key = key.strip().lower()
+    if clean_key not in {"escape", "up", "down", "enter"}:
+        raise ValueError("invalid LCD key")
+    clean_page = page.strip().upper()
+    if clean_page != "LCD" and re.fullmatch(r"P[1-9]", clean_page) is None:
+        raise ValueError("invalid LCD page")
+    clean_demo_case = demo_case.strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,80}", clean_demo_case) is None:
+        raise ValueError("invalid demo scenario")
+
+    with register_log_lock:
+        if register_log_file is None or register_log_writer is None:
+            raise ValueError("спочатку запустіть запис журналу")
+        try:
+            register_log_writer.writerow([
+                datetime.now(MADRID_TIME_ZONE).isoformat(timespec="milliseconds"),
+                cycle_id,
+                register_log_event("LCD_KEY"),
+                "", "", "", "", "", "", "", "",
+                "ESC" if clean_key == "escape" else clean_key.upper(),
+                clean_page,
+                clean_demo_case,
+                "",
             ])
             register_log_file.flush()
             register_log_changes += 1
@@ -1276,7 +1497,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       filter: drop-shadow(0 0 5px currentColor); transform: translateY(-50%);
       animation: energy-flow-x var(--flow-duration,1.4s) linear infinite;
     }
-    .flow-connector.active { color: var(--flow-colour,#22d3ee); opacity: 1 }
+    .flow-connector.active { z-index: 4; color: var(--flow-colour,#22d3ee); opacity: 1 }
     .flow-connector.active::before {
       height: 6px;
       background: repeating-linear-gradient(90deg, currentColor 0 11px, transparent 11px 17px);
@@ -1582,7 +1803,18 @@ WEB_DASHBOARD = r"""<!doctype html>
       .gauges { gap: 8px; margin-bottom: 12px }
       .energy-flow-card { top: 6px; width: 100%; margin-bottom: 12px; padding: 12px 9px 14px; border-radius: 16px }
       .energy-flow-head { margin-bottom: 10px; padding-inline: 3px }
-      .energy-flow-diagram { grid-template-columns: minmax(64px,1fr) 25px minmax(72px,1fr) 25px minmax(64px,1fr); grid-template-rows: auto 24px auto }
+      .energy-flow-diagram {
+        grid-template-columns: minmax(54px,1fr) 38px minmax(62px,1.08fr) 38px minmax(54px,1fr);
+        grid-template-rows: auto 48px auto;
+      }
+      .flow-pv, .flow-home { min-height: 28px }
+      .flow-battery { width: 190% }
+      .flow-direction-indicator {
+        min-width: 24px; height: 24px; padding-inline: 3px;
+        font-size: 18px; line-height: 19px;
+      }
+      .flow-connector.active::before { height: 7px }
+      .flow-grid.active::before, .flow-solar-battery.active::before { width: 7px; height: auto }
       .solar-energy-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px }
       .solar-energy-head { align-items: flex-start; flex-direction: column; gap: 4px }
       .solar-energy-note { text-align: left }
@@ -1777,7 +2009,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       <div class="logger-layout">
         <div class="logger-copy">
           <h2 data-i18n="registerLogger">Журнал змін регістрів</h2>
-          <div class="muted" data-i18n="registerLoggerHelp">Записує початковий знімок і лише змінені значення у CSV з часом Мадрида.</div>
+          <div class="muted" data-i18n="registerLoggerHelp">Після запуску фіксує зміни регістрів від фізичних кнопок у CSV: швидке опитування 0,5 с та час Мадрида.</div>
           <div class="logger-status" id="register-log-status" aria-live="polite">Запис не запущено</div>
         </div>
         <div class="logger-actions">
@@ -1850,7 +2082,7 @@ WEB_DASHBOARD = r"""<!doctype html>
               <button class="lcd-key" type="button" data-lcd-key="down" data-i18n-aria="lcdDownAria">▼ DOWN</button>
               <button class="lcd-key" type="button" data-lcd-key="enter" data-i18n-aria="lcdEnterAria">ENTER</button>
             </div>
-            <div class="lcd-controls-note" data-i18n="lcdControlsLocalOnly">Віртуальні клавіші керують лише сторінками в застосунку й не записують налаштування в інвертор.</div>
+            <div class="lcd-controls-note" data-i18n="lcdControlsLocalOnly">Віртуальні клавіші керують лише сторінками застосунку. У демо активний CSV-журнал фіксує кожне натискання. Налаштування інвертора не змінюються.</div>
           </div>
         </div>
       </div>
@@ -1924,7 +2156,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         lcdControls: 'Керування LCD', lcdEscapeAria: 'Повернутися на головний екран LCD',
         lcdUpAria: 'Попередня інформаційна сторінка LCD', lcdDownAria: 'Наступна інформаційна сторінка LCD',
         lcdEnterAria: 'Відкрити вибрану сторінку LCD',
-        lcdControlsLocalOnly: 'Віртуальні клавіші керують лише сторінками в застосунку й не записують налаштування в інвертор.',
+        lcdControlsLocalOnly: 'Віртуальні клавіші керують лише сторінками застосунку. У демо активний CSV-журнал фіксує кожне натискання. Налаштування інвертора не змінюються.',
         mainDisplay: 'Головний екран', dailyPvEnergy: 'Сонячна енергія за день', totalPvEnergy: 'Загальна сонячна енергія',
         ratedCapacity: 'Номінальна ємність', remainingCapacity: 'Залишкова ємність',
         minDischargeVoltage: 'Мін. напруга розряду', maxChargeCurrent: 'Макс. струм заряду',
@@ -1945,13 +2177,14 @@ WEB_DASHBOARD = r"""<!doctype html>
         stopDemo: '■ Зупинити · {elapsed} / {seconds} с · {count} значень',
         addValues: '＋ Додати індикатори',
         registerLogger: 'Журнал змін регістрів',
-        registerLoggerHelp: 'Записує початковий знімок і лише змінені значення у CSV з часом Мадрида.',
+        registerLoggerHelp: 'Після запуску фіксує зміни регістрів від фізичних кнопок у CSV: швидке опитування 0,5 с та час Мадрида.',
         registerLogNotePlaceholder: 'Напр. панелі вимкнено', markRegisterLog: '＋ Додати позначку',
         startRegisterLog: '● Почати запис', stopRegisterLog: '■ Зупинити',
         downloadRegisterLog: '↓ Завантажити CSV', registerLogIdle: 'Запис не запущено',
         registerLogActive: 'Запис · {filename} · рядків: {changes} · {size}',
         registerLogStopped: 'Зупинено · {filename} · рядків: {changes} · {size}',
         registerLogStorage: 'вільно: {free} · видалено старих журналів: {count}',
+        registerLogPhysicalCapture: 'захоплення фізичних кнопок · {seconds} с',
         registerLogError: 'Помилка журналу: {error}', registerLogRequestError: 'Не вдалося змінити стан журналу: {error}',
         cycleInitial: 'Цикл —', visitorsInitial: 'Відвідувачі — · —',
         notUpdated: 'Ще не оновлено', gaugesAria: 'Індикатори інвертора',
@@ -2016,7 +2249,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         lcdControls: 'Управление LCD', lcdEscapeAria: 'Вернуться на главный экран LCD',
         lcdUpAria: 'Предыдущая информационная страница LCD', lcdDownAria: 'Следующая информационная страница LCD',
         lcdEnterAria: 'Открыть выбранную страницу LCD',
-        lcdControlsLocalOnly: 'Виртуальные клавиши управляют только страницами в приложении и не записывают настройки в инвертор.',
+        lcdControlsLocalOnly: 'Виртуальные клавиши управляют только страницами приложения. В демо активный CSV-журнал фиксирует каждое нажатие. Настройки инвертора не изменяются.',
         mainDisplay: 'Главный экран', dailyPvEnergy: 'Солнечная энергия за день', totalPvEnergy: 'Общая солнечная энергия',
         ratedCapacity: 'Номинальная ёмкость', remainingCapacity: 'Оставшаяся ёмкость',
         minDischargeVoltage: 'Мин. напряжение разряда', maxChargeCurrent: 'Макс. ток заряда',
@@ -2037,13 +2270,14 @@ WEB_DASHBOARD = r"""<!doctype html>
         stopDemo: '■ Остановить · {elapsed} / {seconds} с · {count} значений',
         addValues: '＋ Добавить индикаторы',
         registerLogger: 'Журнал изменений регистров',
-        registerLoggerHelp: 'Записывает начальный снимок и только изменённые значения в CSV со временем Мадрида.',
+        registerLoggerHelp: 'После запуска фиксирует изменения регистров от физических кнопок в CSV: быстрый опрос 0,5 с и время Мадрида.',
         registerLogNotePlaceholder: 'Напр. панели выключены', markRegisterLog: '＋ Добавить отметку',
         startRegisterLog: '● Начать запись', stopRegisterLog: '■ Остановить',
         downloadRegisterLog: '↓ Скачать CSV', registerLogIdle: 'Запись не запущена',
         registerLogActive: 'Запись · {filename} · строк: {changes} · {size}',
         registerLogStopped: 'Остановлено · {filename} · строк: {changes} · {size}',
         registerLogStorage: 'свободно: {free} · удалено старых журналов: {count}',
+        registerLogPhysicalCapture: 'захват физических кнопок · {seconds} с',
         registerLogError: 'Ошибка журнала: {error}', registerLogRequestError: 'Не удалось изменить журнал: {error}',
         cycleInitial: 'Цикл —', visitorsInitial: 'Посетители — · —',
         notUpdated: 'Ещё не обновлено', gaugesAria: 'Индикаторы инвертора',
@@ -2108,7 +2342,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         lcdControls: 'LCD controls', lcdEscapeAria: 'Return to the main LCD screen',
         lcdUpAria: 'Previous LCD information page', lcdDownAria: 'Next LCD information page',
         lcdEnterAria: 'Open the selected LCD page',
-        lcdControlsLocalOnly: 'The virtual keys control app pages only and do not write settings to the inverter.',
+        lcdControlsLocalOnly: 'The virtual keys control app pages only. During demo, an active CSV log records every press. Inverter settings are not changed.',
         mainDisplay: 'Main display', dailyPvEnergy: 'Daily solar energy', totalPvEnergy: 'Total solar energy',
         ratedCapacity: 'Rated capacity', remainingCapacity: 'Remaining capacity',
         minDischargeVoltage: 'Min. discharge voltage', maxChargeCurrent: 'Max. charging current',
@@ -2129,13 +2363,14 @@ WEB_DASHBOARD = r"""<!doctype html>
         stopDemo: '■ Stop · {elapsed} / {seconds}s · {count} values',
         addValues: '＋ Add gauges',
         registerLogger: 'Register change log',
-        registerLoggerHelp: 'Records an initial snapshot and changed values only in a Madrid-time CSV file.',
+        registerLoggerHelp: 'After starting, captures register changes caused by physical buttons in CSV using fast 0.5-second polling and Madrid time.',
         registerLogNotePlaceholder: 'E.g. panels switched off', markRegisterLog: '＋ Add marker',
         startRegisterLog: '● Start recording', stopRegisterLog: '■ Stop',
         downloadRegisterLog: '↓ Download CSV', registerLogIdle: 'Recording is not running',
         registerLogActive: 'Recording · {filename} · rows: {changes} · {size}',
         registerLogStopped: 'Stopped · {filename} · rows: {changes} · {size}',
         registerLogStorage: 'free: {free} · old logs removed: {count}',
+        registerLogPhysicalCapture: 'physical-button capture · {seconds} s',
         registerLogError: 'Log error: {error}', registerLogRequestError: 'Could not change log state: {error}',
         cycleInitial: 'Cycle —', visitorsInitial: 'Visitors — · —',
         notUpdated: 'Not updated yet', gaugesAria: 'Live inverter gauges',
@@ -3158,21 +3393,39 @@ WEB_DASHBOARD = r"""<!doctype html>
           count: log.pruned_files || 0
         })}`;
       }
+      if (active && log.physical_button_capture) {
+        status.textContent += ` · ${t('registerLogPhysicalCapture', {
+          seconds: Number(log.capture_interval_seconds || .5).toLocaleString(
+            currentLanguage === 'uk' ? 'uk-UA' : currentLanguage === 'ru' ? 'ru-RU' : 'en-GB'
+          )
+        })}`;
+      }
       document.querySelector('#register-log-start').disabled = active;
       document.querySelector('#register-log-stop').disabled = !active;
       document.querySelector('#register-log-note').disabled = !active;
       document.querySelector('#register-log-mark').disabled = !active;
       document.querySelector('#register-log-download').hidden = !log.available;
+      document.querySelector('#poll-rate').disabled = active;
+      document.querySelector('#read-mode').disabled = active;
     }
 
     async function updateRegisterLog(action, note = '') {
       const buttons = document.querySelectorAll('#register-log-start, #register-log-stop, #register-log-mark');
       buttons.forEach(button => button.disabled = true);
       try {
+        const payload = {action, note, language: currentLanguage};
+        if (action === 'start') {
+          payload.translations = Object.fromEntries(
+            Object.entries(DATA_TRANSLATIONS).map(([source, translations]) => [
+              source,
+              currentLanguage === 'uk' ? source : translations[currentLanguage] ?? source
+            ])
+          );
+        }
         const response = await fetch('/api/register-log', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({action, note})
+          body: JSON.stringify(payload)
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
@@ -3587,6 +3840,31 @@ WEB_DASHBOARD = r"""<!doctype html>
       if (currentView === 'charts') requestAnimationFrame(drawAllCharts);
     }
 
+    async function recordDemoLcdKey(key) {
+      if (!chartDemoRunning || !lastData?.register_log?.active) return;
+      const page = lcdPageIndex === 0 ? 'LCD' : `P${lcdPageIndex}`;
+      try {
+        const response = await fetch('/api/register-log', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            action: 'lcd_key',
+            key,
+            page,
+            demo_case: demoFlowCase || 'demoMode'
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        lastData.register_log = result;
+        renderRegisterLog(result);
+      } catch (error) {
+        const status = document.querySelector('#register-log-status');
+        status.className = 'logger-status error-text';
+        status.textContent = t('registerLogRequestError', {error: localizeDataText(error.message)});
+      }
+    }
+
     function handleLcdKey(key) {
       if (key === 'escape') {
         lcdPageIndex = 0;
@@ -3605,6 +3883,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       if (lastData) {
         renderLcd(lastData, chartDemoRunning && demoRegisterRows ? demoRegisterRows : lastData.registers);
       }
+      void recordDemoLcdKey(key);
     }
 
     function applyLanguage(language, save = true) {
@@ -4220,7 +4499,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 action = payload.get("action")
                 if action == "start":
-                    result = start_register_log()
+                    result = start_register_log(
+                        str(payload.get("language", "uk")),
+                        payload.get("translations"),
+                    )
                 elif action == "stop":
                     result = stop_register_log()
                 elif action == "mark":
@@ -4229,8 +4511,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     result = record_register_log_note(
                         str(payload.get("note", "")), cycle_id
                     )
+                elif action == "lcd_key":
+                    with state_lock:
+                        cycle_id = int(state["cycle_id"])
+                    result = record_demo_lcd_key(
+                        str(payload.get("key", "")),
+                        str(payload.get("page", "")),
+                        str(payload.get("demo_case", "")),
+                        cycle_id,
+                    )
                 else:
-                    raise ValueError("action має бути start, stop або mark")
+                    raise ValueError("action має бути start, stop, mark або lcd_key")
                 status = (
                     HTTPStatus.INTERNAL_SERVER_ERROR
                     if result.get("error")
@@ -4287,6 +4578,13 @@ def run_web_dashboard() -> None:
     port = int(os.environ.get("INVERTER_WEB_PORT", "8080"))
     initialise_statistics()
     maintain_register_log_storage(force=True)
+    register_log_storage_stop_event.clear()
+    storage_worker = threading.Thread(
+        target=register_log_storage_worker,
+        name="register-log-storage",
+        daemon=True,
+    )
+    storage_worker.start()
     worker = threading.Thread(target=poll_worker, name="inverter-poller", daemon=True)
     worker.start()
     server = ThreadingHTTPServer((host, port), DashboardHandler)
@@ -4305,6 +4603,7 @@ def run_web_dashboard() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        register_log_storage_stop_event.set()
         stop_register_log()
         flush_solar_energy()
         with state_lock:
