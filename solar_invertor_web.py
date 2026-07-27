@@ -23,13 +23,14 @@ import csv
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
 import threading
 import time
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timedelta
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -56,8 +57,16 @@ STATS_DB_PATH = (
 stats_lock = threading.Lock()
 stats_error = ""
 site_visit_total = 0
+solar_energy_error = ""
+solar_energy_last_sample_at: datetime | None = None
+solar_energy_last_power_w: float | None = None
+solar_energy_last_flush_monotonic = 0.0
+solar_energy_pending_wh: dict[str, float] = {}
 COUNTED_VISITOR_COOKIE = "inverter_counted"
 REGISTER_LOG_DIRECTORY = Path(__file__).with_name("register_logs")
+REGISTER_LOG_MIN_FREE_BYTES = int(
+    os.environ.get("INVERTER_LOG_MIN_FREE_BYTES", str(2 * 1024**3))
+)
 
 register_log_lock = threading.Lock()
 register_log_file: TextIO | None = None
@@ -67,6 +76,9 @@ register_log_started_at = ""
 register_log_changes = 0
 register_log_error = ""
 register_log_previous_values: dict[int, int] = {}
+register_log_free_bytes: int | None = None
+register_log_pruned_files = 0
+register_log_storage_checked_at = 0.0
 
 POLL_RATES = [0.5, 1.0, 2.0, 5.0, 10.0]
 
@@ -420,6 +432,67 @@ def read_compatible() -> tuple[dict[int, int], int, int, str | None]:
     return values, failed, requests, last_error
 
 
+def maintain_register_log_storage(force: bool = False) -> bool:
+    """Delete oldest completed register logs when free space is below 2 GiB."""
+    global register_log_free_bytes, register_log_pruned_files
+    global register_log_storage_checked_at, register_log_error
+
+    monotonic_now = time.monotonic()
+    if not force and monotonic_now - register_log_storage_checked_at < 60:
+        return (
+            register_log_free_bytes is None
+            or register_log_free_bytes >= REGISTER_LOG_MIN_FREE_BYTES
+        )
+
+    register_log_storage_checked_at = monotonic_now
+    try:
+        REGISTER_LOG_DIRECTORY.mkdir(parents=True, exist_ok=True)
+        root = REGISTER_LOG_DIRECTORY.resolve()
+        register_log_free_bytes = shutil.disk_usage(root).free
+        if register_log_free_bytes >= REGISTER_LOG_MIN_FREE_BYTES:
+            return True
+
+        active_path = (
+            register_log_path.resolve()
+            if register_log_file is not None and register_log_path is not None
+            else None
+        )
+        candidates: list[Path] = []
+        for candidate in REGISTER_LOG_DIRECTORY.glob("register_changes_*.csv"):
+            try:
+                resolved = candidate.resolve(strict=True)
+            except OSError:
+                continue
+            if (
+                resolved.parent != root
+                or resolved == active_path
+                or not resolved.name.startswith("register_changes_")
+                or resolved.suffix.lower() != ".csv"
+            ):
+                continue
+            candidates.append(resolved)
+
+        candidates.sort(key=lambda path: path.stat().st_mtime)
+        for candidate in candidates:
+            if register_log_free_bytes >= REGISTER_LOG_MIN_FREE_BYTES:
+                break
+            candidate.unlink()
+            register_log_pruned_files += 1
+            register_log_free_bytes = shutil.disk_usage(root).free
+
+        if register_log_free_bytes < REGISTER_LOG_MIN_FREE_BYTES:
+            register_log_error = (
+                "Register logging stopped: less than 2 GB free and no completed "
+                "register logs remain to remove"
+            )
+            return False
+        register_log_error = ""
+        return True
+    except OSError as error:
+        register_log_error = f"Register-log storage cleanup failed: {error}"
+        return False
+
+
 def register_log_status() -> dict[str, Any]:
     """Return the current register change-log state for the web dashboard."""
     with register_log_lock:
@@ -439,6 +512,9 @@ def register_log_status() -> dict[str, Any]:
             "size_bytes": size,
             "available": path is not None and path.exists(),
             "error": register_log_error,
+            "free_bytes": register_log_free_bytes,
+            "minimum_free_bytes": REGISTER_LOG_MIN_FREE_BYTES,
+            "pruned_files": register_log_pruned_files,
         }
 
 
@@ -453,6 +529,8 @@ def start_register_log() -> dict[str, Any]:
             return register_log_status_unlocked()
         try:
             REGISTER_LOG_DIRECTORY.mkdir(parents=True, exist_ok=True)
+            if not maintain_register_log_storage(force=True):
+                return register_log_status_unlocked()
             now = datetime.now(MADRID_TIME_ZONE)
             path = REGISTER_LOG_DIRECTORY / (
                 f"register_changes_{now.strftime('%Y%m%d_%H%M%S_%f')}.csv"
@@ -512,14 +590,27 @@ def register_log_status_unlocked() -> dict[str, Any]:
         "size_bytes": size,
         "available": path is not None and path.exists(),
         "error": register_log_error,
+        "free_bytes": register_log_free_bytes,
+        "minimum_free_bytes": REGISTER_LOG_MIN_FREE_BYTES,
+        "pruned_files": register_log_pruned_files,
     }
 
 
 def record_register_changes(values: dict[int, int], cycle_id: int) -> None:
     """Append the initial snapshot or values changed since the prior poll."""
+    global register_log_file, register_log_writer
     global register_log_changes, register_log_error, register_log_previous_values
     with register_log_lock:
         if register_log_file is None or register_log_writer is None:
+            return
+        if not maintain_register_log_storage():
+            try:
+                register_log_file.flush()
+                register_log_file.close()
+            except OSError:
+                pass
+            register_log_file = None
+            register_log_writer = None
             return
         initial_snapshot = not register_log_previous_values
         timestamp = datetime.now(MADRID_TIME_ZONE).isoformat(timespec="milliseconds")
@@ -583,6 +674,136 @@ def record_register_log_note(note: str, cycle_id: int) -> dict[str, Any]:
         return register_log_status_unlocked()
 
 
+def flush_solar_energy_locked() -> bool:
+    """Persist pending PV watt-hours while ``stats_lock`` is held."""
+    global solar_energy_error
+    pending = {
+        day: watt_hours
+        for day, watt_hours in solar_energy_pending_wh.items()
+        if watt_hours > 0
+    }
+    if not pending:
+        return True
+    try:
+        with closing(sqlite3.connect(STATS_DB_PATH)) as connection:
+            connection.executemany(
+                """
+                INSERT INTO solar_energy_daily (day, watt_hours, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(day) DO UPDATE SET
+                    watt_hours = watt_hours + excluded.watt_hours,
+                    updated_at = excluded.updated_at
+                """,
+                [
+                    (day, watt_hours, datetime.now(MADRID_TIME_ZONE).isoformat(timespec="seconds"))
+                    for day, watt_hours in pending.items()
+                ],
+            )
+            connection.commit()
+        for day, watt_hours in pending.items():
+            remaining = solar_energy_pending_wh.get(day, 0.0) - watt_hours
+            if remaining > 1e-9:
+                solar_energy_pending_wh[day] = remaining
+            else:
+                solar_energy_pending_wh.pop(day, None)
+        solar_energy_error = ""
+        return True
+    except (OSError, sqlite3.Error) as error:
+        solar_energy_error = str(error)
+        return False
+
+
+def flush_solar_energy() -> None:
+    """Persist accumulated solar energy before a clean shutdown."""
+    with stats_lock:
+        flush_solar_energy_locked()
+
+
+def record_solar_energy(fresh_values: dict[int, int]) -> None:
+    """Integrate confirmed R385 PV power samples into Madrid-day buckets."""
+    global solar_energy_last_sample_at, solar_energy_last_power_w
+    global solar_energy_last_flush_monotonic
+    raw = fresh_values.get(385)
+    if raw is None:
+        return
+    _, _, _, normalized_power, _ = normalize(385, raw)
+    if normalized_power is None:
+        return
+
+    now = datetime.now(MADRID_TIME_ZONE)
+    power_w = max(0.0, min(20000.0, float(normalized_power)))
+    with stats_lock:
+        previous_at = solar_energy_last_sample_at
+        previous_power_w = solar_energy_last_power_w
+        solar_energy_last_sample_at = now
+        solar_energy_last_power_w = power_w
+        if previous_at is None or previous_power_w is None:
+            return
+
+        elapsed_seconds = (now - previous_at).total_seconds()
+        # Ignore long gaps so a stopped process or failed Modbus link cannot
+        # turn one stale reading into fictitious production.
+        if not 0 < elapsed_seconds <= 60:
+            return
+        average_power_w = (previous_power_w + power_w) / 2
+        watt_hours = average_power_w * elapsed_seconds / 3600
+        day_key = now.date().isoformat()
+        solar_energy_pending_wh[day_key] = (
+            solar_energy_pending_wh.get(day_key, 0.0) + watt_hours
+        )
+
+        monotonic_now = time.monotonic()
+        if monotonic_now - solar_energy_last_flush_monotonic >= 10:
+            if flush_solar_energy_locked():
+                solar_energy_last_flush_monotonic = monotonic_now
+
+
+def solar_energy_summary() -> dict[str, Any]:
+    """Return current Madrid day/week/month/year production in kWh."""
+    global solar_energy_error
+    now = datetime.now(MADRID_TIME_ZONE)
+    today = now.date()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+    year_start = today.replace(month=1, day=1)
+    daily: dict[str, float] = {}
+
+    try:
+        with stats_lock:
+            with closing(sqlite3.connect(STATS_DB_PATH)) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT day, watt_hours
+                    FROM solar_energy_daily
+                    WHERE day >= ? AND day <= ?
+                    """,
+                    (year_start.isoformat(), today.isoformat()),
+                ).fetchall()
+            daily = {str(day): float(watt_hours) for day, watt_hours in rows}
+            for day, watt_hours in solar_energy_pending_wh.items():
+                daily[day] = daily.get(day, 0.0) + watt_hours
+        solar_energy_error = ""
+    except (OSError, sqlite3.Error) as error:
+        solar_energy_error = str(error)
+
+    def total_since(start: Any) -> float:
+        return sum(
+            watt_hours
+            for day, watt_hours in daily.items()
+            if start.isoformat() <= day <= today.isoformat()
+        ) / 1000
+
+    return {
+        "today_kwh": round(total_since(today), 3),
+        "week_kwh": round(total_since(week_start), 3),
+        "month_kwh": round(total_since(month_start), 3),
+        "year_kwh": round(total_since(year_start), 3),
+        "source_register": 385,
+        "estimated": True,
+        "error": solar_energy_error,
+    }
+
+
 def poll_worker() -> None:
     cached: dict[int, int] = {}
 
@@ -633,6 +854,8 @@ def poll_worker() -> None:
             poll_rate = POLL_RATES[state["poll_rate_index"]]
 
         record_register_changes(log_values, log_cycle_id)
+        if fresh:
+            record_solar_energy(fresh)
         poll_wake_event.wait(max(0.0, poll_rate - duration))
         poll_wake_event.clear()
 
@@ -1005,6 +1228,120 @@ WEB_DASHBOARD = r"""<!doctype html>
       font-weight: 750;
     }
     .updated { margin-left: auto }
+    .energy-flow-card {
+      position: sticky; top: 8px; z-index: 8; width: 100%;
+      margin-bottom: 18px; padding: 16px 18px 18px;
+      overflow: hidden; border: 1px solid rgba(56,189,248,.3); border-radius: 20px;
+      background: var(--panel);
+      background: linear-gradient(145deg, color-mix(in srgb, var(--card-start) 94%, transparent), color-mix(in srgb, var(--card-end) 94%, transparent));
+      box-shadow: 0 18px 46px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.05);
+      backdrop-filter: blur(18px);
+    }
+    .energy-flow-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 13px }
+    .energy-flow-head h2 { font-size: 15px }
+    .energy-flow-status {
+      padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px;
+      color: var(--muted); background: var(--control); font-size: 11px; font-weight: 800; text-transform: uppercase;
+    }
+    .energy-flow-status.active { color: var(--green); border-color: rgba(52,211,153,.4); background: rgba(16,185,129,.13) }
+    .energy-flow-diagram {
+      display: grid;
+      grid-template-columns: minmax(78px,1fr) minmax(34px,.55fr) minmax(88px,1fr) minmax(34px,.55fr) minmax(78px,1fr);
+      grid-template-rows: auto 30px auto; align-items: center; width: 100%; max-width: 850px; margin: 0 auto;
+    }
+    .energy-node {
+      position: relative; z-index: 2; min-width: 0; padding: 11px 8px;
+      border: 1px solid var(--line); border-radius: 15px; text-align: center;
+      background: var(--control); transition: border-color .3s ease, box-shadow .3s ease, transform .3s ease;
+    }
+    .energy-node.active {
+      border-color: var(--node-colour);
+      background: color-mix(in srgb, var(--node-colour) 13%, var(--control));
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-colour) 28%, transparent), 0 0 24px color-mix(in srgb, var(--node-colour) 32%, transparent);
+    }
+    .energy-node-icon { display: block; color: var(--node-colour); font-size: 25px; line-height: 1; filter: drop-shadow(0 0 7px currentColor) }
+    .energy-node-label { display: block; margin-top: 5px; overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 850; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap }
+    .energy-node-value { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 850; font-variant-numeric: tabular-nums }
+    .energy-solar { grid-column: 1; grid-row: 1; --node-colour: #fbbf24 }
+    .energy-inverter { grid-column: 3; grid-row: 1; --node-colour: #22d3ee }
+    .energy-home { grid-column: 5; grid-row: 1; --node-colour: #a78bfa }
+    .energy-battery { grid-column: 1; grid-row: 3; --node-colour: #34d399 }
+    .energy-grid { grid-column: 3; grid-row: 3; --node-colour: #60a5fa }
+    .flow-connector { position: relative; align-self: center; justify-self: stretch; color: var(--muted); opacity: .38 }
+    .flow-connector::before { content: ""; position: absolute; inset: 50% 0 auto; height: 3px; border-radius: 999px; background: currentColor; transform: translateY(-50%) }
+    .flow-connector::after {
+      content: "\279c"; display: none; position: absolute; left: -9px; top: 50%; width: 22px; height: 22px;
+      color: currentColor; font-size: 22px; font-weight: 950; line-height: 22px; text-align: center;
+      text-shadow: 0 0 4px #fff, 0 0 11px currentColor, 0 0 22px currentColor;
+      filter: drop-shadow(0 0 5px currentColor); transform: translateY(-50%);
+      animation: energy-flow-x var(--flow-duration,1.4s) linear infinite;
+    }
+    .flow-connector.active { color: var(--flow-colour,#22d3ee); opacity: 1 }
+    .flow-connector.active::before {
+      height: 6px;
+      background: repeating-linear-gradient(90deg, currentColor 0 11px, transparent 11px 17px);
+      background-size: 34px 100%;
+      box-shadow: 0 0 9px currentColor, 0 0 18px color-mix(in srgb, currentColor 70%, transparent);
+      animation: energy-track-x var(--flow-duration,1.4s) linear infinite;
+    }
+    .flow-connector.active::after { display: block }
+    .flow-connector.reverse::before, .flow-connector.reverse::after { animation-direction: reverse }
+    .flow-connector.reverse::after { transform: translateY(-50%) rotate(180deg) }
+    .flow-direction-indicator {
+      position: absolute; z-index: 3; left: 50%; top: 50%; min-width: 28px; height: 28px;
+      padding: 0 4px; border: 2px solid currentColor; border-radius: 999px;
+      color: currentColor; background: var(--panel); box-shadow: 0 0 10px rgba(148,163,184,.24);
+      font-size: 20px; font-weight: 950; line-height: 23px; text-align: center;
+      transform: translate(-50%,-50%); opacity: .72;
+    }
+    .flow-connector.active .flow-direction-indicator {
+      color: var(--flow-colour,#22d3ee); background: var(--card-start); opacity: 1;
+      box-shadow: 0 0 5px #fff, 0 0 14px currentColor, 0 0 26px currentColor;
+      animation: flow-indicator-pulse .85s ease-in-out infinite alternate;
+    }
+    .flow-pv { grid-column: 2; grid-row: 1; --flow-colour: #fbbf24 }
+    .flow-home { grid-column: 4; grid-row: 1; --flow-colour: #a78bfa }
+    .flow-battery {
+      grid-column: 2; grid-row: 2; align-self: center; justify-self: center;
+      width: 145%; transform: rotate(-42deg); transform-origin: center; --flow-colour: #34d399;
+    }
+    .flow-grid, .flow-solar-battery {
+      align-self: stretch; justify-self: center; width: 6px;
+    }
+    .flow-grid {
+      grid-column: 3; grid-row: 2; align-self: stretch; justify-self: center;
+      width: 6px; --flow-colour: #60a5fa;
+    }
+    .flow-solar-battery { grid-column: 1; grid-row: 2; --flow-colour: #34d399 }
+    .flow-grid::before, .flow-solar-battery::before { inset: 0 auto; width: 3px; height: auto; transform: none }
+    .flow-grid.active::before, .flow-solar-battery.active::before {
+      width: 6px; height: auto;
+      background: repeating-linear-gradient(180deg, currentColor 0 11px, transparent 11px 17px);
+      background-size: 100% 34px;
+      animation-name: energy-track-y;
+    }
+    .flow-grid::after, .flow-solar-battery::after {
+      content: "\25bc"; left: 50%; top: -7px; transform: translateX(-50%);
+      animation-name: energy-flow-y;
+    }
+    .flow-grid.reverse::after, .flow-solar-battery.reverse::after { transform: translateX(-50%) rotate(180deg) }
+    .flow-direction { display: block; margin-top: 4px; overflow: hidden; color: var(--node-colour); text-align: center; text-overflow: ellipsis; font-size: 8px; font-weight: 900; white-space: nowrap }
+    @keyframes energy-flow-x { from { left: -7px } to { left: calc(100% - 7px) } }
+    @keyframes energy-flow-y { from { top: -7px } to { top: calc(100% - 7px) } }
+    @keyframes energy-track-x { from { background-position: 0 0 } to { background-position: 34px 0 } }
+    @keyframes energy-track-y { from { background-position: 0 0 } to { background-position: 0 34px } }
+    @keyframes flow-indicator-pulse { from { filter: brightness(.9) } to { filter: brightness(1.45) } }
+    .solar-energy-panel { margin-bottom: 18px }
+    .solar-energy-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px }
+    .solar-energy-note { color: var(--muted); font-size: 10px; text-align: right }
+    .solar-energy-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px }
+    .solar-energy-total {
+      min-width: 0; padding: 12px; border: 1px solid rgba(251,191,36,.22); border-radius: 14px;
+      background: linear-gradient(145deg, rgba(251,191,36,.09), rgba(14,165,233,.05));
+    }
+    .solar-energy-period { display: block; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase }
+    .solar-energy-value { display: block; margin-top: 4px; color: #fbbf24; font-size: clamp(19px,2.2vw,27px); font-weight: 900; font-variant-numeric: tabular-nums }
+    .solar-energy-error { margin-top: 9px; color: var(--red); font-size: 11px }
     .gauges {
       display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;
       margin-bottom: 18px;
@@ -1243,6 +1580,16 @@ WEB_DASHBOARD = r"""<!doctype html>
       #demo-button, #manage-values-button, #updated { grid-column: 1 / -1 }
       .updated { margin-left: 0 }
       .gauges { gap: 8px; margin-bottom: 12px }
+      .energy-flow-card { top: 6px; width: 100%; margin-bottom: 12px; padding: 12px 9px 14px; border-radius: 16px }
+      .energy-flow-head { margin-bottom: 10px; padding-inline: 3px }
+      .energy-flow-diagram { grid-template-columns: minmax(64px,1fr) 25px minmax(72px,1fr) 25px minmax(64px,1fr); grid-template-rows: auto 24px auto }
+      .solar-energy-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px }
+      .solar-energy-head { align-items: flex-start; flex-direction: column; gap: 4px }
+      .solar-energy-note { text-align: left }
+      .energy-node { padding: 9px 4px; border-radius: 12px }
+      .energy-node-icon { font-size: 23px }
+      .energy-node-label { font-size: 9px }
+      .energy-node-value { font-size: 12px }
       .gauge-card { padding: 11px 8px 10px; border-radius: 15px }
       .gauge-title { font-size: 12px }
       .value { font-size: clamp(21px, 7vw, 26px) }
@@ -1369,6 +1716,61 @@ WEB_DASHBOARD = r"""<!doctype html>
     </div>
 
     <div class="panel error" id="error"></div>
+    <article class="energy-flow-card" id="energy-flow-card" aria-label="Потік енергії" data-i18n-aria="energyFlowAria">
+      <div class="energy-flow-head">
+        <h2 data-i18n="energyFlowTitle">Потік енергії</h2>
+        <span class="energy-flow-status" id="energy-flow-status">—</span>
+      </div>
+      <div class="energy-flow-diagram">
+        <div class="energy-node energy-solar" id="energy-solar-node">
+          <span class="energy-node-icon" aria-hidden="true">&#9728;</span>
+          <span class="energy-node-label" data-i18n="solarPanels">Сонячні панелі</span>
+          <span class="energy-node-value" id="energy-solar-value">—</span>
+          <span class="flow-direction" id="energy-solar-direction"></span>
+        </div>
+        <div class="flow-connector flow-solar-battery" id="energy-solar-battery-flow" aria-hidden="true"><span class="flow-direction-indicator">&#8595;</span></div>
+        <div class="flow-connector flow-pv" id="energy-pv-flow" aria-hidden="true"><span class="flow-direction-indicator">&#8596;</span></div>
+        <div class="energy-node energy-inverter" id="energy-inverter-node">
+          <span class="energy-node-icon" aria-hidden="true">&#9889;</span>
+          <span class="energy-node-label" data-i18n="inverter">Інвертор</span>
+          <span class="energy-node-value" id="energy-inverter-value">—</span>
+        </div>
+        <div class="flow-connector flow-home" id="energy-home-flow" aria-hidden="true"><span class="flow-direction-indicator">&#8594;</span></div>
+        <div class="energy-node energy-home" id="energy-home-node">
+          <span class="energy-node-icon" aria-hidden="true">&#8962;</span>
+          <span class="energy-node-label" data-i18n="home">Дім</span>
+          <span class="energy-node-value" id="energy-home-value">—</span>
+          <span class="flow-direction" id="energy-home-direction"></span>
+        </div>
+        <div class="energy-node energy-grid" id="energy-grid-node">
+          <span class="energy-node-icon" aria-hidden="true">&#128268;</span>
+          <span class="energy-node-label" data-i18n="cityGenerator">Місто / Генератор</span>
+          <span class="energy-node-value" id="energy-grid-value">—</span>
+          <span class="flow-direction" id="energy-grid-direction"></span>
+        </div>
+        <div class="flow-connector flow-grid" id="energy-grid-flow" aria-hidden="true"><span class="flow-direction-indicator">&#8597;</span></div>
+        <div class="flow-connector flow-battery" id="energy-battery-flow" aria-hidden="true"><span class="flow-direction-indicator">&#8596;</span></div>
+        <div class="energy-node energy-battery" id="energy-battery-node">
+          <span class="energy-node-icon" aria-hidden="true">&#128267;</span>
+          <span class="energy-node-label" data-i18n="battery">Батарея</span>
+          <span class="energy-node-value" id="energy-battery-value">—</span>
+          <span class="flow-direction" id="energy-battery-direction"></span>
+        </div>
+      </div>
+    </article>
+    <section class="panel solar-energy-panel" aria-label="Вироблена сонячна енергія" data-i18n-aria="solarEnergyAria">
+      <div class="solar-energy-head">
+        <h2 data-i18n="solarEnergyTitle">Вироблена сонячна енергія</h2>
+        <span class="solar-energy-note" data-i18n="solarEnergyEstimate">Оцінка з потужності PV R385 · час Мадрида</span>
+      </div>
+      <div class="solar-energy-grid">
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="today">Сьогодні</span><span class="solar-energy-value" id="solar-energy-today">—</span></article>
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisWeek">Цього тижня</span><span class="solar-energy-value" id="solar-energy-week">—</span></article>
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisMonth">Цього місяця</span><span class="solar-energy-value" id="solar-energy-month">—</span></article>
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisYear">Цього року</span><span class="solar-energy-value" id="solar-energy-year">—</span></article>
+      </div>
+      <div class="solar-energy-error" id="solar-energy-error" hidden></div>
+    </section>
     <section class="gauges" id="gauges" aria-label="Індикатори інвертора" data-i18n-aria="gaugesAria"></section>
 
     <section class="panel register-logger">
@@ -1502,6 +1904,18 @@ WEB_DASHBOARD = r"""<!doctype html>
         viewTabsAria: 'Розділи застосунку', dashboardTab: 'Панель', chartsTab: 'Графіки', lcdTab: 'LCD',
         lcdTitle: 'LCD ІНВЕРТОРА', lcdSubtitle: 'Поточні показники з Modbus',
         grid: 'Мережа', inverter: 'Інвертор', load: 'Навантаження', pvInput: 'Вхід PV',
+        energyFlowTitle: 'Потік енергії', energyFlowAria: 'Поточний потік енергії між сонячними панелями, міською мережею або генератором, інвертором, батареєю та домом',
+        solarPanels: 'Сонячні панелі', home: 'Дім', battery: 'Батарея', cityGenerator: 'Місто / Генератор',
+        importing: 'СПОЖИВАННЯ', exporting: 'ВІДДАЧА', gridReady: 'AC ДОСТУПНА',
+        supplying: 'ВІДДАЄ', receiving: 'ОТРИМУЄ', consuming: 'СПОЖИВАЄ',
+        demoSolarChargeExport: 'ДЕМО · PV → ДІМ + БАТ. + МЕРЕЖА',
+        demoGridHome: 'ДЕМО · МЕРЕЖА → ДІМ', demoBatteryHome: 'ДЕМО · БАТ. → ДІМ',
+        demoSolarExport: 'ДЕМО · PV → ДІМ + МЕРЕЖА', demoPvReverse: 'ДЕМО · МЕРЕЖА → PV + ДІМ',
+        demoMixedSources: 'ДЕМО · PV + БАТ. → ДІМ · МЕРЕЖІ НЕМАЄ',
+        solarEnergyTitle: 'Вироблена сонячна енергія', solarEnergyAria: 'Підсумки виробленої сонячної енергії',
+        solarEnergyEstimate: 'Оцінка з потужності PV R385 · час Мадрида',
+        today: 'Сьогодні', thisWeek: 'Цього тижня', thisMonth: 'Цього місяця', thisYear: 'Цього року',
+        waitingSolar: 'ОЧІКУЄ PV',
         batteryVoltage: 'Напруга батареї', batterySoc: 'Заряд батареї', frequency: 'Частота',
         batteryCurrent: 'Струм батареї', batteryTemperature: 'Температура батареї',
         maxChargeVoltage: 'Макс. напруга заряду', currentLimit: 'Ліміт струму', batteryState: 'Стан батареї',
@@ -1537,6 +1951,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         downloadRegisterLog: '↓ Завантажити CSV', registerLogIdle: 'Запис не запущено',
         registerLogActive: 'Запис · {filename} · рядків: {changes} · {size}',
         registerLogStopped: 'Зупинено · {filename} · рядків: {changes} · {size}',
+        registerLogStorage: 'вільно: {free} · видалено старих журналів: {count}',
         registerLogError: 'Помилка журналу: {error}', registerLogRequestError: 'Не вдалося змінити стан журналу: {error}',
         cycleInitial: 'Цикл —', visitorsInitial: 'Відвідувачі — · —',
         notUpdated: 'Ще не оновлено', gaugesAria: 'Індикатори інвертора',
@@ -1581,6 +1996,18 @@ WEB_DASHBOARD = r"""<!doctype html>
         viewTabsAria: 'Разделы приложения', dashboardTab: 'Панель', chartsTab: 'Графики', lcdTab: 'LCD',
         lcdTitle: 'LCD ИНВЕРТОРА', lcdSubtitle: 'Текущие показатели из Modbus',
         grid: 'Сеть', inverter: 'Инвертор', load: 'Нагрузка', pvInput: 'Вход PV',
+        energyFlowTitle: 'Поток энергии', energyFlowAria: 'Текущий поток энергии между солнечными панелями, городской сетью или генератором, инвертором, батареей и домом',
+        solarPanels: 'Солнечные панели', home: 'Дом', battery: 'Батарея', cityGenerator: 'Сеть / Генератор',
+        importing: 'ПОТРЕБЛЕНИЕ', exporting: 'ОТДАЧА', gridReady: 'AC ДОСТУПЕН',
+        supplying: 'ОТДАЁТ', receiving: 'ПОЛУЧАЕТ', consuming: 'ПОТРЕБЛЯЕТ',
+        demoSolarChargeExport: 'ДЕМО · PV → ДОМ + БАТ. + СЕТЬ',
+        demoGridHome: 'ДЕМО · СЕТЬ → ДОМ', demoBatteryHome: 'ДЕМО · БАТ. → ДОМ',
+        demoSolarExport: 'ДЕМО · PV → ДОМ + СЕТЬ', demoPvReverse: 'ДЕМО · СЕТЬ → PV + ДОМ',
+        demoMixedSources: 'ДЕМО · PV + БАТ. → ДОМ · СЕТИ НЕТ',
+        solarEnergyTitle: 'Выработанная солнечная энергия', solarEnergyAria: 'Итоги выработанной солнечной энергии',
+        solarEnergyEstimate: 'Оценка по мощности PV R385 · время Мадрида',
+        today: 'Сегодня', thisWeek: 'На этой неделе', thisMonth: 'В этом месяце', thisYear: 'В этом году',
+        waitingSolar: 'ОЖИДАЕТ PV',
         batteryVoltage: 'Напряжение батареи', batterySoc: 'Заряд батареи', frequency: 'Частота',
         batteryCurrent: 'Ток батареи', batteryTemperature: 'Температура батареи',
         maxChargeVoltage: 'Макс. напряжение заряда', currentLimit: 'Предел тока', batteryState: 'Состояние батареи',
@@ -1616,6 +2043,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         downloadRegisterLog: '↓ Скачать CSV', registerLogIdle: 'Запись не запущена',
         registerLogActive: 'Запись · {filename} · строк: {changes} · {size}',
         registerLogStopped: 'Остановлено · {filename} · строк: {changes} · {size}',
+        registerLogStorage: 'свободно: {free} · удалено старых журналов: {count}',
         registerLogError: 'Ошибка журнала: {error}', registerLogRequestError: 'Не удалось изменить журнал: {error}',
         cycleInitial: 'Цикл —', visitorsInitial: 'Посетители — · —',
         notUpdated: 'Ещё не обновлено', gaugesAria: 'Индикаторы инвертора',
@@ -1660,6 +2088,18 @@ WEB_DASHBOARD = r"""<!doctype html>
         viewTabsAria: 'Application sections', dashboardTab: 'Dashboard', chartsTab: 'Charts', lcdTab: 'LCD',
         lcdTitle: 'INVERTER LCD', lcdSubtitle: 'Live readings from Modbus',
         grid: 'Grid', inverter: 'Inverter', load: 'Load', pvInput: 'PV input',
+        energyFlowTitle: 'Energy flow', energyFlowAria: 'Current energy flow between the solar panels, city grid or generator, inverter, battery, and home',
+        solarPanels: 'Solar panels', home: 'Home', battery: 'Battery', cityGenerator: 'Grid / Generator',
+        importing: 'IMPORTING', exporting: 'EXPORTING', gridReady: 'AC AVAILABLE',
+        supplying: 'SUPPLYING', receiving: 'RECEIVING', consuming: 'CONSUMING',
+        demoSolarChargeExport: 'DEMO · PV → HOME + BAT. + GRID',
+        demoGridHome: 'DEMO · GRID → HOME', demoBatteryHome: 'DEMO · BAT. → HOME',
+        demoSolarExport: 'DEMO · PV → HOME + GRID', demoPvReverse: 'DEMO · GRID → PV + HOME',
+        demoMixedSources: 'DEMO · PV + BAT. → HOME · GRID OFF',
+        solarEnergyTitle: 'Solar energy generated', solarEnergyAria: 'Generated solar energy totals',
+        solarEnergyEstimate: 'Estimated from PV power R385 · Madrid time',
+        today: 'Today', thisWeek: 'This week', thisMonth: 'This month', thisYear: 'This year',
+        waitingSolar: 'WAITING FOR PV',
         batteryVoltage: 'Battery voltage', batterySoc: 'Battery charge', frequency: 'Frequency',
         batteryCurrent: 'Battery current', batteryTemperature: 'Battery temperature',
         maxChargeVoltage: 'Max. charge voltage', currentLimit: 'Current limit', batteryState: 'Battery state',
@@ -1695,6 +2135,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         downloadRegisterLog: '↓ Download CSV', registerLogIdle: 'Recording is not running',
         registerLogActive: 'Recording · {filename} · rows: {changes} · {size}',
         registerLogStopped: 'Stopped · {filename} · rows: {changes} · {size}',
+        registerLogStorage: 'free: {free} · old logs removed: {count}',
         registerLogError: 'Log error: {error}', registerLogRequestError: 'Could not change log state: {error}',
         cycleInitial: 'Cycle —', visitorsInitial: 'Visitors — · —',
         notUpdated: 'Not updated yet', gaugesAria: 'Live inverter gauges',
@@ -1925,6 +2366,7 @@ WEB_DASHBOARD = r"""<!doctype html>
     let chartDemoRunning = false;
     let chartDemoCancelRequested = false;
     let demoRegisterRows = null;
+    let demoFlowCase = '';
     let currentView = 'dashboard';
     let lcdPageIndex = 0;
     let lcdEnterNotice = false;
@@ -2193,50 +2635,64 @@ WEB_DASHBOARD = r"""<!doctype html>
       let batteryCurrent;
       let batterySoc;
       let statusCode;
+      let caseKey;
 
-      if (second < 30) {
-        // Strong solar production: loads are supplied and the battery charges.
+      if (second < 20) {
+        // PV supplies the home, charges the battery, and exports the surplus.
         pvVoltage = 326 + ripple * 4;
-        pvPower = 6400 + Math.sin(second * .21) * 350;
-        loadPower = 2850 + Math.sin(second * .29) * 180;
-        batteryCurrent = -(pvPower - loadPower) / 54 * .82;
-        batterySoc = 76 + second * .06;
+        pvPower = 7200 + Math.sin(second * .21) * 260;
+        loadPower = 2500 + Math.sin(second * .29) * 140;
+        batteryCurrent = -42 + ripple * 1.5;
+        batterySoc = 72 + second * .08;
         statusCode = 3;
-      } else if (second < 45) {
-        // Panels are switched off: voltage, power, and charging current decay together.
-        const transition = (second - 30) / 15;
-        pvVoltage = interpolate(326, 12, transition);
-        pvPower = interpolate(6300, 0, transition);
-        loadPower = 2750 + ripple * 120;
-        batteryCurrent = interpolate(-52, loadPower / 51.8, transition);
-        batterySoc = 77.8 - transition * .15;
-        statusCode = batteryCurrent < 0 ? 3 : 2;
-      } else if (second < 70) {
-        // No panels and no grid: the battery supplies the load.
-        gridAvailable = false;
-        pvVoltage = Math.max(0, 8 - (second - 45) * .5);
-        pvPower = 0;
-        loadPower = 2250 + Math.sin(second * .31) * 220;
-        batteryCurrent = loadPower / 51.7;
-        batterySoc = 77.65 - (second - 45) * .08;
-        statusCode = 2;
-      } else if (second < 95) {
-        // Grid/bypass operation after the grid returns; battery receives a small charge.
+        caseKey = 'demoSolarChargeExport';
+      } else if (second < 40) {
+        // Grid/generator supplies the home; charging is solar-only.
         pvVoltage = 0;
         pvPower = 0;
-        loadPower = 2450 + Math.sin(second * .27) * 160;
-        batteryCurrent = -8 + ripple * .8;
-        batterySoc = 75.65 + (second - 70) * .025;
+        loadPower = 2900 + ripple * 130;
+        batteryCurrent = 0;
+        batterySoc = 73.6;
         statusCode = 1;
-      } else {
-        // Panels return and solar production ramps back up.
-        const transition = (second - 95) / 25;
-        pvVoltage = interpolate(20, 324, transition) + ripple * 2;
-        pvPower = interpolate(0, 6100, transition) + ripple * 120;
-        loadPower = 2700 + Math.sin(second * .25) * 170;
-        batteryCurrent = interpolate(-7, -(pvPower - loadPower) / 54 * .8, transition);
-        batterySoc = 76.28 + transition * 1.7;
+        caseKey = 'demoGridHome';
+      } else if (second < 60) {
+        // With PV and AC input unavailable, the battery supplies the home.
+        gridAvailable = false;
+        pvVoltage = 0;
+        pvPower = 0;
+        loadPower = 2300 + Math.sin(second * .31) * 160;
+        batteryCurrent = loadPower / 51.8;
+        batterySoc = 74.4 - (second - 40) * .09;
+        statusCode = 2;
+        caseKey = 'demoBatteryHome';
+      } else if (second < 80) {
+        // Solar supplies the home and exports; the battery remains idle.
+        pvVoltage = 324 + ripple * 3;
+        pvPower = 5600 + ripple * 220;
+        loadPower = 2700 + Math.sin(second * .27) * 130;
+        batteryCurrent = ripple * .08;
+        batterySoc = 72.6;
         statusCode = 3;
+        caseKey = 'demoSolarExport';
+      } else if (second < 100) {
+        // Diagnostic reverse-PV case demonstrates the supported bidirectional path.
+        pvVoltage = 315 + ripple * 2;
+        pvPower = -1200 - Math.abs(ripple) * 120;
+        loadPower = 2200 + Math.sin(second * .25) * 100;
+        batteryCurrent = 0;
+        batterySoc = 72.5;
+        statusCode = 1;
+        caseKey = 'demoPvReverse';
+      } else {
+        // With AC input unavailable, solar and battery jointly supply the home.
+        gridAvailable = false;
+        pvVoltage = 320 + ripple * 3;
+        pvPower = 1500 + ripple * 120;
+        loadPower = 2500 + Math.sin(second * .25) * 120;
+        batteryCurrent = 20 + ripple;
+        batterySoc = 72.5 - (second - 100) * .07;
+        statusCode = 2;
+        caseKey = 'demoMixedSources';
       }
 
       const gridVoltage = gridAvailable ? 230 + Math.sin(second * .19) * 1.4 : 0;
@@ -2249,6 +2705,7 @@ WEB_DASHBOARD = r"""<!doctype html>
 
       return {
         statusCode,
+        caseKey,
         values: new Map([
           [89, gridVoltage], [90, gridVoltage], [91, gridFrequency],
           [92, inverterTemperature], [93, batteryVoltage], [94, loadPercent],
@@ -2262,13 +2719,34 @@ WEB_DASHBOARD = r"""<!doctype html>
           [343, batteryCurrent * 1.06], [344, batteryCurrent * .98],
           [345, 61], [346, 48], [349, 48], [350, -1.5],
           [376, 57.1], [377, 54.4], [378, 80], [379, 80], [383, 58.4],
-          [385, 7200], [386, 2160],
+          [385, pvPower], [386, Math.max(0, loadPower)],
           [401, 1], [402, 1], [403, batteryPower],
           [404, batteryVoltage], [405, batteryCurrent],
           [406, batteryTemperature + .6], [407, batterySoc], [408, 100],
           [411, 57.1], [412, 80], [413, batteryPower],
           [415, 20], [416, 50], [417, 90], [449, 584]
         ])
+      };
+    }
+
+    function demoSolarEnergySummary(elapsedSeconds) {
+      // The 120-second demo represents a compressed 12-hour operating window.
+      const boundedSeconds = Math.max(0, Math.min(chartWindowSeconds, elapsedSeconds));
+      const simulatedSecondsPerDemoSecond = 360;
+      const integrationStep = .25;
+      let generatedKwh = 0;
+      for (let second = 0; second < boundedSeconds; second += integrationStep) {
+        const step = Math.min(integrationStep, boundedSeconds - second);
+        const pvPower = realisticDemoScenario(second + step / 2).values.get(385);
+        generatedKwh += Math.max(0, Number(pvPower) || 0)
+          * step * simulatedSecondsPerDemoSecond / 3_600_000;
+      }
+      return {
+        today_kwh: generatedKwh,
+        week_kwh: 93.8 + generatedKwh,
+        month_kwh: 428.6 + generatedKwh,
+        year_kwh: 3420.4 + generatedKwh,
+        error: ''
       };
     }
 
@@ -2351,6 +2829,7 @@ WEB_DASHBOARD = r"""<!doctype html>
             (now - demoStartedAt) / 1000
           );
           const scenario = realisticDemoScenario(elapsedSeconds);
+          demoFlowCase = scenario.caseKey;
           registerKeys.forEach(key => {
             const item = chartDefinitions.get(key);
             if (!item) return;
@@ -2399,13 +2878,18 @@ WEB_DASHBOARD = r"""<!doctype html>
           }));
           renderDashboardValues();
           renderRegisters(demoRegisterRows);
-          if (lastData) renderLcd(lastData, demoRegisterRows);
+          renderSolarEnergy(demoSolarEnergySummary(elapsedSeconds));
+          if (lastData) {
+            renderEnergyFlow(lastData, demoRegisterRows);
+            renderLcd(lastData, demoRegisterRows);
+          }
           drawAllCharts();
         }
       } finally {
         chartDemoRunning = false;
         chartDemoCancelRequested = false;
         demoRegisterRows = null;
+        demoFlowCase = '';
         setButtonState(t('runDemo'));
         if (lastData) {
           recordChartSamples(lastData);
@@ -2642,7 +3126,8 @@ WEB_DASHBOARD = r"""<!doctype html>
       const value = Number(bytes || 0);
       if (value < 1024) return `${value} B`;
       if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-      return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+      if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+      return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
     }
 
     function renderRegisterLog(log = {}) {
@@ -2666,6 +3151,12 @@ WEB_DASHBOARD = r"""<!doctype html>
         });
       } else {
         status.textContent = t('registerLogIdle');
+      }
+      if (Number.isFinite(Number(log.free_bytes))) {
+        status.textContent += ` · ${t('registerLogStorage', {
+          free: formatFileSize(log.free_bytes),
+          count: log.pruned_files || 0
+        })}`;
       }
       document.querySelector('#register-log-start').disabled = active;
       document.querySelector('#register-log-stop').disabled = !active;
@@ -2697,6 +3188,143 @@ WEB_DASHBOARD = r"""<!doctype html>
         document.querySelector('#register-log-stop').disabled = !active;
         document.querySelector('#register-log-mark').disabled = !active;
       }
+    }
+
+    function formatSolarEnergy(kilowattHours) {
+      const value = Number(kilowattHours);
+      if (!Number.isFinite(value)) return t('noData');
+      const locale = currentLanguage === 'uk' ? 'uk-UA' : currentLanguage === 'ru' ? 'ru-RU' : 'en-GB';
+      if (value < 1) return `${Math.round(value * 1000).toLocaleString(locale)} Wh`;
+      if (value < 1000) return `${value.toLocaleString(locale, {maximumFractionDigits: 2})} kWh`;
+      return `${(value / 1000).toLocaleString(locale, {maximumFractionDigits: 2})} MWh`;
+    }
+
+    function renderSolarEnergy(summary = {}) {
+      const values = {
+        '#solar-energy-today': summary.today_kwh,
+        '#solar-energy-week': summary.week_kwh,
+        '#solar-energy-month': summary.month_kwh,
+        '#solar-energy-year': summary.year_kwh
+      };
+      Object.entries(values).forEach(([selector, value]) => {
+        const element = document.querySelector(selector);
+        if (element) element.textContent = formatSolarEnergy(value);
+      });
+      const error = document.querySelector('#solar-energy-error');
+      if (error) {
+        error.textContent = summary.error ? localizeDataText(summary.error) : '';
+        error.hidden = !summary.error;
+      }
+    }
+
+    function renderEnergyFlow(data, registers = data.registers || []) {
+      const byNumber = new Map(registers.map(register => [register.register, register]));
+      const numberValue = numbers => {
+        const register = numbers.map(number => byNumber.get(number)).find(item => item?.available);
+        return register ? numericValue(register.display) : null;
+      };
+      const reading = (value, unit, digits = 0) =>
+        Number.isFinite(value) ? `${Number(value.toFixed(digits))} ${unit}` : t('noData');
+      const setText = (selector, value) => {
+        const element = document.querySelector(selector);
+        if (element && element.textContent !== value) element.textContent = value;
+      };
+      const setNode = (selector, enabled) =>
+        document.querySelector(selector)?.classList.toggle('active', Boolean(enabled));
+      const setFlow = (selector, enabled, reverse, watts) => {
+        const connector = document.querySelector(selector);
+        if (!connector) return;
+        connector.classList.toggle('active', Boolean(enabled));
+        connector.classList.toggle('reverse', Boolean(enabled && reverse));
+        const indicator = connector.querySelector('.flow-direction-indicator');
+        if (indicator) {
+          const vertical = connector.classList.contains('flow-grid')
+            || connector.classList.contains('flow-solar-battery');
+          const oneWay = connector.classList.contains('flow-home')
+            || connector.classList.contains('flow-solar-battery');
+          indicator.textContent = enabled
+            ? vertical ? reverse ? '↑' : '↓' : reverse ? '←' : '→'
+            : vertical ? oneWay ? '↓' : '↕' : oneWay ? '→' : '↔';
+        }
+        const strength = Number.isFinite(watts) ? Math.abs(watts) : 0;
+        const duration = Math.max(.55, Math.min(2.2, 2.2 - strength / 5000 * 1.5));
+        connector.style.setProperty('--flow-duration', `${duration.toFixed(2)}s`);
+      };
+
+      const gridVoltage = numberValue([89, 90]);
+      const pvVoltage = numberValue([341]);
+      const pvPower = numberValue([385]);
+      const loadPower = numberValue([386]);
+      const loadPercent = numberValue([94]);
+      const batteryVoltage = numberValue([137, 404, 342, 129, 93]);
+      const batteryCurrent = numberValue([138, 405, 344, 343, 130]);
+      const batterySoc = numberValue([139, 407, 339, 133]);
+      const batteryActive = Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3;
+      const batteryCharging = batteryActive && batteryCurrent < 0;
+      const batteryPower = Number.isFinite(batteryVoltage) && Number.isFinite(batteryCurrent)
+        ? Math.abs(batteryVoltage * batteryCurrent)
+        : numberValue([413, 403]);
+      const pvActive = Number.isFinite(pvPower) ? Math.abs(pvPower) > 20 : Number.isFinite(pvVoltage) && pvVoltage > 30;
+      const pvReceiving = Number.isFinite(pvPower) && pvPower < -20;
+      const gridInputKnown = Number.isFinite(gridVoltage);
+      const gridAvailable = gridInputKnown && gridVoltage > 40;
+      const gridUnavailable = gridInputKnown && !gridAvailable;
+      const solarCharging = batteryCharging && pvActive && !pvReceiving;
+      const batteryDischarging = batteryActive && batteryCurrent > 0 && gridUnavailable;
+      const batteryChargePower = solarCharging && Number.isFinite(batteryPower) ? batteryPower : 0;
+      const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? batteryPower : 0;
+      const gridPower = Number.isFinite(pvPower) && Number.isFinite(loadPower)
+        ? loadPower + batteryChargePower - pvPower - batteryDischargePower
+        : null;
+
+      const homeActive = Number.isFinite(loadPower) ? loadPower > 20 : Number.isFinite(loadPercent) && loadPercent > 0;
+      const gridFlowActive = gridAvailable && (Number.isFinite(gridPower) ? Math.abs(gridPower) > 20 : true);
+      const gridImporting = !Number.isFinite(gridPower) || gridPower >= 0;
+      const inverterActive = chartDemoRunning || data.online || pvActive || homeActive || batteryActive;
+
+      setText('#energy-flow-status', chartDemoRunning
+        ? t(demoFlowCase || 'demoMode')
+        : data.online ? t('online') : t('offline'));
+      setText('#energy-solar-value', Number.isFinite(pvPower) ? reading(Math.abs(pvPower), 'W') : reading(pvVoltage, 'V'));
+      setText('#energy-solar-direction', pvActive
+        ? pvReceiving ? t('receiving') : t('supplying')
+        : t('batteryIdle'));
+      setText('#energy-inverter-value', chartDemoRunning ? t('demoMode') : data.online ? t('online') : t('offline'));
+      setText('#energy-home-value', Number.isFinite(loadPower) ? reading(loadPower, 'W') : reading(loadPercent, '%'));
+      setText('#energy-home-direction', homeActive ? t('consuming') : t('batteryIdle'));
+      setText('#energy-grid-value', Number.isFinite(gridPower)
+        ? reading(Math.abs(gridPower), 'W')
+        : reading(gridVoltage, 'V'));
+      setText('#energy-grid-direction', gridFlowActive
+        ? gridImporting ? t('importing') : t('exporting')
+        : gridAvailable ? t('gridReady') : t('offline'));
+      const batteryParts = [];
+      if (Number.isFinite(batterySoc)) batteryParts.push(`${Math.round(batterySoc)}%`);
+      if (Number.isFinite(batteryPower)) batteryParts.push(`${Math.round(batteryPower)} W`);
+      setText('#energy-battery-value', batteryParts.join(' · ') || t('noData'));
+      setText('#energy-battery-direction', batteryActive
+        ? batteryCharging
+          ? solarCharging ? t('charging') : t('waitingSolar')
+          : batteryDischarging ? t('discharging') : t('batteryIdle')
+        : t('batteryIdle'));
+
+      setNode('#energy-solar-node', pvActive);
+      setNode('#energy-inverter-node', inverterActive);
+      setNode('#energy-home-node', homeActive);
+      setNode('#energy-grid-node', gridAvailable);
+      setNode('#energy-battery-node', Number.isFinite(batteryVoltage) || Number.isFinite(batterySoc));
+      setFlow('#energy-pv-flow', pvActive && inverterActive, pvReceiving, pvPower);
+      // Charging is a dedicated one-way Solar -> Battery path.
+      setFlow('#energy-solar-battery-flow', solarCharging, false, batteryPower);
+      // Home is deliberately one-way: it can consume energy but never supply it.
+      setFlow('#energy-home-flow', inverterActive && homeActive, false, loadPower);
+      // The grid is below the inverter: importing moves upward, exporting moves downward.
+      setFlow('#energy-grid-flow', gridFlowActive && inverterActive, gridImporting, gridPower);
+      // The diagonal path is discharge-only: Battery -> Inverter.
+      setFlow('#energy-battery-flow', batteryDischarging && inverterActive, false, batteryPower);
+
+      const status = document.querySelector('#energy-flow-status');
+      status?.classList.toggle('active', inverterActive);
     }
 
     function renderLcd(data, registers = data.registers || []) {
@@ -2881,8 +3509,11 @@ WEB_DASHBOARD = r"""<!doctype html>
         : '';
       error.classList.toggle('show', Boolean(connectionError));
       renderRegisterLog(data.register_log);
+      renderSolarEnergy(data.solar_energy);
       renderRegisters(data.registers);
-      renderLcd(data, chartDemoRunning && demoRegisterRows ? demoRegisterRows : data.registers);
+      const displayedRegisters = chartDemoRunning && demoRegisterRows ? demoRegisterRows : data.registers;
+      renderEnergyFlow(data, displayedRegisters);
+      renderLcd(data, displayedRegisters);
       updateChartDefinitions(data);
     }
 
@@ -3356,6 +3987,7 @@ def web_state() -> dict[str, Any]:
         "paused": bool(snapshot["paused"]),
         "site_visits": site_visit_total,
         "site_visits_date": datetime.now(MADRID_TIME_ZONE).strftime("%d.%m.%Y"),
+        "solar_energy": solar_energy_summary(),
         "register_log": register_log_status(),
         "meters": meters,
         "registers": registers,
@@ -3380,6 +4012,15 @@ def initialise_statistics() -> None:
                 """
                 INSERT OR IGNORE INTO site_counters (name, value)
                 VALUES ('page_views', 0)
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS solar_energy_daily (
+                    day TEXT PRIMARY KEY,
+                    watt_hours REAL NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                )
                 """
             )
             site_visit_total = int(
@@ -3645,6 +4286,7 @@ def run_web_dashboard() -> None:
     host = os.environ.get("INVERTER_WEB_HOST", "0.0.0.0")
     port = int(os.environ.get("INVERTER_WEB_PORT", "8080"))
     initialise_statistics()
+    maintain_register_log_storage(force=True)
     worker = threading.Thread(target=poll_worker, name="inverter-poller", daemon=True)
     worker.start()
     server = ThreadingHTTPServer((host, port), DashboardHandler)
@@ -3664,6 +4306,7 @@ def run_web_dashboard() -> None:
         pass
     finally:
         stop_register_log()
+        flush_solar_energy()
         with state_lock:
             state["stop"] = True
         poll_wake_event.set()
