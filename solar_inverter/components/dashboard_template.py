@@ -744,6 +744,26 @@ WEB_DASHBOARD = r"""<!doctype html>
       .energy-battery .flow-direction { left: 35px }
       .chart-card-head { flex-direction: column; gap: 3px }
     }
+    @media (max-width: 640px) {
+      .energy-grid .energy-node-image-icon,
+      .energy-generator .energy-node-image-icon {
+        inset: 0; z-index: 0; width: 100%; height: 100%; opacity: .18;
+        filter: none;
+        -webkit-mask-position: center;
+        mask-position: center;
+        -webkit-mask-size: 100% 100%;
+        mask-size: 100% 100%;
+      }
+      .energy-grid .energy-node-register,
+      .energy-grid .energy-node-value,
+      .energy-grid .flow-direction,
+      .energy-generator .energy-node-register,
+      .energy-generator .energy-node-value,
+      .energy-generator .flow-direction {
+        z-index: 1;
+        text-shadow: 0 1px 3px var(--card-start), 0 0 5px var(--card-start);
+      }
+    }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
         scroll-behavior: auto !important;
