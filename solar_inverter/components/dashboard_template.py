@@ -236,12 +236,12 @@ WEB_DASHBOARD = r"""<!doctype html>
     }
     .energy-node-value[hidden] { display: none }
     .energy-solar-values, .energy-inverter-values, .energy-generator-values,
-    .energy-home-values, .energy-battery-values {
+    .energy-home-values, .energy-grid-values, .energy-battery-values {
       display: grid; gap: 2px; margin-top: 0; overflow: visible;
       text-align: center; text-overflow: clip; white-space: normal;
     }
     .energy-solar-values span, .energy-inverter-values span,
-    .energy-generator-values span, .energy-home-values span,
+    .energy-generator-values span, .energy-home-values span, .energy-grid-values span,
     .energy-battery-values span { white-space: nowrap }
     .energy-mode-row { display: flex; align-items: baseline; justify-content: center; gap: 4px }
     .energy-mode-label {
@@ -284,8 +284,11 @@ WEB_DASHBOARD = r"""<!doctype html>
     .energy-home { grid-column: 5; grid-row: 1; --node-colour: #a78bfa }
     .energy-battery { grid-column: 1; grid-row: 3; padding-left: 40px; --node-colour: #34d399 }
     .energy-grid {
-      grid-column: 3; grid-row: 3; --node-colour: #60a5fa;
+      grid-column: 3; grid-row: 3; padding-left: 68px; --node-colour: #60a5fa;
       --node-icon: url('/assets/grid.png');
+    }
+    .energy-grid .energy-node-image-icon {
+      left: 7px; top: 7px; bottom: 7px; width: 60px; height: auto;
     }
     .energy-generator {
       grid-column: 5; grid-row: 3; padding-left: 48px; --node-colour: #fb923c;
@@ -861,7 +864,11 @@ WEB_DASHBOARD = r"""<!doctype html>
           <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
           <span class="energy-node-register" id="energy-grid-registers">—</span>
           <span class="energy-node-label" data-i18n="grid">Мережа</span>
-          <span class="energy-node-value" id="energy-grid-value">—</span>
+          <span class="energy-node-value energy-grid-values">
+            <span id="energy-grid-power">— W</span>
+            <span id="energy-grid-current">— A</span>
+            <span id="energy-grid-voltage">— V</span>
+          </span>
           <span class="flow-direction" id="energy-grid-direction"></span>
         </div>
         <div class="flow-connector flow-grid" id="energy-grid-flow" aria-hidden="true"></div>
@@ -2488,6 +2495,9 @@ WEB_DASHBOARD = r"""<!doctype html>
       const gridPower = Number.isFinite(pvPower) && Number.isFinite(loadPower)
         ? loadPower + batteryChargePower - pvPower - batteryDischargePower
         : null;
+      const gridCurrent = Number.isFinite(gridPower) && Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .1
+        ? Math.abs(gridPower / gridVoltage)
+        : null;
       const generatorPower = chartDemoRunning && Number.isFinite(demoGeneratorPower)
         ? demoGeneratorPower
         : null;
@@ -2578,9 +2588,9 @@ WEB_DASHBOARD = r"""<!doctype html>
       setText('#energy-home-voltage', Number.isFinite(homeVoltage) ? reading(homeVoltage, 'V', 1) : '— V');
       setText('#energy-home-power', Number.isFinite(loadPower) ? reading(loadPower, 'W') : '— W');
       setText('#energy-home-direction', homeActive ? t('consuming') : t('batteryIdle'));
-      setText('#energy-grid-value', Number.isFinite(gridPower)
-        ? reading(Math.abs(gridPower), 'W')
-        : reading(gridVoltage, 'V'));
+      setText('#energy-grid-power', Number.isFinite(gridPower) ? reading(Math.abs(gridPower), 'W') : '— W');
+      setText('#energy-grid-current', Number.isFinite(gridCurrent) ? reading(gridCurrent, 'A', 1) : '— A');
+      setText('#energy-grid-voltage', Number.isFinite(gridVoltage) ? reading(Math.abs(gridVoltage), 'V', 1) : '— V');
       setText('#energy-grid-direction', gridFlowActive
         ? gridImporting ? t('importing') : t('exporting')
         : gridAvailable ? t('gridReady') : t('offline'));
