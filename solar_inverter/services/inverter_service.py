@@ -130,6 +130,7 @@ KNOWN_REGISTERS = [
     401, 402, 403, 404, 405, 406, 407, 408,
     409, 410, 411, 412, 413, 415, 416, 417,
     449, 451, 453, 455,
+    16643, 16644, 16645,
 ]
 
 FAST_BLOCKS = [
@@ -143,6 +144,7 @@ FAST_BLOCKS = [
     (376, 11),
     (401, 17),
     (449, 7),
+    (16643, 3),
 ]
 
 # Register metadata is based on observed values. Conservative names such as
@@ -237,6 +239,12 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     451: ("Упаковане значення 451", 1.0, "", False, "Система"),
     453: ("Упаковане значення 453", 1.0, "", False, "Система"),
     455: ("Упаковане знакове значення 455", 1.0, "", True, "Система"),
+
+    # mbpoll uses one-based references for zero-based Modbus addresses
+    # 0x4102-0x4104 (LCD programs 03-05).
+    16643: ("Пріоритет вихідного джерела", 1.0, "", False, "Налаштування"),
+    16644: ("Режим входу AC", 1.0, "", False, "Налаштування"),
+    16645: ("Пріоритет джерела заряджання", 1.0, "", False, "Налаштування"),
 }
 
 METER_DEFINITIONS = [

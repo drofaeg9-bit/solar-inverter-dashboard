@@ -13,6 +13,12 @@ from ..services import inverter_service
 from ..services.inverter_service import *
 from .dashboard_template import WEB_DASHBOARD
 
+DASHBOARD_IMAGE_PATHS = {
+    "/assets/generator.png": PROJECT_ROOT / "0ecd531c-3081-48cd-9fe7-2ad66dcc8425.png",
+    "/assets/grid.png": PROJECT_ROOT / "1258380.png",
+}
+
+
 def web_state() -> dict[str, Any]:
     """Return a JSON-safe snapshot for the browser."""
     with state_lock:
@@ -145,6 +151,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         request_path = self.path.split("?", 1)[0]
+        if request_path in DASHBOARD_IMAGE_PATHS:
+            try:
+                self.send_content(
+                    DASHBOARD_IMAGE_PATHS[request_path].read_bytes(), "image/png"
+                )
+            except OSError:
+                self.send_content(b"", "image/png", HTTPStatus.NOT_FOUND)
+            return
         if request_path in {"/favicon.png", "/favicon.ico"}:
             try:
                 self.send_content(FAVICON_PATH.read_bytes(), "image/png")

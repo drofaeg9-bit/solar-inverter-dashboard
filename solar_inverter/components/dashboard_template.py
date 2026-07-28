@@ -211,6 +211,12 @@ WEB_DASHBOARD = r"""<!doctype html>
       color: var(--node-colour); font-size: 25px; line-height: 1;
       filter: drop-shadow(0 0 7px currentColor);
     }
+    .energy-node-image-icon {
+      width: 60px; height: 120px;
+      background: var(--node-colour);
+      -webkit-mask: var(--node-icon) center / contain no-repeat;
+      mask: var(--node-icon) center / contain no-repeat;
+    }
     .energy-node-label {
       position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
       overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
@@ -229,11 +235,20 @@ WEB_DASHBOARD = r"""<!doctype html>
       transform: translate(-50%,-50%);
     }
     .energy-node-value[hidden] { display: none }
-    .energy-solar-values, .energy-battery-values {
+    .energy-solar-values, .energy-inverter-values, .energy-generator-values,
+    .energy-home-values, .energy-battery-values {
       display: grid; gap: 2px; margin-top: 0; overflow: visible;
       text-align: center; text-overflow: clip; white-space: normal;
     }
-    .energy-solar-values span, .energy-battery-values span { white-space: nowrap }
+    .energy-solar-values span, .energy-inverter-values span,
+    .energy-generator-values span, .energy-home-values span,
+    .energy-battery-values span { white-space: nowrap }
+    .energy-mode-row { display: flex; align-items: baseline; justify-content: center; gap: 4px }
+    .energy-mode-label {
+      color: var(--muted); font-size: 7px; font-weight: 800; letter-spacing: .03em;
+      text-transform: uppercase;
+    }
+    .energy-mode-code { color: var(--node-colour) }
     .energy-battery-values {
       position: absolute; left: 50%; top: 50%; width: auto;
       text-align: center; font-size: 14px; transform: translate(-50%,-50%);
@@ -268,8 +283,17 @@ WEB_DASHBOARD = r"""<!doctype html>
     .energy-inverter { grid-column: 3; grid-row: 1; --node-colour: #22d3ee }
     .energy-home { grid-column: 5; grid-row: 1; --node-colour: #a78bfa }
     .energy-battery { grid-column: 1; grid-row: 3; padding-left: 40px; --node-colour: #34d399 }
-    .energy-grid { grid-column: 3; grid-row: 3; --node-colour: #60a5fa }
-    .energy-generator { grid-column: 5; grid-row: 3; --node-colour: #fb923c }
+    .energy-grid {
+      grid-column: 3; grid-row: 3; --node-colour: #60a5fa;
+      --node-icon: url('/assets/grid.png');
+    }
+    .energy-generator {
+      grid-column: 5; grid-row: 3; padding-left: 48px; --node-colour: #fb923c;
+      --node-icon: url('/assets/generator.png');
+    }
+    .energy-generator .energy-node-image-icon {
+      left: 7px; top: 7px; bottom: 7px; width: 36px; height: auto;
+    }
     .flow-connector { position: relative; align-self: center; justify-self: stretch; color: var(--muted); opacity: .38 }
     .flow-connector::before {
       content: ""; position: absolute; inset: 50% 0 auto; height: 3px; border-radius: 999px;
@@ -569,28 +593,54 @@ WEB_DASHBOARD = r"""<!doctype html>
       .updated { margin-left: 0 }
       .gauges { gap: 8px; margin-bottom: 12px }
       .energy-flow-card {
-        top: 6px; width: calc(100vw - 16px); max-width: calc(100vw - 16px);
-        margin-bottom: 12px; padding: 12px 9px 14px; border-radius: 16px;
+        position: relative; top: auto; width: 100%; max-width: 100%;
+        margin-bottom: 12px; padding: 12px 8px 14px; border-radius: 16px;
       }
-      .energy-flow-head { margin-bottom: 10px; padding-inline: 3px }
+      .energy-flow-head { min-width: 0; margin-bottom: 11px; padding-inline: 3px }
+      .energy-flow-head h2 { flex: 0 1 auto; min-width: 0; font-size: 14px }
+      .energy-flow-status {
+        flex: 0 1 auto; max-width: 66%; padding: 5px 9px; overflow: hidden;
+        font-size: 9px; text-overflow: ellipsis; white-space: nowrap;
+      }
       .energy-flow-diagram {
-        grid-template-columns: minmax(54px,1fr) 38px minmax(62px,1.08fr) 38px minmax(54px,1fr);
-        grid-template-rows: auto 48px auto;
+        grid-template-columns: minmax(0,1fr) clamp(24px,8vw,36px) minmax(0,1.08fr) clamp(24px,8vw,36px) minmax(0,1fr);
+        grid-template-rows: 108px 46px 108px;
       }
-      .flow-pv, .flow-home { min-height: 28px }
-      .flow-battery { width: 190% }
-      .flow-connector.active::before { height: 7px }
-      .flow-grid.active::before { width: 7px; height: auto }
+      .flow-pv, .flow-home { min-height: 30px }
+      .flow-battery { width: 170% }
+      .flow-generator { width: 155% }
+      .flow-connector.active::before { height: 6px }
+      .flow-grid.active::before { width: 6px; height: auto }
       .solar-energy-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px }
       .solar-energy-head { align-items: flex-start; flex-direction: column; gap: 4px }
       .solar-energy-note { text-align: left }
-      .energy-node { height: 92px; padding: 9px 3px 9px 31px; border-radius: 12px }
-      .energy-node-icon { left: 6px; top: 6px; font-size: 23px }
-      .energy-battery { padding-left: 37px }
-      .energy-battery-icon { left: 6px; top: 7px; bottom: 7px; width: 22px; height: auto; font-size: 8px }
-      .energy-battery .flow-direction { left: 37px; bottom: 6px }
-      .energy-node:not(.energy-battery) .flow-direction { bottom: 6px }
-      .energy-node-value { font-size: 12px }
+      .energy-node { height: 108px; padding: 10px 4px 10px 31px; border-radius: 12px }
+      .energy-node-icon { left: 6px; top: 7px; font-size: 21px }
+      .energy-node-register {
+        top: 7px; right: 5px; display: -webkit-box; max-width: calc(100% - 35px);
+        max-height: 17px; overflow: hidden; font-size: 6.5px; line-height: 8px;
+        text-align: right; text-overflow: clip; white-space: normal;
+        -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+      }
+      .energy-node-value { max-width: calc(100% - 10px); font-size: 12px }
+      .energy-solar-values { gap: 3px; line-height: 1.12 }
+      .energy-battery { padding-left: 39px }
+      .energy-generator { padding-left: 43px }
+      .energy-generator .energy-node-image-icon { left: 5px; top: 7px; bottom: 7px; width: 33px; height: auto }
+      .energy-battery-icon {
+        left: 6px; top: 8px; bottom: 8px; width: 25px; height: auto;
+        overflow: hidden; font-size: 7px;
+      }
+      .energy-battery-icon::after { top: -6px; width: 9px }
+      .energy-battery-percent { padding-inline: 1px; overflow: hidden; font-size: 7px }
+      .energy-battery-values {
+        left: 37px; right: 3px; width: auto; max-width: none; gap: 3px;
+        overflow: hidden; font-size: 11.5px; line-height: 1.1;
+        transform: translateY(-50%);
+      }
+      .energy-battery .flow-direction { left: 38px; right: 3px; bottom: 7px }
+      .energy-node:not(.energy-battery) .flow-direction { bottom: 7px }
+      .flow-direction { left: 3px; right: 3px; font-size: 7px }
       .gauge-card { padding: 11px 8px 10px; border-radius: 15px }
       .gauge-heading { gap: 5px; padding-right: 56px }
       .gauge-title { font-size: 12px }
@@ -654,6 +704,23 @@ WEB_DASHBOARD = r"""<!doctype html>
       .toolbar > *, #demo-button, #manage-values-button, #cycle, #updated { grid-column: 1 }
       .gauges, .custom-value-grid { grid-template-columns: 1fr }
       .gauge-card svg { max-height: 135px }
+      .energy-flow-card { padding-inline: 6px }
+      .energy-flow-head h2 { font-size: 13px }
+      .energy-flow-status { max-width: 62%; padding-inline: 7px; font-size: 8px }
+      .energy-flow-diagram {
+        grid-template-columns: minmax(0,1fr) 22px minmax(0,1.06fr) 22px minmax(0,1fr);
+        grid-template-rows: 104px 42px 104px;
+      }
+      .energy-node { height: 104px; padding-left: 28px }
+      .energy-node-icon { left: 5px; font-size: 19px }
+      .energy-node-register { max-width: calc(100% - 31px); font-size: 6px }
+      .energy-node-value { font-size: 11px }
+      .energy-battery { padding-left: 36px }
+      .energy-generator { padding-left: 38px }
+      .energy-generator .energy-node-image-icon { left: 4px; top: 6px; bottom: 6px; width: 29px; height: auto }
+      .energy-battery-icon { left: 5px; width: 23px }
+      .energy-battery-values { left: 34px; font-size: 10.5px }
+      .energy-battery .flow-direction { left: 35px }
       .chart-card-head { flex-direction: column; gap: 3px }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -741,27 +808,39 @@ WEB_DASHBOARD = r"""<!doctype html>
           <span class="energy-node-icon" aria-hidden="true">&#9889;</span>
           <span class="energy-node-register" id="energy-inverter-registers">—</span>
           <span class="energy-node-label" data-i18n="inverter">Інвертор</span>
-          <span class="energy-node-value" id="energy-inverter-value">—</span>
+          <span class="energy-node-value energy-inverter-values">
+            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="outputMode">Вихід</span><span class="energy-mode-code" id="energy-inverter-output-mode">—</span></span>
+            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="inputMode">Вхід</span><span class="energy-mode-code" id="energy-inverter-input-mode">—</span></span>
+            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="chargeMode">Заряд</span><span class="energy-mode-code" id="energy-inverter-charge-mode">—</span></span>
+          </span>
           <span class="flow-direction" aria-hidden="true"></span>
         </div>
         <div class="flow-connector flow-home" id="energy-home-flow" aria-hidden="true"></div>
         <div class="flow-connector flow-generator" id="energy-generator-flow" aria-hidden="true"></div>
         <div class="energy-node energy-generator" id="energy-generator-node">
-          <span class="energy-node-icon" aria-hidden="true">&#9881;</span>
+          <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
           <span class="energy-node-register" id="energy-generator-registers">—</span>
           <span class="energy-node-label" data-i18n="generator">Генератор</span>
-          <span class="energy-node-value" id="energy-generator-value">—</span>
-          <span class="flow-direction" aria-hidden="true"></span>
+          <span class="energy-node-value energy-generator-values" hidden>
+            <span id="energy-generator-power">— W</span>
+            <span id="energy-generator-current">— A</span>
+            <span id="energy-generator-voltage">— V</span>
+          </span>
+          <span class="flow-direction" id="energy-generator-direction"></span>
         </div>
         <div class="energy-node energy-home" id="energy-home-node">
           <span class="energy-node-icon" aria-hidden="true">&#8962;</span>
           <span class="energy-node-register" id="energy-home-registers">—</span>
           <span class="energy-node-label" data-i18n="home">Дім</span>
-          <span class="energy-node-value" id="energy-home-value">—</span>
+          <span class="energy-node-value energy-home-values">
+            <span id="energy-home-current">— A</span>
+            <span id="energy-home-voltage">— V</span>
+            <span id="energy-home-power">— W</span>
+          </span>
           <span class="flow-direction" id="energy-home-direction"></span>
         </div>
         <div class="energy-node energy-grid" id="energy-grid-node">
-          <span class="energy-node-icon" aria-hidden="true">&#128268;</span>
+          <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
           <span class="energy-node-register" id="energy-grid-registers">—</span>
           <span class="energy-node-label" data-i18n="grid">Мережа</span>
           <span class="energy-node-value" id="energy-grid-value">—</span>
@@ -779,7 +858,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           <span class="energy-node-value energy-battery-values">
             <span id="energy-battery-current">— A</span>
             <span id="energy-battery-power">— W</span>
-            <span id="energy-battery-capacity">— Ah</span>
+            <span id="energy-battery-voltage">— V</span>
           </span>
           <span class="flow-direction" id="energy-battery-direction"></span>
         </div>
@@ -935,6 +1014,12 @@ WEB_DASHBOARD = r"""<!doctype html>
         solarPanels: 'Сонячні панелі', home: 'Дім', battery: 'Батарея', cityGenerator: 'Місто / Генератор',
         importing: 'СПОЖИВАННЯ', exporting: 'ВІДДАЧА', gridReady: 'AC ДОСТУПНА',
         supplying: 'ВІДДАЄ', receiving: 'ОТРИМУЄ', consuming: 'СПОЖИВАЄ',
+        outputMode: 'Вихід', inputMode: 'Вхід', chargeMode: 'Заряд',
+        modeGridDescription: 'Мережа живить навантаження першою', modeSolarDescription: 'Сонячна енергія живить навантаження першою',
+        modePbgDescription: 'Пріоритет PV → батарея → мережа', modeMksDescription: 'Пріоритет генератора',
+        modeAppDescription: 'Діапазон входу для побутових приладів', modeUpsDescription: 'Діапазон входу UPS для чутливих пристроїв',
+        modeGenDescription: 'Генератор підключений до входу AC', modePngDescription: 'Батарею заряджають PV і мережа',
+        modeOpvDescription: 'Батарею заряджає лише PV', modePvfDescription: 'PV заряджає першим; мережа — коли PV недоступний',
         demoSolarChargeExport: 'ДЕМО · PV → ДІМ + БАТ. + МЕРЕЖА',
         demoGridHome: 'ДЕМО · МЕРЕЖА → ДІМ', demoBatteryHome: 'ДЕМО · БАТ. → ДІМ',
         demoSolarExport: 'ДЕМО · PV → ДІМ + МЕРЕЖА', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ІНВЕРТОР → ДІМ',
@@ -1028,6 +1113,12 @@ WEB_DASHBOARD = r"""<!doctype html>
         solarPanels: 'Солнечные панели', home: 'Дом', battery: 'Батарея', cityGenerator: 'Сеть / Генератор',
         importing: 'ПОТРЕБЛЕНИЕ', exporting: 'ОТДАЧА', gridReady: 'AC ДОСТУПЕН',
         supplying: 'ОТДАЁТ', receiving: 'ПОЛУЧАЕТ', consuming: 'ПОТРЕБЛЯЕТ',
+        outputMode: 'Выход', inputMode: 'Вход', chargeMode: 'Заряд',
+        modeGridDescription: 'Сеть питает нагрузку первой', modeSolarDescription: 'Солнечная энергия питает нагрузку первой',
+        modePbgDescription: 'Приоритет PV → батарея → сеть', modeMksDescription: 'Приоритет генератора',
+        modeAppDescription: 'Диапазон входа для бытовых приборов', modeUpsDescription: 'Диапазон входа UPS для чувствительных устройств',
+        modeGenDescription: 'Генератор подключён ко входу AC', modePngDescription: 'Батарею заряжают PV и сеть',
+        modeOpvDescription: 'Батарею заряжает только PV', modePvfDescription: 'PV заряжает первым; сеть — когда PV недоступен',
         demoSolarChargeExport: 'ДЕМО · PV → ДОМ + БАТ. + СЕТЬ',
         demoGridHome: 'ДЕМО · СЕТЬ → ДОМ', demoBatteryHome: 'ДЕМО · БАТ. → ДОМ',
         demoSolarExport: 'ДЕМО · PV → ДОМ + СЕТЬ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ИНВЕРТОР → ДОМ',
@@ -1121,6 +1212,12 @@ WEB_DASHBOARD = r"""<!doctype html>
         solarPanels: 'Solar panels', home: 'Home', battery: 'Battery', cityGenerator: 'Grid / Generator',
         importing: 'IMPORTING', exporting: 'EXPORTING', gridReady: 'AC AVAILABLE',
         supplying: 'SUPPLYING', receiving: 'RECEIVING', consuming: 'CONSUMING',
+        outputMode: 'Output', inputMode: 'Input', chargeMode: 'Charge',
+        modeGridDescription: 'Grid powers the loads first', modeSolarDescription: 'Solar power supplies the loads first',
+        modePbgDescription: 'Priority: PV → battery → grid', modeMksDescription: 'Generator-priority mode',
+        modeAppDescription: 'Appliance AC input range', modeUpsDescription: 'UPS input range for sensitive devices',
+        modeGenDescription: 'Generator connected to the AC input', modePngDescription: 'PV and grid charge the battery',
+        modeOpvDescription: 'Only PV charges the battery', modePvfDescription: 'PV charges first; grid charges when PV is unavailable',
         demoSolarChargeExport: 'DEMO · PV → HOME + BAT. + GRID',
         demoGridHome: 'DEMO · GRID → HOME', demoBatteryHome: 'DEMO · BAT. → HOME',
         demoSolarExport: 'DEMO · PV → HOME + GRID', demoGeneratorHome: 'DEMO · GENERATOR → INVERTER → HOME',
@@ -1673,7 +1770,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         pvVoltage = 326 + ripple * 4;
         pvPower = 7200 + Math.sin(second * .21) * 260;
         loadPower = 2500 + Math.sin(second * .29) * 140;
-        batteryCurrent = -42 + ripple * 1.5;
+        batteryCurrent = 42 + ripple * 1.5;
         batterySoc = 72 + second * .08;
         statusCode = 3;
         caseKey = 'demoSolarChargeExport';
@@ -1692,7 +1789,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         pvVoltage = 0;
         pvPower = 0;
         loadPower = 2300 + Math.sin(second * .31) * 160;
-        batteryCurrent = loadPower / 51.8;
+        batteryCurrent = -(loadPower / 51.8);
         batterySoc = 74.4 - (second - 40) * .09;
         statusCode = 2;
         caseKey = 'demoBatteryHome';
@@ -1722,7 +1819,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         pvVoltage = 320 + ripple * 3;
         pvPower = 1500 + ripple * 120;
         loadPower = 2500 + Math.sin(second * .25) * 120;
-        batteryCurrent = 20 + ripple;
+        batteryCurrent = -(20 + ripple);
         batterySoc = 72.5 - (second - 100) * .07;
         statusCode = 2;
         caseKey = 'demoMixedSources';
@@ -1730,11 +1827,14 @@ WEB_DASHBOARD = r"""<!doctype html>
 
       const gridVoltage = gridAvailable ? 230 + Math.sin(second * .19) * 1.4 : 0;
       const gridFrequency = gridAvailable ? 50 + Math.sin(second * .17) * .025 : 0;
-      const batteryVoltage = 52.1 + (batterySoc - 75) * .09 - batteryCurrent * .018;
+      const batteryVoltage = 52.1 + (batterySoc - 75) * .09 + batteryCurrent * .018;
       const batteryTemperature = 29.5 + Math.abs(batteryCurrent) * .055 + Math.sin(second * .08) * .3;
       const inverterTemperature = 33 + loadPower / 1000 * 1.8 + Math.max(0, pvPower) / 1000 * .45;
       const loadPercent = loadPower / 12000 * 100;
       const batteryPower = Math.abs(batteryVoltage * batteryCurrent);
+      const outputPriority = generatorPower > 20 ? 3 : pvPower > 20 ? 2 : 0;
+      const inputMode = generatorPower > 20 ? 2 : 0;
+      const chargingPriority = 2;
 
       return {
         statusCode,
@@ -1758,7 +1858,8 @@ WEB_DASHBOARD = r"""<!doctype html>
           [404, batteryVoltage], [405, batteryCurrent],
           [406, batteryTemperature + .6], [407, batterySoc], [408, 100],
           [411, 57.1], [412, 80], [413, batteryPower],
-          [415, 20], [416, 50], [417, 90], [449, 584]
+          [415, 20], [416, 50], [417, 90], [449, 584],
+          [16643, outputPriority], [16644, inputMode], [16645, chargingPriority]
         ])
       };
     }
@@ -2272,11 +2373,6 @@ WEB_DASHBOARD = r"""<!doctype html>
         const register = firstRegister(numbers);
         return register ? numericValue(register.display) : null;
       };
-      const rawValue = (numbers, scale = 1) => {
-        const register = firstRegister(numbers);
-        const raw = Number(register?.raw);
-        return Number.isFinite(raw) && raw !== 65535 ? raw * scale : null;
-      };
       const registerText = (sources, fallbackNumbers = []) => {
         const actualNumbers = sources
           .flat()
@@ -2285,11 +2381,28 @@ WEB_DASHBOARD = r"""<!doctype html>
         const numbers = actualNumbers.length ? actualNumbers : fallbackNumbers;
         return [...new Set(numbers)].map(number => `R${number}`).join(' · ') || '—';
       };
+      const modeDetails = (source, modes) => {
+        const raw = Number(source?.raw);
+        if (!source?.available || !Number.isFinite(raw) || raw === 65535) return null;
+        return modes[raw] || {label: `#${raw}`, description: ''};
+      };
       const reading = (value, unit, digits = 0) =>
         Number.isFinite(value) ? `${Number(value.toFixed(digits))} ${unit}` : t('noData');
       const setText = (selector, value) => {
         const element = document.querySelector(selector);
         if (element && element.textContent !== value) element.textContent = value;
+      };
+      const setMode = (selector, source, modes, categoryKey) => {
+        const element = document.querySelector(selector);
+        if (!element) return;
+        const mode = modeDetails(source, modes);
+        const description = mode?.description ? t(mode.description) : '';
+        element.textContent = mode?.label || '—';
+        element.title = description;
+        element.setAttribute(
+          'aria-label',
+          mode ? `${t(categoryKey)}: ${mode.label}. ${description}` : `${t(categoryKey)}: ${t('noData')}`
+        );
       };
       const setNode = (selector, enabled) =>
         document.querySelector(selector)?.classList.toggle('active', Boolean(enabled));
@@ -2308,45 +2421,44 @@ WEB_DASHBOARD = r"""<!doctype html>
       const pvPowerSource = firstRegister([385]);
       const loadPowerSource = firstRegister([386]);
       const loadPercentSource = firstRegister([94]);
-      const batteryVoltageSource = firstRegister([137, 404, 342, 129, 93]);
+      const homeVoltageSource = firstRegister([89]);
+      const batteryVoltageSource = firstRegister([137]);
       const batteryCurrentSource = firstRegister([138, 405, 344, 343, 130]);
       const batterySocSource = firstRegister([139, 407, 339, 133]);
-      const batteryRatedCapacitySource = firstRegister([408]);
-      const batteryRemainingCapacitySource = firstRegister([409]);
       const batteryPowerSource = firstRegister([413, 403]);
+      const inverterOutputModeSource = firstRegister([16643]);
+      const inverterInputModeSource = firstRegister([16644]);
+      const inverterChargeModeSource = firstRegister([16645]);
       const gridVoltage = gridVoltageSource ? numericValue(gridVoltageSource.display) : null;
       const pvVoltage = pvVoltageSource ? numericValue(pvVoltageSource.display) : null;
       const pvPower = pvPowerSource ? numericValue(pvPowerSource.display) : null;
       const pvCurrent = Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .1 && Number.isFinite(pvPower)
         ? Math.abs(pvPower / pvVoltage)
         : null;
-      const loadPower = loadPowerSource ? numericValue(loadPowerSource.display) : null;
+      const loadPowerReading = loadPowerSource ? numericValue(loadPowerSource.display) : null;
+      const loadPower = Number.isFinite(loadPowerReading) ? Math.abs(loadPowerReading) : null;
       const loadPercent = loadPercentSource ? numericValue(loadPercentSource.display) : null;
+      const homeVoltageReading = homeVoltageSource ? numericValue(homeVoltageSource.display) : null;
+      const homeVoltage = Number.isFinite(homeVoltageReading) ? Math.abs(homeVoltageReading) : null;
+      const homeCurrent = Number.isFinite(loadPower) && Number.isFinite(homeVoltage) && homeVoltage > .1
+        ? loadPower / homeVoltage
+        : null;
       const batteryVoltage = batteryVoltageSource ? numericValue(batteryVoltageSource.display) : null;
       const batteryCurrent = batteryCurrentSource ? numericValue(batteryCurrentSource.display) : null;
       const batterySoc = batterySocSource ? numericValue(batterySocSource.display) : null;
-      const batteryRatedCapacity = rawValue([408]);
-      const batteryRemainingCapacity = rawValue([409], .1);
-      const batteryCapacity = Number.isFinite(batteryRemainingCapacity)
-        ? batteryRemainingCapacity
-        : Number.isFinite(batteryRatedCapacity) && Number.isFinite(batterySoc)
-          ? batteryRatedCapacity * batterySoc / 100
-          : batteryRatedCapacity;
       const batteryActive = Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3;
-      const batteryCharging = batteryActive && batteryCurrent < 0;
+      const batteryCharging = batteryActive && batteryCurrent > 0;
       const batteryPower = Number.isFinite(batteryVoltage) && Number.isFinite(batteryCurrent)
         ? Math.abs(batteryVoltage * batteryCurrent)
         : batteryPowerSource ? numericValue(batteryPowerSource.display) : null;
       const pvActive = (Number.isFinite(pvPower) && Math.abs(pvPower) > 20)
         || (Number.isFinite(pvVoltage) && pvVoltage > 30);
-      const solarDataVisible = chartDemoRunning || pvActive;
+      const solarDataVisible = pvActive;
       const pvReceiving = Number.isFinite(pvPower) && pvPower < -20;
       const gridInputKnown = Number.isFinite(gridVoltage);
       const gridAvailable = gridInputKnown && gridVoltage > 40;
-      const gridUnavailable = gridInputKnown && !gridAvailable;
-      const solarCharging = batteryCharging && pvActive && !pvReceiving;
-      const batteryDischarging = batteryActive && batteryCurrent > 0 && gridUnavailable;
-      const batteryChargePower = solarCharging && Number.isFinite(batteryPower) ? batteryPower : 0;
+      const batteryDischarging = batteryActive && batteryCurrent < 0;
+      const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? batteryPower : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? batteryPower : 0;
       const gridPower = Number.isFinite(pvPower) && Number.isFinite(loadPower)
         ? loadPower + batteryChargePower - pvPower - batteryDischargePower
@@ -2355,9 +2467,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         ? demoGeneratorPower
         : null;
       const generatorActive = Number.isFinite(generatorPower) && generatorPower > 20;
-      const batteryCapacitySources = Number.isFinite(batteryRemainingCapacity)
-        ? [batteryRemainingCapacitySource]
-        : [batteryRatedCapacitySource, batterySocSource];
+      const generatorVoltage = generatorActive ? 230 : null;
+      const generatorCurrent = generatorActive && Number.isFinite(generatorVoltage)
+        ? generatorPower / generatorVoltage
+        : null;
       const batteryPowerSources = Number.isFinite(batteryVoltage) && Number.isFinite(batteryCurrent)
         ? [batteryVoltageSource, batteryCurrentSource]
         : [batteryPowerSource];
@@ -2378,14 +2491,17 @@ WEB_DASHBOARD = r"""<!doctype html>
       setText('#energy-solar-registers', solarDataVisible
         ? registerText([pvVoltageSource, pvPowerSource], [341, 385])
         : '—');
-      setText('#energy-inverter-registers', '—');
+      setText('#energy-inverter-registers', registerText(
+        [inverterOutputModeSource, inverterInputModeSource, inverterChargeModeSource],
+        [16643, 16644, 16645]
+      ));
       setText('#energy-home-registers', registerText(
-        [Number.isFinite(loadPower) ? loadPowerSource : loadPercentSource],
-        [386, 94]
+        [homeVoltageSource, Number.isFinite(loadPower) ? loadPowerSource : loadPercentSource],
+        [89, 386]
       ));
       setText('#energy-battery-registers', registerText(
-        [batteryCurrentSource, batteryPowerSources, batteryCapacitySources, batterySocSource],
-        [138, 137, 409]
+        [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource],
+        [137, 138, 139]
       ));
       setText('#energy-grid-registers', registerText(gridRegisterSources, [89, 385, 386]));
       setText('#energy-generator-registers', generatorActive ? t('demoMode') : '—');
@@ -2399,9 +2515,43 @@ WEB_DASHBOARD = r"""<!doctype html>
         : pvActive
           ? pvReceiving ? t('receiving') : t('supplying')
           : t('batteryIdle'));
-      setText('#energy-inverter-value', chartDemoRunning ? t('demoMode') : data.online ? t('online') : t('offline'));
-      setText('#energy-generator-value', generatorActive ? reading(generatorPower, 'W') : t('noData'));
-      setText('#energy-home-value', Number.isFinite(loadPower) ? reading(loadPower, 'W') : reading(loadPercent, '%'));
+      setMode('#energy-inverter-output-mode',
+        inverterOutputModeSource,
+        [
+          {label: 'Grid', description: 'modeGridDescription'},
+          {label: 'Solar', description: 'modeSolarDescription'},
+          {label: 'PBG', description: 'modePbgDescription'},
+          {label: 'MKS', description: 'modeMksDescription'}
+        ],
+        'outputMode'
+      );
+      setMode('#energy-inverter-input-mode',
+        inverterInputModeSource,
+        [
+          {label: 'APP', description: 'modeAppDescription'},
+          {label: 'UPS', description: 'modeUpsDescription'},
+          {label: 'GEN', description: 'modeGenDescription'}
+        ],
+        'inputMode'
+      );
+      setMode('#energy-inverter-charge-mode',
+        inverterChargeModeSource,
+        [
+          {label: 'PNG', description: 'modePngDescription'},
+          {label: 'OPV', description: 'modeOpvDescription'},
+          {label: 'PVF', description: 'modePvfDescription'}
+        ],
+        'chargeMode'
+      );
+      setText('#energy-generator-power', generatorActive ? reading(generatorPower, 'W') : '— W');
+      setText('#energy-generator-current', generatorActive ? reading(generatorCurrent, 'A', 1) : '— A');
+      setText('#energy-generator-voltage', generatorActive ? reading(generatorVoltage, 'V', 1) : '— V');
+      const generatorValues = document.querySelector('.energy-generator-values');
+      if (generatorValues) generatorValues.hidden = !generatorActive;
+      setText('#energy-generator-direction', generatorActive ? t('supplying') : t('notConnected'));
+      setText('#energy-home-current', Number.isFinite(homeCurrent) ? reading(homeCurrent, 'A', 1) : '— A');
+      setText('#energy-home-voltage', Number.isFinite(homeVoltage) ? reading(homeVoltage, 'V', 1) : '— V');
+      setText('#energy-home-power', Number.isFinite(loadPower) ? reading(loadPower, 'W') : '— W');
       setText('#energy-home-direction', homeActive ? t('consuming') : t('batteryIdle'));
       setText('#energy-grid-value', Number.isFinite(gridPower)
         ? reading(Math.abs(gridPower), 'W')
@@ -2411,7 +2561,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         : gridAvailable ? t('gridReady') : t('offline'));
       setText('#energy-battery-current', Number.isFinite(batteryCurrent) ? reading(batteryCurrent, 'A', 1) : '— A');
       setText('#energy-battery-power', Number.isFinite(batteryPower) ? reading(batteryPower, 'W') : '— W');
-      setText('#energy-battery-capacity', Number.isFinite(batteryCapacity) ? reading(batteryCapacity, 'Ah', 1) : '— Ah');
+      setText('#energy-battery-voltage', Number.isFinite(batteryVoltage) ? reading(batteryVoltage, 'V', 1) : '— V');
       const batteryIcon = document.querySelector('#energy-battery-icon');
       const batteryLevel = Number.isFinite(batterySoc)
         ? Math.max(0, Math.min(100, batterySoc))
@@ -2424,7 +2574,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       );
       setText('#energy-battery-direction', batteryActive
         ? batteryCharging
-          ? solarCharging ? t('charging') : t('waitingSolar')
+          ? t('charging')
           : batteryDischarging ? t('discharging') : t('batteryIdle')
         : t('batteryIdle'));
 
@@ -2478,7 +2628,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       const gridVoltage = numberValue([89]);
       const frequency = numberValue([91]);
       const pvVoltage = numberValue([341]);
-      const batteryVoltage = numberValue([137, 404, 342, 129, 93]);
+      const batteryVoltage = numberValue([137]);
       const batteryCurrent = numberValue([138, 405, 344, 343, 130]);
       const batterySoc = numberValue([139, 407, 339, 133]);
       const batteryTemperature = numberValue([140, 406, 134]);
@@ -2490,7 +2640,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       const statusText = textValue([157]);
       const batteryState = !Number.isFinite(batteryCurrent) || Math.abs(batteryCurrent) < .3
         ? t('batteryIdle')
-        : batteryCurrent < 0 ? t('charging') : t('discharging');
+        : batteryCurrent < 0 ? t('discharging') : t('charging');
 
       setText('#lcd-mode', chartDemoRunning ? t('demoMode') : data.online ? t('online') : t('offline'));
       setText('#lcd-grid', reading(gridVoltage, 'V'));
