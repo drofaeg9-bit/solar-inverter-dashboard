@@ -172,17 +172,17 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     68: ("Системне значення 68", 1.0, "", False, "Система"),
     69: ("Упаковане знакове значення 69", 1.0, "", True, "Система"),
 
-    89: ("Напруга AC", 0.1, "V", False, "AC"),
-    90: ("Параметр AC 90", 1.0, "", False, "AC"),
+    89: ("Номінальна або вихідна напруга AC", 0.1, "V", False, "AC"),
+    90: ("Вихідна напруга AC", 1.0, "V", False, "AC"),
     91: ("Частота AC", 0.01, "Hz", False, "AC"),
-    92: ("Температурний канал інвертора", 0.1, "°C", False, "Температура"),
-    93: ("Канал напруги 93", 0.1, "V", False, "Система"),
-    94: ("Відсотковий параметр 94", 1.0, "%", False, "Система"),
+    92: ("Температура інвертора або радіатора", 0.1, "°C", False, "Температура"),
+    93: ("Напруга батареї або внутрішньої DC-шини", 0.1, "V", False, "Система"),
+    94: ("Відсотковий або режимний параметр 94", 1.0, "%", False, "Система"),
 
-    129: ("Напруга батареї, канал 129", 0.1, "V", False, "Батарея"),
-    130: ("Струм батареї без знаку", 0.1, "A", False, "Батарея"),
-    133: ("Рівень заряду батареї", 1.0, "%", False, "Батарея"),
-    134: ("Температура батареї, канал 134", 0.1, "°C", False, "Температура"),
+    129: ("Напруга акумулятора", 0.1, "V", False, "Батарея"),
+    130: ("Струм акумулятора", 0.1, "A", True, "Батарея"),
+    133: ("SOC акумулятора", 1.0, "%", False, "Батарея"),
+    134: ("Потужність акумулятора", 1.0, "W", True, "Потужність"),
 
     137: ("Напруга батареї BMS", 0.1, "V", False, "BMS"),
     138: ("Струм батареї BMS", 0.1, "A", True, "BMS"),
@@ -201,7 +201,7 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     325: ("Код конфігурації BMS 325", 1.0, "", False, "BMS"),
     337: ("Код стану BMS 337", 1.0, "", False, "BMS"),
     339: ("Рівень заряду батареї BMS", 1.0, "%", False, "BMS"),
-    341: ("Канал напруги 341, ймовірно PV", 0.01, "V", False, "PV"),
+    341: ("Невідомий канал 341", 0.01, "", False, "BMS"),
     342: ("Напруга батареї BMS, канал 342", 0.1, "V", False, "BMS"),
     343: ("Струм BMS, канал 343", 0.1, "A", True, "BMS"),
     344: ("Струм батареї BMS, канал 344", 0.1, "A", True, "BMS"),
@@ -215,8 +215,8 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     378: ("Ліміт струму 378", 0.1, "A", False, "Налаштування"),
     379: ("Ліміт струму 379", 0.1, "A", False, "Налаштування"),
     383: ("Верхня напруга батареї, налаштування 383", 0.1, "V", False, "Налаштування"),
-    385: ("Параметр потужності 385", 1.0, "W", False, "Потужність"),
-    386: ("Параметр потужності 386", 1.0, "W", False, "Потужність"),
+    385: ("Гранична або номінальна потужність", 1.0, "W", False, "Налаштування"),
+    386: ("Налаштування або ліміт потужності", 1.0, "W", False, "Налаштування"),
 
     401: ("Код BMS або стану 401", 1.0, "", False, "BMS"),
     402: ("Прапорець BMS або стану 402", 1.0, "", False, "BMS"),
@@ -230,10 +230,10 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     410: ("Недоступний параметр BMS 410", 1.0, "", True, "BMS"),
     411: ("Верхня напруга заряджання BMS", 0.1, "V", False, "BMS"),
     412: ("Ліміт струму BMS", 0.1, "A", False, "BMS"),
-    413: ("Параметр потужності BMS 413", 1.0, "W", False, "Потужність"),
-    415: ("Параметр налаштування 415", 1.0, "", False, "Налаштування"),
-    416: ("Параметр налаштування 416", 1.0, "", False, "Налаштування"),
-    417: ("Параметр налаштування 417", 1.0, "", False, "Налаштування"),
+    413: ("Можлива доступна ємність батареї", 0.1, "Ah", False, "BMS"),
+    415: ("Нижній поріг SOC", 1.0, "%", False, "Налаштування"),
+    416: ("Середній поріг SOC", 1.0, "%", False, "Налаштування"),
+    417: ("Верхній поріг SOC", 1.0, "%", False, "Налаштування"),
 
     449: ("Параметр системи 449", 1.0, "", False, "Система"),
     451: ("Упаковане значення 451", 1.0, "", False, "Система"),
@@ -248,24 +248,22 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
 }
 
 METER_DEFINITIONS = [
-    (89, [], "Напруга AC", 0.0, 300.0, "V"),
+    (90, [89], "Вихідна напруга AC", 0.0, 300.0, "V"),
     (91, [], "Частота AC", 45.0, 55.0, "Hz"),
     (92, [], "Температура інвертора", -20.0, 120.0, "°C"),
-    (341, [], "Напруга каналу 341", 0.0, 600.0, "V"),
     (137, [404, 342, 129], "Напруга батареї", 40.0, 65.0, "V"),
-    (138, [405, 344], "Струм батареї", -150.0, 150.0, "A"),
-    (130, [], "Струм батареї без знаку", 0.0, 150.0, "A"),
+    (130, [], "Струм акумулятора", -150.0, 150.0, "A"),
     (139, [407, 339, 133], "Рівень заряду батареї", 0.0, 100.0, "%"),
     (140, [406], "Температура BMS", -20.0, 100.0, "°C"),
-    (134, [], "Температура батареї", -20.0, 100.0, "°C"),
+    (134, [], "Потужність акумулятора", -15000.0, 15000.0, "W"),
     (408, [], "Відсотковий параметр BMS", 0.0, 100.0, "%"),
     (141, [411, 376, 377], "Напруга заряджання / ліміт", 40.0, 65.0, "V"),
     (343, [], "Струм BMS, канал 343", -150.0, 150.0, "A"),
     (412, [378, 379], "Ліміт струму BMS", 0.0, 150.0, "A"),
     (350, [], "Знаковий струмовий параметр", -200.0, 200.0, "A"),
-    (413, [], "Параметр потужності 413", 0.0, 15000.0, "W"),
-    (385, [], "Параметр потужності 385", 0.0, 15000.0, "W"),
-    (386, [], "Параметр потужності 386", 0.0, 15000.0, "W"),
+    (413, [], "Можлива доступна ємність батареї", 0.0, 500.0, "Ah"),
+    (385, [], "Гранична або номінальна потужність", 0.0, 15000.0, "W"),
+    (386, [], "Налаштування або ліміт потужності", 0.0, 15000.0, "W"),
 ]
 
 
@@ -931,42 +929,8 @@ def flush_solar_energy() -> None:
 
 
 def record_solar_energy(fresh_values: dict[int, int]) -> None:
-    """Integrate confirmed R385 PV power samples into Madrid-day buckets."""
-    global solar_energy_last_sample_at, solar_energy_last_power_w
-    global solar_energy_last_flush_monotonic
-    raw = fresh_values.get(385)
-    if raw is None:
-        return
-    _, _, _, normalized_power, _ = normalize(385, raw)
-    if normalized_power is None:
-        return
-
-    now = datetime.now(MADRID_TIME_ZONE)
-    power_w = max(0.0, min(20000.0, float(normalized_power)))
-    with stats_lock:
-        previous_at = solar_energy_last_sample_at
-        previous_power_w = solar_energy_last_power_w
-        solar_energy_last_sample_at = now
-        solar_energy_last_power_w = power_w
-        if previous_at is None or previous_power_w is None:
-            return
-
-        elapsed_seconds = (now - previous_at).total_seconds()
-        # Ignore long gaps so a stopped process or failed Modbus link cannot
-        # turn one stale reading into fictitious production.
-        if not 0 < elapsed_seconds <= 60:
-            return
-        average_power_w = (previous_power_w + power_w) / 2
-        watt_hours = average_power_w * elapsed_seconds / 3600
-        day_key = now.date().isoformat()
-        solar_energy_pending_wh[day_key] = (
-            solar_energy_pending_wh.get(day_key, 0.0) + watt_hours
-        )
-
-        monotonic_now = time.monotonic()
-        if monotonic_now - solar_energy_last_flush_monotonic >= 10:
-            if flush_solar_energy_locked():
-                solar_energy_last_flush_monotonic = monotonic_now
+    """Pause integration until a live PV power register is identified."""
+    return
 
 
 def solar_energy_summary() -> dict[str, Any]:
@@ -1003,15 +967,17 @@ def solar_energy_summary() -> dict[str, Any]:
         ) / 1000
 
     return {
-        "today_kwh": round(total_since(today), 3),
-        "week_kwh": round(total_since(week_start), 3),
-        "month_kwh": round(total_since(month_start), 3),
-        "year_kwh": round(total_since(year_start), 3),
-        "total_kwh": round(sum(daily.values()) / 1000, 3),
-        "source_register": 385,
+        # Preserve the stored samples, but do not present totals accumulated
+        # from R385 now that it is identified as a setting rather than live PV power.
+        "today_kwh": None,
+        "week_kwh": None,
+        "month_kwh": None,
+        "year_kwh": None,
+        "total_kwh": None,
+        "source_register": None,
         "storage": "sqlite",
-        "estimated": True,
-        "error": solar_energy_error,
+        "estimated": False,
+        "error": solar_energy_error or "Регістр живої потужності PV не визначено; накопичення енергії призупинено",
     }
 
 
