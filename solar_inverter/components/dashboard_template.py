@@ -292,7 +292,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       --node-icon: url('/assets/generator.png');
     }
     .energy-generator .energy-node-image-icon {
-      left: 7px; top: 7px; bottom: 7px; width: 36px; height: auto;
+      left: 7px; top: 7px; bottom: 7px; width: 60px; height: auto;
     }
     .flow-connector { position: relative; align-self: center; justify-self: stretch; color: var(--muted); opacity: .38 }
     .flow-connector::before {
