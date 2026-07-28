@@ -2551,21 +2551,21 @@ WEB_DASHBOARD = r"""<!doctype html>
           ? pvReceiving ? t('receiving') : t('supplying')
           : t('batteryIdle'));
       setMode('#energy-inverter-output-mode', '#energy-inverter-output-definition',
+        inverterInputModeSource,
+        [
+          {label: 'APP', description: 'modeAppDescription'},
+          {label: 'UPS', description: 'modeUpsDescription'},
+          {label: 'GEN', description: 'modeGenDescription'}
+        ],
+        'outputMode'
+      );
+      setMode('#energy-inverter-input-mode', '#energy-inverter-input-definition',
         inverterOutputModeSource,
         [
           {label: 'Grid', description: 'modeGridDescription'},
           {label: 'Solar', description: 'modeSolarDescription'},
           {label: 'PBG', description: 'modePbgDescription'},
           {label: 'MKS', description: 'modeMksDescription'}
-        ],
-        'outputMode'
-      );
-      setMode('#energy-inverter-input-mode', '#energy-inverter-input-definition',
-        inverterInputModeSource,
-        [
-          {label: 'APP', description: 'modeAppDescription'},
-          {label: 'UPS', description: 'modeUpsDescription'},
-          {label: 'GEN', description: 'modeGenDescription'}
         ],
         'inputMode'
       );
