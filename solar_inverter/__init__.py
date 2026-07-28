@@ -1,0 +1,1 @@
+"""Solar inverter dashboard package."""

@@ -1,0 +1,17 @@
+[Unit]
+Description=Solar inverter web dashboard
+After=local-fs.target
+
+[Service]
+Type=simple
+User=santa
+WorkingDirectory=/mnt/c/Users/oleks/Desktop/solar_assistant
+Environment=PYTHONUNBUFFERED=1
+Environment=INVERTER_WEB_HOST=0.0.0.0
+Environment=INVERTER_WEB_PORT=8080
+ExecStart=/usr/bin/python3 /mnt/c/Users/oleks/Desktop/solar_assistant/solar_invertor_web.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
