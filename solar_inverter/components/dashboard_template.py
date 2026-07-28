@@ -337,6 +337,20 @@ WEB_DASHBOARD = r"""<!doctype html>
       text-align: center; text-overflow: ellipsis; font-size: 8px; font-weight: 900;
       line-height: 10px; white-space: nowrap;
     }
+    .inverter-mode-definitions {
+      display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px;
+      margin-top: 12px;
+    }
+    .inverter-mode-definition {
+      min-width: 0; padding: 7px 9px; border: 1px solid color-mix(in srgb, #22d3ee 28%, var(--line));
+      border-radius: 10px; background: color-mix(in srgb, #22d3ee 7%, var(--control));
+      font-size: 10px; line-height: 1.3;
+    }
+    .inverter-mode-definition strong {
+      display: block; margin-bottom: 2px; color: #22d3ee; font-size: 8px;
+      letter-spacing: .04em; text-transform: uppercase;
+    }
+    .inverter-mode-definition span { display: block; color: var(--text) }
     @keyframes energy-track-x { from { background-position: 0 0 } to { background-position: 34px 0 } }
     @keyframes energy-track-y { from { background-position: 0 0 } to { background-position: 0 34px } }
     .solar-energy-panel { margin-bottom: 18px }
@@ -641,6 +655,10 @@ WEB_DASHBOARD = r"""<!doctype html>
       .energy-battery .flow-direction { left: 38px; right: 3px; bottom: 7px }
       .energy-node:not(.energy-battery) .flow-direction { bottom: 7px }
       .flow-direction { left: 3px; right: 3px; font-size: 7px }
+      .inverter-mode-definitions { grid-template-columns: 1fr; gap: 5px; margin-top: 9px }
+      .inverter-mode-definition { padding: 6px 8px; font-size: 9px }
+      .inverter-mode-definition strong { display: inline; margin: 0 5px 0 0; font-size: 7px }
+      .inverter-mode-definition span { display: inline }
       .gauge-card { padding: 11px 8px 10px; border-radius: 15px }
       .gauge-heading { gap: 5px; padding-right: 56px }
       .gauge-title { font-size: 12px }
@@ -863,6 +881,11 @@ WEB_DASHBOARD = r"""<!doctype html>
           <span class="flow-direction" id="energy-battery-direction"></span>
         </div>
       </div>
+      <div class="inverter-mode-definitions" aria-label="Режими інвертора" data-i18n-aria="inverterModeDefinitions">
+        <div class="inverter-mode-definition"><strong data-i18n="outputMode">Вихід</strong><span id="energy-inverter-output-definition">—</span></div>
+        <div class="inverter-mode-definition"><strong data-i18n="inputMode">Вхід</strong><span id="energy-inverter-input-definition">—</span></div>
+        <div class="inverter-mode-definition"><strong data-i18n="chargeMode">Заряд</strong><span id="energy-inverter-charge-definition">—</span></div>
+      </div>
     </article>
     <section class="panel solar-energy-panel" aria-label="Вироблена сонячна енергія" data-i18n-aria="solarEnergyAria">
       <div class="solar-energy-head">
@@ -1014,7 +1037,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         solarPanels: 'Сонячні панелі', home: 'Дім', battery: 'Батарея', cityGenerator: 'Місто / Генератор',
         importing: 'СПОЖИВАННЯ', exporting: 'ВІДДАЧА', gridReady: 'AC ДОСТУПНА',
         supplying: 'ВІДДАЄ', receiving: 'ОТРИМУЄ', consuming: 'СПОЖИВАЄ',
-        outputMode: 'Вихід', inputMode: 'Вхід', chargeMode: 'Заряд',
+        outputMode: 'Вихід', inputMode: 'Вхід', chargeMode: 'Заряд', inverterModeDefinitions: 'Пояснення режимів інвертора',
         modeGridDescription: 'Мережа живить навантаження першою', modeSolarDescription: 'Сонячна енергія живить навантаження першою',
         modePbgDescription: 'Пріоритет: сонячні панелі → батарея → мережа', modeMksDescription: 'Пріоритет генератора',
         modeAppDescription: 'Широкий діапазон AC для побутових приладів', modeUpsDescription: 'Діапазон входу UPS для чутливих пристроїв',
@@ -1113,7 +1136,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         solarPanels: 'Солнечные панели', home: 'Дом', battery: 'Батарея', cityGenerator: 'Сеть / Генератор',
         importing: 'ПОТРЕБЛЕНИЕ', exporting: 'ОТДАЧА', gridReady: 'AC ДОСТУПЕН',
         supplying: 'ОТДАЁТ', receiving: 'ПОЛУЧАЕТ', consuming: 'ПОТРЕБЛЯЕТ',
-        outputMode: 'Выход', inputMode: 'Вход', chargeMode: 'Заряд',
+        outputMode: 'Выход', inputMode: 'Вход', chargeMode: 'Заряд', inverterModeDefinitions: 'Описание режимов инвертора',
         modeGridDescription: 'Сеть питает нагрузку первой', modeSolarDescription: 'Солнечная энергия питает нагрузку первой',
         modePbgDescription: 'Приоритет: солнечные панели → батарея → сеть', modeMksDescription: 'Приоритет генератора',
         modeAppDescription: 'Широкий диапазон AC для бытовых приборов', modeUpsDescription: 'Диапазон входа UPS для чувствительных устройств',
@@ -1212,7 +1235,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         solarPanels: 'Solar panels', home: 'Home', battery: 'Battery', cityGenerator: 'Grid / Generator',
         importing: 'IMPORTING', exporting: 'EXPORTING', gridReady: 'AC AVAILABLE',
         supplying: 'SUPPLYING', receiving: 'RECEIVING', consuming: 'CONSUMING',
-        outputMode: 'Output', inputMode: 'Input', chargeMode: 'Charge',
+        outputMode: 'Output', inputMode: 'Input', chargeMode: 'Charge', inverterModeDefinitions: 'Inverter mode descriptions',
         modeGridDescription: 'Grid powers the loads first', modeSolarDescription: 'Solar power supplies the loads first',
         modePbgDescription: 'Priority: solar → battery → grid', modeMksDescription: 'Generator-priority mode',
         modeAppDescription: 'Wide AC input range for household appliances', modeUpsDescription: 'UPS input range for sensitive devices',
@@ -2392,7 +2415,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         const element = document.querySelector(selector);
         if (element && element.textContent !== value) element.textContent = value;
       };
-      const setMode = (selector, source, modes, categoryKey) => {
+      const setMode = (selector, definitionSelector, source, modes, categoryKey) => {
         const element = document.querySelector(selector);
         if (!element) return;
         const mode = modeDetails(source, modes);
@@ -2403,6 +2426,8 @@ WEB_DASHBOARD = r"""<!doctype html>
           'aria-label',
           mode ? `${t(categoryKey)}: ${mode.label}. ${description}` : `${t(categoryKey)}: ${t('noData')}`
         );
+        const definition = document.querySelector(definitionSelector);
+        if (definition) definition.textContent = mode ? `${mode.label} — ${description}` : t('noData');
       };
       const setNode = (selector, enabled) =>
         document.querySelector(selector)?.classList.toggle('active', Boolean(enabled));
@@ -2515,7 +2540,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         : pvActive
           ? pvReceiving ? t('receiving') : t('supplying')
           : t('batteryIdle'));
-      setMode('#energy-inverter-output-mode',
+      setMode('#energy-inverter-output-mode', '#energy-inverter-output-definition',
         inverterOutputModeSource,
         [
           {label: 'Grid', description: 'modeGridDescription'},
@@ -2525,7 +2550,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         ],
         'outputMode'
       );
-      setMode('#energy-inverter-input-mode',
+      setMode('#energy-inverter-input-mode', '#energy-inverter-input-definition',
         inverterInputModeSource,
         [
           {label: 'APP', description: 'modeAppDescription'},
@@ -2534,7 +2559,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         ],
         'inputMode'
       );
-      setMode('#energy-inverter-charge-mode',
+      setMode('#energy-inverter-charge-mode', '#energy-inverter-charge-definition',
         inverterChargeModeSource,
         [
           {label: 'PNG', description: 'modePngDescription'},
