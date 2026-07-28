@@ -1377,10 +1377,10 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Код стану BMS 337': {ru:'Код состояния BMS 337', en:'BMS status code 337'},
       'Невідомий канал 341': {ru:'Неизвестный канал 341', en:'Unknown channel 341'},
       'Напруга батареї BMS, канал 342': {ru:'Напряжение батареи BMS, канал 342', en:'BMS battery voltage, channel 342'},
-      'Струм BMS, канал 343': {ru:'Ток BMS, канал 343', en:'BMS current, channel 343'},
-      'Струм батареї BMS, канал 344': {ru:'Ток батареи BMS, канал 344', en:'BMS battery current, channel 344'},
-      'Верхня межа напруги BMS': {ru:'Верхний предел напряжения BMS', en:'BMS upper voltage limit'},
-      'Нижня межа напруги BMS 1': {ru:'Нижний предел напряжения BMS 1', en:'BMS lower voltage limit 1'},
+      'Код верхнього аварійного порога частоти CA_HF1': {ru:'Код верхнего аварийного порога частоты CA_HF1', en:'Upper frequency fault-threshold code CA_HF1'},
+      'Код верхнього аварійного порога частоти CA_HF2': {ru:'Код верхнего аварийного порога частоты CA_HF2', en:'Upper frequency fault-threshold code CA_HF2'},
+      'Аварійний поріг частоти CA_LF1': {ru:'Аварийный порог частоты CA_LF1', en:'Frequency fault threshold CA_LF1'},
+      'Аварійний поріг частоти CA_LF2': {ru:'Аварийный порог частоты CA_LF2', en:'Frequency fault threshold CA_LF2'},
       'Нижня межа напруги BMS 2': {ru:'Нижний предел напряжения BMS 2', en:'BMS lower voltage limit 2'},
       'Знаковий струмовий параметр BMS': {ru:'Знаковый параметр тока BMS', en:'Signed BMS current parameter'},
       'Напруга заряджання, налаштування 376': {ru:'Напряжение зарядки, настройка 376', en:'Charging voltage, setting 376'},
@@ -1888,7 +1888,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           [157, statusCode], [158, 190 + statusCode],
           [321, 1], [324, 1], [325, 1], [337, 2], [339, batterySoc],
           [341, Math.max(0, pvVoltage)], [342, batteryVoltage],
-          [343, -batteryCurrent * 1.06], [344, -batteryCurrent * .98],
+          [343, -79], [344, -81],
           [345, 61], [346, 48], [349, 48], [350, -1.5],
           [376, 57.1], [377, 54.4], [378, 80], [379, 80], [383, 58.4],
           [385, pvPower], [386, Math.max(0, loadPower)],
@@ -2464,7 +2464,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       const loadPercentSource = firstRegister([94]);
       const homeVoltageSource = firstRegister([90]);
       const batteryVoltageSource = firstRegister([137]);
-      const batteryCurrentSource = firstRegister([130, 138, 405, 344, 343]);
+      const batteryCurrentSource = firstRegister([130, 138, 405]);
       const batterySocSource = firstRegister([133, 139, 407, 339]);
       const batteryPowerSource = firstRegister([134]);
       const inverterOutputModeSource = firstRegister([16643]);
@@ -2680,7 +2680,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       const frequency = numberValue([91]);
       const pvVoltage = chartDemoRunning ? numberValue([341]) : null;
       const batteryVoltage = numberValue([137]);
-      const lcdBatteryCurrentSource = firstRegister([130, 138, 405, 344, 343]);
+      const lcdBatteryCurrentSource = firstRegister([130, 138, 405]);
       const lcdBatteryCurrentReading = lcdBatteryCurrentSource
         ? numericValue(lcdBatteryCurrentSource.display)
         : null;
