@@ -321,7 +321,7 @@ def run_web_dashboard() -> None:
     worker = threading.Thread(target=poll_worker, name="inverter-poller", daemon=True)
     worker.start()
     server = ThreadingHTTPServer((host, port), DashboardHandler)
-    safe_console_print(f"Solar Invertor Web: http://localhost:{port}")
+    safe_console_print(f"Solar Inverter Web: http://localhost:{port}")
     safe_console_print(
         f"Прослуховування {host}:{port} — натисніть Ctrl+C для зупинки"
     )
