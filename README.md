@@ -37,3 +37,12 @@ python3 solar_invertor_web.py
 ```
 
 By default the dashboard listens on port `8080`. Production deployment instructions are included in the generated Project Guide and in `deploy/ORANGE_PI_DEPLOYMENT.md`.
+
+## Build the single-file Orange Pi updater
+
+```bash
+python3 deploy/build_update_bundle.py
+python3 deploy/solar-dashboard-update.pyz --check
+```
+
+Copy only `deploy/solar-dashboard-update.pyz` to the Orange Pi and run it with `sudo python3`. The updater installs only the dashboard runtime files, restarts the systemd service, and verifies the local API without overwriting persistent statistics or register logs.

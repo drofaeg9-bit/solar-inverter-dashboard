@@ -117,6 +117,9 @@ npm run docs:generate</code></pre></div><p>Open <code>documentation/index.html</
 <h2>Run the dashboard</h2>
 <p>The runtime requires Python 3, <code>mbpoll</code>, and access to <code>/dev/ttyUSB0</code>.</p>
 <b>Example :</b><div><pre class="line-numbers"><code class="language-bash">python3 solar_invertor_web.py</code></pre></div><p>By default the dashboard listens on port <code>8080</code>. Production deployment instructions are included in the generated Project Guide and in <code>deploy/ORANGE_PI_DEPLOYMENT.md</code>.</p>
+<h2>Build the single-file Orange Pi updater</h2>
+<b>Example :</b><div><pre class="line-numbers"><code class="language-bash">python3 deploy/build_update_bundle.py
+python3 deploy/solar-dashboard-update.pyz --check</code></pre></div><p>Copy only <code>deploy/solar-dashboard-update.pyz</code> to the Orange Pi and run it with <code>sudo python3</code>. The updater installs only the dashboard runtime files, restarts the systemd service, and verifies the local API without overwriting persistent statistics or register logs.</p>
 
 
 

@@ -4,6 +4,31 @@ This guide installs the dashboard as `solar-inverter-dashboard.service`, reads t
 
 The recommended setup binds the Python server only to `127.0.0.1:8080`. Tailscale terminates HTTPS and proxies requests to that loopback address.
 
+## Single-file update (recommended for a direct SSH connection)
+
+The repository can build one self-installing Python archive containing only the web dashboard runtime and systemd unit. On the development PC, rebuild it after every application change:
+
+```powershell
+py -3 deploy/build_update_bundle.py
+py -3 deploy/solar-dashboard-update.pyz --check
+scp deploy/solar-dashboard-update.pyz "orangepi@ORANGE_PI_IP:~/"
+```
+
+Then connect to the Orange Pi and run the one copied file:
+
+```bash
+ssh orangepi@ORANGE_PI_IP
+sudo python3 ~/solar-dashboard-update.pyz
+```
+
+The updater validates its embedded Python files before installation, creates the restricted service account when necessary, installs missing `mbpoll` or timezone data through `apt-get`, updates only the required files under `/opt/solar_assistant`, installs the systemd unit, restarts the service, and checks `http://127.0.0.1:8080/api/state`.
+
+It does not replace the statistics database, register logs, Tailscale configuration, Home Assistant integration, Android project, or documentation. To inspect a copied archive without changing the Orange Pi, run:
+
+```bash
+python3 ~/solar-dashboard-update.pyz --check
+```
+
 ## 1. Publish the new version
 
 On the development computer, commit only application and deployment source files. Do not commit runtime databases, register logs, or `__pycache__` files.
