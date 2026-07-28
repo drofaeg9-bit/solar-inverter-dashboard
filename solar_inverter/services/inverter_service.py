@@ -118,11 +118,13 @@ POLL_RATES = [0.5, 1.0, 2.0, 5.0, 10.0]
 
 KNOWN_REGISTERS = [
     1, 2, 3, 4, 5, 6, 7, 8, 9,
+    10, 11, 12, 13, 14, 15, 16,
     17, 18, 27, 28, 58,
     65, 66, 67, 68, 69,
     89, 90, 91, 92, 93, 94,
-    129, 130, 133, 134,
+    129, 130, 131, 132, 133, 134, 135, 136,
     137, 138, 139, 140, 141, 142, 143, 144,
+    147, 148, 149, 150, 151, 152, 153, 154, 155, 156,
     157, 158,
     321, 324, 325, 337, 339,
     341, 342, 343, 344, 345, 346, 349, 350,
@@ -161,6 +163,16 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
         )
         for register in range(1, 10)
     },
+    **{
+        register: (
+            f"Канал вимірювання зовнішньої мережі {register}",
+            1.0,
+            "",
+            False,
+            "AC",
+        )
+        for register in range(10, 17)
+    },
     17: ("Код протоколу або версії", 1.0, "", False, "Система"),
     18: ("Код конфігурації пристрою", 1.0, "", False, "Система"),
     27: ("Системне слово 27", 1.0, "", False, "Система"),
@@ -183,6 +195,16 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     130: ("Струм акумулятора", 0.1, "A", True, "Батарея"),
     133: ("SOC акумулятора", 1.0, "%", False, "Батарея"),
     134: ("Потужність акумулятора", 1.0, "W", True, "Потужність"),
+    **{
+        register: (
+            f"Канал потужності або струму сонячного трекера {register}",
+            1.0,
+            "",
+            False,
+            "PV",
+        )
+        for register in (131, 132, 135, 136)
+    },
 
     137: ("Напруга батареї BMS", 0.1, "V", False, "BMS"),
     138: ("Струм батареї BMS", 0.1, "A", True, "BMS"),
@@ -192,6 +214,17 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     142: ("Недоступний параметр BMS 142", 1.0, "", True, "BMS"),
     143: ("Недоступний параметр BMS 143", 1.0, "", True, "BMS"),
     144: ("Параметр BMS 144", 1.0, "", False, "BMS"),
+
+    **{
+        register: (
+            f"Прапорець помилки або аварійного попередження {register}",
+            1.0,
+            "",
+            False,
+            "Система",
+        )
+        for register in range(147, 157)
+    },
 
     157: ("Код робочого стану", 1.0, "", False, "Система"),
     158: ("Системний параметр стану 158", 1.0, "", False, "Система"),
@@ -350,6 +383,10 @@ def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str
     if register == 157:
         label = OPERATING_STATUS.get(raw, f"Код робочого стану {raw}")
         return "Робочий стан", label, "", float(raw), "Система"
+
+    if 147 <= register <= 156 and raw == 0:
+        name, _, _, _, group = REGISTER_CONFIG[register]
+        return name, "Немає помилок або аварій", "", 0.0, group
 
     name, scale, unit, use_signed, group = REGISTER_CONFIG.get(
         register, (f"Регістр {register}", 1.0, "", False, "Сире")

@@ -1509,8 +1509,27 @@ WEB_DASHBOARD = r"""<!doctype html>
       'помилка читання': {ru:'ошибка чтения', en:'read error'},
       'ніколи': {ru:'никогда', en:'never'},
       'Н/Д': {ru:'Н/Д', en:'N/A'},
+      'Немає помилок або аварій': {ru:'Нет ошибок или аварий', en:'No faults or alarms'},
       'Випадкове демо всіх даних': {ru:'Случайное демо всех данных', en:'All-data random demo'}
     };
+    for (let register = 10; register <= 16; register += 1) {
+      DATA_TRANSLATIONS[`Канал вимірювання зовнішньої мережі ${register}`] = {
+        ru: `Канал измерения внешней сети ${register}`,
+        en: `External grid measurement channel ${register}`
+      };
+    }
+    for (const register of [131, 132, 135, 136]) {
+      DATA_TRANSLATIONS[`Канал потужності або струму сонячного трекера ${register}`] = {
+        ru: `Канал мощности или тока солнечного трекера ${register}`,
+        en: `Solar tracker power or current channel ${register}`
+      };
+    }
+    for (let register = 147; register <= 156; register += 1) {
+      DATA_TRANSLATIONS[`Прапорець помилки або аварійного попередження ${register}`] = {
+        ru: `Флаг ошибки или аварийного предупреждения ${register}`,
+        en: `Fault or alarm warning flag ${register}`
+      };
+    }
     let currentLanguage = 'uk';
     function t(key, replacements = {}) {
       const template = UI_TRANSLATIONS[currentLanguage]?.[key] ?? UI_TRANSLATIONS.uk[key] ?? key;
@@ -2457,7 +2476,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         connector.style.setProperty('--flow-duration', `${duration.toFixed(2)}s`);
       };
 
-      const gridVoltageSource = firstRegister([89, 90]);
+      const externalGridSources = [10, 11, 12, 13, 14, 15, 16]
+        .map(number => byNumber.get(number))
+        .filter(register => register?.available);
+      const gridVoltageSource = chartDemoRunning ? firstRegister([89]) : null;
       const pvVoltageSource = chartDemoRunning ? firstRegister([341]) : null;
       const pvPowerSource = chartDemoRunning ? firstRegister([385]) : null;
       const loadPowerSource = chartDemoRunning ? firstRegister([386]) : null;
@@ -2503,8 +2525,15 @@ WEB_DASHBOARD = r"""<!doctype html>
         || (Number.isFinite(pvVoltage) && pvVoltage > 30);
       const solarDataVisible = pvActive;
       const pvReceiving = Number.isFinite(pvPower) && pvPower < -20;
-      const gridInputKnown = Number.isFinite(gridVoltage);
-      const gridAvailable = gridInputKnown && gridVoltage > 40;
+      const gridInputKnown = chartDemoRunning
+        ? Number.isFinite(gridVoltage)
+        : externalGridSources.length > 0;
+      const gridAvailable = chartDemoRunning
+        ? gridInputKnown && gridVoltage > 40
+        : externalGridSources.some(register => {
+            const value = numericValue(register.display);
+            return Number.isFinite(value) && Math.abs(value) > .1;
+          });
       const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
@@ -2529,7 +2558,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         ? [pvPowerSource, loadPowerSource, batteryChargePower || batteryDischargePower
           ? [batteryVoltageSource, batteryCurrentSource]
           : []]
-        : [gridVoltageSource];
+        : chartDemoRunning ? [gridVoltageSource] : externalGridSources;
 
       const homeActive = Number.isFinite(loadPower) ? loadPower > 20 : Number.isFinite(loadPercent) && loadPercent > 0;
       const gridFlowActive = gridAvailable && (Number.isFinite(gridPower) ? Math.abs(gridPower) > 20 : true);
@@ -2554,7 +2583,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource],
         [137, 130, 134, 133]
       ));
-      setText('#energy-grid-registers', registerText(gridRegisterSources, [89]));
+      setText('#energy-grid-registers', registerText(gridRegisterSources, [10, 11, 12, 13, 14, 15, 16]));
       setText('#energy-generator-registers', generatorActive ? t('demoMode') : '—');
       setText('#energy-solar-voltage', Number.isFinite(pvVoltage) ? reading(Math.abs(pvVoltage), 'V', 1) : '— V');
       setText('#energy-solar-power', Number.isFinite(pvPower) ? reading(Math.abs(pvPower), 'W') : '— W');
@@ -2676,7 +2705,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         if (element) element.textContent = value;
       };
 
-      const gridVoltage = numberValue([89]);
+      const gridVoltage = chartDemoRunning ? numberValue([89]) : null;
       const frequency = numberValue([91]);
       const pvVoltage = chartDemoRunning ? numberValue([341]) : null;
       const batteryVoltage = numberValue([137]);
