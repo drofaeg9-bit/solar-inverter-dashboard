@@ -626,7 +626,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       .energy-solar-values { gap: 3px; line-height: 1.12 }
       .energy-battery { padding-left: 39px }
       .energy-generator { padding-left: 43px }
-      .energy-generator .energy-node-image-icon { left: 5px; top: 7px; bottom: 7px; width: 33px; height: auto }
+      .energy-generator .energy-node-image-icon { left: 5px; top: 7px; bottom: 7px; height: auto }
       .energy-battery-icon {
         left: 6px; top: 8px; bottom: 8px; width: 25px; height: auto;
         overflow: hidden; font-size: 7px;
@@ -717,7 +717,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       .energy-node-value { font-size: 11px }
       .energy-battery { padding-left: 36px }
       .energy-generator { padding-left: 38px }
-      .energy-generator .energy-node-image-icon { left: 4px; top: 6px; bottom: 6px; width: 29px; height: auto }
+      .energy-generator .energy-node-image-icon { left: 4px; top: 6px; bottom: 6px;  height: auto }
       .energy-battery-icon { left: 5px; width: 23px }
       .energy-battery-values { left: 34px; font-size: 10.5px }
       .energy-battery .flow-direction { left: 35px }
@@ -1016,10 +1016,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         supplying: 'ВІДДАЄ', receiving: 'ОТРИМУЄ', consuming: 'СПОЖИВАЄ',
         outputMode: 'Вихід', inputMode: 'Вхід', chargeMode: 'Заряд',
         modeGridDescription: 'Мережа живить навантаження першою', modeSolarDescription: 'Сонячна енергія живить навантаження першою',
-        modePbgDescription: 'Пріоритет PV → батарея → мережа', modeMksDescription: 'Пріоритет генератора',
-        modeAppDescription: 'Діапазон входу для побутових приладів', modeUpsDescription: 'Діапазон входу UPS для чутливих пристроїв',
+        modePbgDescription: 'Пріоритет: сонячні панелі → батарея → мережа', modeMksDescription: 'Пріоритет генератора',
+        modeAppDescription: 'Широкий діапазон AC для побутових приладів', modeUpsDescription: 'Діапазон входу UPS для чутливих пристроїв',
         modeGenDescription: 'Генератор підключений до входу AC', modePngDescription: 'Батарею заряджають PV і мережа',
-        modeOpvDescription: 'Батарею заряджає лише PV', modePvfDescription: 'PV заряджає першим; мережа — коли PV недоступний',
+        modeOpvDescription: 'Батарею заряджає лише PV', modePvfDescription: 'Спочатку заряджає PV; мережа використовується без сонця',
         demoSolarChargeExport: 'ДЕМО · PV → ДІМ + БАТ. + МЕРЕЖА',
         demoGridHome: 'ДЕМО · МЕРЕЖА → ДІМ', demoBatteryHome: 'ДЕМО · БАТ. → ДІМ',
         demoSolarExport: 'ДЕМО · PV → ДІМ + МЕРЕЖА', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ІНВЕРТОР → ДІМ',
@@ -1115,10 +1115,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         supplying: 'ОТДАЁТ', receiving: 'ПОЛУЧАЕТ', consuming: 'ПОТРЕБЛЯЕТ',
         outputMode: 'Выход', inputMode: 'Вход', chargeMode: 'Заряд',
         modeGridDescription: 'Сеть питает нагрузку первой', modeSolarDescription: 'Солнечная энергия питает нагрузку первой',
-        modePbgDescription: 'Приоритет PV → батарея → сеть', modeMksDescription: 'Приоритет генератора',
-        modeAppDescription: 'Диапазон входа для бытовых приборов', modeUpsDescription: 'Диапазон входа UPS для чувствительных устройств',
+        modePbgDescription: 'Приоритет: солнечные панели → батарея → сеть', modeMksDescription: 'Приоритет генератора',
+        modeAppDescription: 'Широкий диапазон AC для бытовых приборов', modeUpsDescription: 'Диапазон входа UPS для чувствительных устройств',
         modeGenDescription: 'Генератор подключён ко входу AC', modePngDescription: 'Батарею заряжают PV и сеть',
-        modeOpvDescription: 'Батарею заряжает только PV', modePvfDescription: 'PV заряжает первым; сеть — когда PV недоступен',
+        modeOpvDescription: 'Батарею заряжает только PV', modePvfDescription: 'Сначала заряжает PV; сеть используется без солнца',
         demoSolarChargeExport: 'ДЕМО · PV → ДОМ + БАТ. + СЕТЬ',
         demoGridHome: 'ДЕМО · СЕТЬ → ДОМ', demoBatteryHome: 'ДЕМО · БАТ. → ДОМ',
         demoSolarExport: 'ДЕМО · PV → ДОМ + СЕТЬ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ИНВЕРТОР → ДОМ',
@@ -1214,10 +1214,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         supplying: 'SUPPLYING', receiving: 'RECEIVING', consuming: 'CONSUMING',
         outputMode: 'Output', inputMode: 'Input', chargeMode: 'Charge',
         modeGridDescription: 'Grid powers the loads first', modeSolarDescription: 'Solar power supplies the loads first',
-        modePbgDescription: 'Priority: PV → battery → grid', modeMksDescription: 'Generator-priority mode',
-        modeAppDescription: 'Appliance AC input range', modeUpsDescription: 'UPS input range for sensitive devices',
+        modePbgDescription: 'Priority: solar → battery → grid', modeMksDescription: 'Generator-priority mode',
+        modeAppDescription: 'Wide AC input range for household appliances', modeUpsDescription: 'UPS input range for sensitive devices',
         modeGenDescription: 'Generator connected to the AC input', modePngDescription: 'PV and grid charge the battery',
-        modeOpvDescription: 'Only PV charges the battery', modePvfDescription: 'PV charges first; grid charges when PV is unavailable',
+        modeOpvDescription: 'Only PV charges the battery', modePvfDescription: 'PV charges first; grid is used without solar',
         demoSolarChargeExport: 'DEMO · PV → HOME + BAT. + GRID',
         demoGridHome: 'DEMO · GRID → HOME', demoBatteryHome: 'DEMO · BAT. → HOME',
         demoSolarExport: 'DEMO · PV → HOME + GRID', demoGeneratorHome: 'DEMO · GENERATOR → INVERTER → HOME',
