@@ -1,0 +1,28 @@
+[
+  {
+    "title": "Project overview",
+    "file": "overview.md"
+  },
+  {
+    "title": "Architecture",
+    "file": "architecture.md"
+  },
+  {
+    "title": "Dashboard API",
+    "file": "dashboard-api.md"
+  },
+  {
+    "title": "Home Assistant integration",
+    "file": "home-assistant.md"
+  },
+  {
+    "title": "Operations",
+    "file": "operations.md",
+    "children": [
+      {
+        "title": "Orange Pi deployment",
+        "file": "orange-pi.md"
+      }
+    ]
+  }
+]

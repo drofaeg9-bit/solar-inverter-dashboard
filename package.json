@@ -1,0 +1,14 @@
+{
+  "name": "solar-inverter-dashboard-docs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Compodoc documentation toolchain for the Solar Inverter Dashboard project",
+  "scripts": {
+    "docs:generate": "compodoc -p tsconfig.doc.json -d documentation --includes docs --includesName \"Project Guide\" --name \"Solar Inverter Dashboard\" --theme readthedocs --disablePrivate --disableProtected --disableInternal --disableSourceCode",
+    "docs:serve": "compodoc -p tsconfig.doc.json -d documentation --includes docs --includesName \"Project Guide\" --name \"Solar Inverter Dashboard\" --theme readthedocs --disablePrivate --disableProtected --disableInternal --disableSourceCode --serve --port 8081"
+  },
+  "devDependencies": {
+    "@compodoc/compodoc": "1.2.1",
+    "typescript": "5.9.3"
+  }
+}

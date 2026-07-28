@@ -937,7 +937,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         supplying: 'ВІДДАЄ', receiving: 'ОТРИМУЄ', consuming: 'СПОЖИВАЄ',
         demoSolarChargeExport: 'ДЕМО · PV → ДІМ + БАТ. + МЕРЕЖА',
         demoGridHome: 'ДЕМО · МЕРЕЖА → ДІМ', demoBatteryHome: 'ДЕМО · БАТ. → ДІМ',
-        demoSolarExport: 'ДЕМО · PV → ДІМ + МЕРЕЖА', demoPvReverse: 'ДЕМО · МЕРЕЖА → PV + ДІМ',
+        demoSolarExport: 'ДЕМО · PV → ДІМ + МЕРЕЖА', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ІНВЕРТОР → ДІМ',
         demoMixedSources: 'ДЕМО · PV + БАТ. → ДІМ · МЕРЕЖІ НЕМАЄ',
         solarEnergyTitle: 'Вироблена сонячна енергія', solarEnergyAria: 'Підсумки виробленої сонячної енергії',
         solarEnergyEstimate: 'Оцінка з потужності PV R385 · час Мадрида',
@@ -1030,7 +1030,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         supplying: 'ОТДАЁТ', receiving: 'ПОЛУЧАЕТ', consuming: 'ПОТРЕБЛЯЕТ',
         demoSolarChargeExport: 'ДЕМО · PV → ДОМ + БАТ. + СЕТЬ',
         demoGridHome: 'ДЕМО · СЕТЬ → ДОМ', demoBatteryHome: 'ДЕМО · БАТ. → ДОМ',
-        demoSolarExport: 'ДЕМО · PV → ДОМ + СЕТЬ', demoPvReverse: 'ДЕМО · СЕТЬ → PV + ДОМ',
+        demoSolarExport: 'ДЕМО · PV → ДОМ + СЕТЬ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ИНВЕРТОР → ДОМ',
         demoMixedSources: 'ДЕМО · PV + БАТ. → ДОМ · СЕТИ НЕТ',
         solarEnergyTitle: 'Выработанная солнечная энергия', solarEnergyAria: 'Итоги выработанной солнечной энергии',
         solarEnergyEstimate: 'Оценка по мощности PV R385 · время Мадрида',
@@ -1123,7 +1123,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         supplying: 'SUPPLYING', receiving: 'RECEIVING', consuming: 'CONSUMING',
         demoSolarChargeExport: 'DEMO · PV → HOME + BAT. + GRID',
         demoGridHome: 'DEMO · GRID → HOME', demoBatteryHome: 'DEMO · BAT. → HOME',
-        demoSolarExport: 'DEMO · PV → HOME + GRID', demoPvReverse: 'DEMO · GRID → PV + HOME',
+        demoSolarExport: 'DEMO · PV → HOME + GRID', demoGeneratorHome: 'DEMO · GENERATOR → INVERTER → HOME',
         demoMixedSources: 'DEMO · PV + BAT. → HOME · GRID OFF',
         solarEnergyTitle: 'Solar energy generated', solarEnergyAria: 'Generated solar energy totals',
         solarEnergyEstimate: 'Estimated from PV power R385 · Madrid time',
@@ -1396,6 +1396,7 @@ WEB_DASHBOARD = r"""<!doctype html>
     let chartDemoCancelRequested = false;
     let demoRegisterRows = null;
     let demoFlowCase = '';
+    let demoGeneratorPower = 0;
     let currentView = 'dashboard';
     let lcdPageIndex = 0;
     let lcdEnterNotice = false;
@@ -1665,6 +1666,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       let batterySoc;
       let statusCode;
       let caseKey;
+      let generatorPower = 0;
 
       if (second < 20) {
         // PV supplies the home, charges the battery, and exports the surplus.
@@ -1704,14 +1706,16 @@ WEB_DASHBOARD = r"""<!doctype html>
         statusCode = 3;
         caseKey = 'demoSolarExport';
       } else if (second < 100) {
-        // Diagnostic reverse-PV case demonstrates the supported bidirectional path.
-        pvVoltage = 315 + ripple * 2;
-        pvPower = -1200 - Math.abs(ripple) * 120;
-        loadPower = 2200 + Math.sin(second * .25) * 100;
+        // The generator is a one-way source that supplies the inverter and home.
+        gridAvailable = false;
+        pvVoltage = 0;
+        pvPower = 0;
+        loadPower = 2800 + Math.sin(second * .25) * 120;
         batteryCurrent = 0;
         batterySoc = 72.5;
         statusCode = 1;
-        caseKey = 'demoPvReverse';
+        generatorPower = 3400 + ripple * 180;
+        caseKey = 'demoGeneratorHome';
       } else {
         // With AC input unavailable, solar and battery jointly supply the home.
         gridAvailable = false;
@@ -1735,6 +1739,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       return {
         statusCode,
         caseKey,
+        generatorPower,
         values: new Map([
           [89, gridVoltage], [90, gridVoltage], [91, gridFrequency],
           [92, inverterTemperature], [93, batteryVoltage], [94, loadPercent],
@@ -1859,6 +1864,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           );
           const scenario = realisticDemoScenario(elapsedSeconds);
           demoFlowCase = scenario.caseKey;
+          demoGeneratorPower = scenario.generatorPower;
           registerKeys.forEach(key => {
             const item = chartDefinitions.get(key);
             if (!item) return;
@@ -1919,6 +1925,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         chartDemoCancelRequested = false;
         demoRegisterRows = null;
         demoFlowCase = '';
+        demoGeneratorPower = 0;
         setButtonState(t('runDemo'));
         if (lastData) {
           recordChartSamples(lastData);
@@ -2344,6 +2351,10 @@ WEB_DASHBOARD = r"""<!doctype html>
       const gridPower = Number.isFinite(pvPower) && Number.isFinite(loadPower)
         ? loadPower + batteryChargePower - pvPower - batteryDischargePower
         : null;
+      const generatorPower = chartDemoRunning && Number.isFinite(demoGeneratorPower)
+        ? demoGeneratorPower
+        : null;
+      const generatorActive = Number.isFinite(generatorPower) && generatorPower > 20;
       const batteryCapacitySources = Number.isFinite(batteryRemainingCapacity)
         ? [batteryRemainingCapacitySource]
         : [batteryRatedCapacitySource, batterySocSource];
@@ -2377,7 +2388,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         [138, 137, 409]
       ));
       setText('#energy-grid-registers', registerText(gridRegisterSources, [89, 385, 386]));
-      setText('#energy-generator-registers', '—');
+      setText('#energy-generator-registers', generatorActive ? t('demoMode') : '—');
       setText('#energy-solar-voltage', Number.isFinite(pvVoltage) ? reading(Math.abs(pvVoltage), 'V', 1) : '— V');
       setText('#energy-solar-power', Number.isFinite(pvPower) ? reading(Math.abs(pvPower), 'W') : '— W');
       setText('#energy-solar-current', Number.isFinite(pvCurrent) ? reading(pvCurrent, 'A', 1) : '— A');
@@ -2389,7 +2400,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           ? pvReceiving ? t('receiving') : t('supplying')
           : t('batteryIdle'));
       setText('#energy-inverter-value', chartDemoRunning ? t('demoMode') : data.online ? t('online') : t('offline'));
-      setText('#energy-generator-value', t('noData'));
+      setText('#energy-generator-value', generatorActive ? reading(generatorPower, 'W') : t('noData'));
       setText('#energy-home-value', Number.isFinite(loadPower) ? reading(loadPower, 'W') : reading(loadPercent, '%'));
       setText('#energy-home-direction', homeActive ? t('consuming') : t('batteryIdle'));
       setText('#energy-grid-value', Number.isFinite(gridPower)
@@ -2419,7 +2430,7 @@ WEB_DASHBOARD = r"""<!doctype html>
 
       setNode('#energy-solar-node', pvActive);
       setNode('#energy-inverter-node', inverterActive);
-      setNode('#energy-generator-node', false);
+      setNode('#energy-generator-node', generatorActive);
       setNode('#energy-home-node', homeActive);
       setNode('#energy-grid-node', gridAvailable);
       setNode('#energy-battery-node', Number.isFinite(batteryVoltage) || Number.isFinite(batterySoc));
@@ -2428,8 +2439,8 @@ WEB_DASHBOARD = r"""<!doctype html>
       document.querySelector('#energy-pv-flow')?.classList.toggle('disconnected', !pvActive);
       // Home is deliberately one-way: it can consume energy but never supply it.
       setFlow('#energy-home-flow', inverterActive && homeActive, false, loadPower);
-      // Generator connects diagonally to Inverter; a dedicated register is required before activating this path.
-      setFlow('#energy-generator-flow', false, true, null);
+      // Generator is a one-way source: animation always travels toward the inverter.
+      setFlow('#energy-generator-flow', generatorActive && inverterActive, true, generatorPower);
       // Grid is directly below Inverter: importing moves upward, exporting moves downward.
       setFlow('#energy-grid-flow', gridFlowActive && inverterActive, gridImporting, gridPower);
       // Battery and inverter exchange energy in both directions.

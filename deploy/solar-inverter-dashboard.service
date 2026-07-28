@@ -1,17 +1,24 @@
 [Unit]
 Description=Solar inverter web dashboard
-After=local-fs.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
-User=santa
-WorkingDirectory=/mnt/c/Users/oleks/Desktop/solar_assistant
+User=solar-dashboard
+Group=solar-dashboard
+SupplementaryGroups=dialout
+WorkingDirectory=/opt/solar_assistant
+StateDirectory=solar-inverter-dashboard
 Environment=PYTHONUNBUFFERED=1
-Environment=INVERTER_WEB_HOST=0.0.0.0
+Environment=INVERTER_WEB_HOST=127.0.0.1
 Environment=INVERTER_WEB_PORT=8080
-ExecStart=/usr/bin/python3 /mnt/c/Users/oleks/Desktop/solar_assistant/solar_invertor_web.py
+Environment=INVERTER_STATS_DB=/var/lib/solar-inverter-dashboard/stats.sqlite3
+ExecStart=/usr/bin/python3 /opt/solar_assistant/solar_invertor_web.py
 Restart=on-failure
 RestartSec=3
+TimeoutStopSec=15
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target
