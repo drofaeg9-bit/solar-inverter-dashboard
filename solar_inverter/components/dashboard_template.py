@@ -2519,10 +2519,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         connector.style.setProperty('--flow-duration', `${duration.toFixed(2)}s`);
       };
 
-      const externalGridSources = [10, 11, 12, 13, 14, 15, 16]
-        .map(number => byNumber.get(number))
-        .filter(register => register?.available);
-      const gridVoltageSource = chartDemoRunning ? firstRegister([89]) : null;
+      const gridVoltageSource = firstRegister([89]);
       const pvVoltageSource = chartDemoRunning ? firstRegister([341]) : null;
       const pvPowerSource = chartDemoRunning ? firstRegister([385]) : null;
       const loadPowerSource = chartDemoRunning ? firstRegister([386]) : firstRegister([93]);
@@ -2566,15 +2563,14 @@ WEB_DASHBOARD = r"""<!doctype html>
         || (Number.isFinite(pvVoltage) && pvVoltage > 30);
       const solarDataVisible = pvActive;
       const pvReceiving = Number.isFinite(pvPower) && pvPower < -20;
-      const gridInputKnown = chartDemoRunning
-        ? Number.isFinite(gridVoltage)
-        : externalGridSources.length > 0;
+      // With PV absent, simultaneous AC output and battery charging prove grid import.
+      const gridSupplyingFromBalance = !chartDemoRunning
+        && !pvActive
+        && batteryCharging
+        && Number.isFinite(measuredLoadPower);
       const gridAvailable = chartDemoRunning
-        ? gridInputKnown && gridVoltage > 40
-        : externalGridSources.some(register => {
-            const value = numericValue(register.display);
-            return Number.isFinite(value) && Math.abs(value) > .1;
-          });
+        ? Number.isFinite(gridVoltage) && gridVoltage > 40
+        : gridSupplyingFromBalance;
       const loadPower = calculateHomeConsumption(
         measuredLoadPower,
         batteryPower,
@@ -2593,9 +2589,13 @@ WEB_DASHBOARD = r"""<!doctype html>
       const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
-      const gridPower = Number.isFinite(pvPower) && Number.isFinite(loadPower)
-        ? loadPower + batteryChargePower - pvPower - batteryDischargePower
-        : null;
+      const gridPower = chartDemoRunning
+        ? Number.isFinite(pvPower) && Number.isFinite(loadPower)
+          ? loadPower + batteryChargePower - pvPower - batteryDischargePower
+          : null
+        : gridSupplyingFromBalance
+          ? Math.abs(measuredLoadPower) + batteryChargePower
+          : null;
       const gridCurrent = Number.isFinite(gridPower) && Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .1
         ? Math.abs(gridPower / gridVoltage)
         : null;
@@ -2611,10 +2611,12 @@ WEB_DASHBOARD = r"""<!doctype html>
         ? [batteryPowerSource]
         : [batteryVoltageSource, batteryCurrentSource];
       const gridRegisterSources = Number.isFinite(gridPower)
-        ? [pvPowerSource, loadPowerSource, batteryChargePower || batteryDischargePower
-          ? [batteryVoltageSource, batteryCurrentSource]
-          : []]
-        : chartDemoRunning ? [gridVoltageSource] : externalGridSources;
+        ? chartDemoRunning
+          ? [pvPowerSource, loadPowerSource, batteryChargePower || batteryDischargePower
+            ? [batteryVoltageSource, batteryCurrentSource]
+            : []]
+          : [loadPowerSource, batteryPowerSource, gridVoltageSource]
+        : gridAvailable ? [gridVoltageSource] : [];
 
       const homeActive = Number.isFinite(loadPower) ? loadPower > 20 : Number.isFinite(loadPercent) && loadPercent > 0;
       const gridFlowActive = gridAvailable && (Number.isFinite(gridPower) ? Math.abs(gridPower) > 20 : true);
@@ -2639,7 +2641,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource],
         [137, 130, 134, 133]
       ));
-      setText('#energy-grid-registers', registerText(gridRegisterSources, [10, 11, 12, 13, 14, 15, 16]));
+      setText('#energy-grid-registers', registerText(gridRegisterSources, [93, 134, 89]));
       setText('#energy-generator-registers', generatorActive ? t('demoMode') : '—');
       setText('#energy-solar-voltage', Number.isFinite(pvVoltage) ? reading(Math.abs(pvVoltage), 'V', 1) : '— V');
       setText('#energy-solar-power', Number.isFinite(pvPower) ? reading(Math.abs(pvPower), 'W') : '— W');
@@ -2691,7 +2693,9 @@ WEB_DASHBOARD = r"""<!doctype html>
       setText('#energy-home-direction', homeActive ? t('consuming') : t('batteryIdle'));
       setText('#energy-grid-power', Number.isFinite(gridPower) ? reading(Math.abs(gridPower), 'W') : '— W');
       setText('#energy-grid-current', Number.isFinite(gridCurrent) ? reading(gridCurrent, 'A', 1) : '— A');
-      setText('#energy-grid-voltage', Number.isFinite(gridVoltage) ? reading(Math.abs(gridVoltage), 'V', 1) : '— V');
+      setText('#energy-grid-voltage', gridAvailable && Number.isFinite(gridVoltage)
+        ? reading(Math.abs(gridVoltage), 'V', 1)
+        : '— V');
       setText('#energy-grid-direction', gridFlowActive
         ? gridImporting ? t('importing') : t('exporting')
         : gridAvailable ? t('gridReady') : t('offline'));
