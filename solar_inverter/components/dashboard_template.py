@@ -1386,6 +1386,8 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Код протоколу або версії': {ru:'Код протокола или версии', en:'Protocol or version code'},
       'Системне слово 27': {ru:'Системное слово 27', en:'System word 27'},
       'Системний прапорець 28': {ru:'Системный флаг 28', en:'System flag 28'},
+      'Режим роботи інвертора': {ru:'Режим работы инвертора', en:'Inverter operating mode'},
+      'Line Mode (від мережі)': {ru:'Line Mode (от сети)', en:'Line Mode (grid)'},
       'Бітова маска можливостей або стану': {ru:'Битовая маска возможностей или состояния', en:'Capability or status bitmask'},
       'Системне слово 65': {ru:'Системное слово 65', en:'System word 65'},
       'Код конфігурації 66': {ru:'Код конфигурации 66', en:'Configuration code 66'},
@@ -2542,6 +2544,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       };
 
       const gridVoltageSource = firstRegister([89]);
+      const gridModeSource = firstRegister([40]);
       const pvVoltageSource = chartDemoRunning ? firstRegister([341]) : null;
       const pvPowerSource = chartDemoRunning ? firstRegister([385]) : null;
       const loadPowerSource = chartDemoRunning ? firstRegister([386]) : firstRegister([93]);
@@ -2585,10 +2588,11 @@ WEB_DASHBOARD = r"""<!doctype html>
         || (Number.isFinite(pvVoltage) && pvVoltage > 30);
       const solarDataVisible = pvActive;
       const pvReceiving = Number.isFinite(pvPower) && pvPower < -20;
-      // Live operating rule: charging means grid present; discharging means grid absent.
+      const gridLineMode = Number(gridModeSource?.raw) === 12;
+      // R40=12 is confirmed Line Mode. Battery charging remains a fallback for older snapshots.
       const gridAvailable = chartDemoRunning
         ? Number.isFinite(gridVoltage) && gridVoltage > 40
-        : batteryCharging;
+        : gridModeSource ? gridLineMode : batteryCharging;
       const loadPower = calculateHomeConsumption(
         measuredLoadPower,
         batteryPower,
@@ -2645,8 +2649,8 @@ WEB_DASHBOARD = r"""<!doctype html>
           ? [pvPowerSource, loadPowerSource, batteryChargePower || batteryDischargePower
             ? [batteryVoltageSource, batteryCurrentSource]
             : []]
-          : [loadPowerSource, batteryPowerSource, gridVoltageSource]
-        : gridAvailable ? [gridVoltageSource] : [];
+          : [gridModeSource, loadPowerSource, batteryPowerSource, gridVoltageSource]
+        : gridAvailable ? [gridModeSource, gridVoltageSource] : [gridModeSource];
 
       const homeActive = Number.isFinite(loadPower) ? loadPower > 20 : Number.isFinite(loadPercent) && loadPercent > 0;
       const gridFlowActive = gridAvailable && Number.isFinite(gridPower) && gridPower > 20;
@@ -2670,7 +2674,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource],
         [137, 130, 134, 133]
       ));
-      setText('#energy-grid-registers', registerText(gridRegisterSources, [93, 134, 89]));
+      setText('#energy-grid-registers', registerText(gridRegisterSources, [40, 93, 134, 89]));
       setText('#energy-generator-registers', generatorActive ? t('demoMode') : '—');
       setText('#energy-solar-voltage', Number.isFinite(pvVoltage) ? reading(Math.abs(pvVoltage), 'V', 1) : '— V');
       setText('#energy-solar-power', Number.isFinite(pvPower) ? reading(Math.abs(pvPower), 'W') : '— W');
