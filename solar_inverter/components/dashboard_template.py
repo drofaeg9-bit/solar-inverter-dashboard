@@ -1070,9 +1070,9 @@ WEB_DASHBOARD = r"""<!doctype html>
         modeAppDescription: 'Широкий діапазон AC для побутових приладів', modeUpsDescription: 'Діапазон входу UPS для чутливих пристроїв',
         modeGenDescription: 'Генератор підключений до входу AC', modePngDescription: 'Батарею заряджають PV і мережа',
         modeOpvDescription: 'Батарею заряджає лише PV', modePvfDescription: 'Спочатку заряджає PV; мережа використовується без сонця',
-        demoSolarChargeExport: 'ДЕМО · PV → ДІМ + БАТ. + МЕРЕЖА',
+        demoSolarChargeExport: 'ДЕМО · PV → ДІМ + БАТ.',
         demoGridHome: 'ДЕМО · МЕРЕЖА → ДІМ', demoBatteryHome: 'ДЕМО · БАТ. → ДІМ',
-        demoSolarExport: 'ДЕМО · PV → ДІМ + МЕРЕЖА', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ІНВЕРТОР → ДІМ',
+        demoSolarExport: 'ДЕМО · PV → ДІМ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ІНВЕРТОР → ДІМ',
         demoMixedSources: 'ДЕМО · PV + БАТ. → ДІМ · МЕРЕЖІ НЕМАЄ',
         solarEnergyTitle: 'Вироблена сонячна енергія', solarEnergyAria: 'Підсумки виробленої сонячної енергії',
         solarEnergyEstimate: 'Очікується підтверджений регістр потужності PV',
@@ -1169,9 +1169,9 @@ WEB_DASHBOARD = r"""<!doctype html>
         modeAppDescription: 'Широкий диапазон AC для бытовых приборов', modeUpsDescription: 'Диапазон входа UPS для чувствительных устройств',
         modeGenDescription: 'Генератор подключён ко входу AC', modePngDescription: 'Батарею заряжают PV и сеть',
         modeOpvDescription: 'Батарею заряжает только PV', modePvfDescription: 'Сначала заряжает PV; сеть используется без солнца',
-        demoSolarChargeExport: 'ДЕМО · PV → ДОМ + БАТ. + СЕТЬ',
+        demoSolarChargeExport: 'ДЕМО · PV → ДОМ + БАТ.',
         demoGridHome: 'ДЕМО · СЕТЬ → ДОМ', demoBatteryHome: 'ДЕМО · БАТ. → ДОМ',
-        demoSolarExport: 'ДЕМО · PV → ДОМ + СЕТЬ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ИНВЕРТОР → ДОМ',
+        demoSolarExport: 'ДЕМО · PV → ДОМ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ИНВЕРТОР → ДОМ',
         demoMixedSources: 'ДЕМО · PV + БАТ. → ДОМ · СЕТИ НЕТ',
         solarEnergyTitle: 'Выработанная солнечная энергия', solarEnergyAria: 'Итоги выработанной солнечной энергии',
         solarEnergyEstimate: 'Ожидается подтверждённый регистр мощности PV',
@@ -1268,9 +1268,9 @@ WEB_DASHBOARD = r"""<!doctype html>
         modeAppDescription: 'Wide AC input range for household appliances', modeUpsDescription: 'UPS input range for sensitive devices',
         modeGenDescription: 'Generator connected to the AC input', modePngDescription: 'PV and grid charge the battery',
         modeOpvDescription: 'Only PV charges the battery', modePvfDescription: 'PV charges first; grid is used without solar',
-        demoSolarChargeExport: 'DEMO · PV → HOME + BAT. + GRID',
+        demoSolarChargeExport: 'DEMO · PV → HOME + BAT.',
         demoGridHome: 'DEMO · GRID → HOME', demoBatteryHome: 'DEMO · BAT. → HOME',
-        demoSolarExport: 'DEMO · PV → HOME + GRID', demoGeneratorHome: 'DEMO · GENERATOR → INVERTER → HOME',
+        demoSolarExport: 'DEMO · PV → HOME', demoGeneratorHome: 'DEMO · GENERATOR → INVERTER → HOME',
         demoMixedSources: 'DEMO · PV + BAT. → HOME · GRID OFF',
         solarEnergyTitle: 'Solar energy generated', solarEnergyAria: 'Generated solar energy totals',
         solarEnergyEstimate: 'Waiting for a confirmed live PV power register',
@@ -1866,7 +1866,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       let generatorPower = 0;
 
       if (second < 20) {
-        // PV supplies the home, charges the battery, and exports the surplus.
+        // PV supplies the home and charges the battery; surplus production is curtailed.
         pvVoltage = 326 + ripple * 4;
         pvPower = 7200 + Math.sin(second * .21) * 260;
         loadPower = 2500 + Math.sin(second * .29) * 140;
@@ -1894,7 +1894,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         statusCode = 2;
         caseKey = 'demoBatteryHome';
       } else if (second < 80) {
-        // Solar supplies the home and exports; the battery remains idle.
+        // Solar supplies the home; surplus production is curtailed and the battery remains idle.
         pvVoltage = 324 + ripple * 3;
         pvPower = 5600 + ripple * 220;
         loadPower = 2700 + Math.sin(second * .27) * 130;
@@ -2589,13 +2589,15 @@ WEB_DASHBOARD = r"""<!doctype html>
       const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
-      const gridPower = chartDemoRunning
+      const calculatedGridPower = chartDemoRunning
         ? Number.isFinite(pvPower) && Number.isFinite(loadPower)
           ? loadPower + batteryChargePower - pvPower - batteryDischargePower
           : null
         : gridSupplyingFromBalance
           ? Math.abs(measuredLoadPower) + batteryChargePower
           : null;
+      // Grid is a one-way source. Surplus energy is never represented as grid export.
+      const gridPower = Number.isFinite(calculatedGridPower) ? Math.max(0, calculatedGridPower) : null;
       const gridCurrent = Number.isFinite(gridPower) && Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .1
         ? Math.abs(gridPower / gridVoltage)
         : null;
@@ -2619,8 +2621,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         : gridAvailable ? [gridVoltageSource] : [];
 
       const homeActive = Number.isFinite(loadPower) ? loadPower > 20 : Number.isFinite(loadPercent) && loadPercent > 0;
-      const gridFlowActive = gridAvailable && (Number.isFinite(gridPower) ? Math.abs(gridPower) > 20 : true);
-      const gridImporting = !Number.isFinite(gridPower) || gridPower >= 0;
+      const gridFlowActive = gridAvailable && Number.isFinite(gridPower) && gridPower > 20;
       const inverterActive = chartDemoRunning || data.online || pvActive || homeActive || batteryActive;
 
       setText('#energy-flow-status', chartDemoRunning
@@ -2697,7 +2698,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         ? reading(Math.abs(gridVoltage), 'V', 1)
         : '— V');
       setText('#energy-grid-direction', gridFlowActive
-        ? gridImporting ? t('importing') : t('exporting')
+        ? t('importing')
         : gridAvailable ? t('gridReady') : t('offline'));
       setText('#energy-battery-current', Number.isFinite(batteryCurrent) ? reading(batteryCurrent, 'A', 1) : '— A');
       setText('#energy-battery-power', Number.isFinite(batteryPower) ? reading(batteryPower, 'W') : '— W');
@@ -2731,8 +2732,8 @@ WEB_DASHBOARD = r"""<!doctype html>
       setFlow('#energy-home-flow', inverterActive && homeActive, false, loadPower);
       // Generator is a one-way source: animation always travels toward the inverter.
       setFlow('#energy-generator-flow', generatorActive && inverterActive, true, generatorPower);
-      // Grid is directly below Inverter: importing moves upward, exporting moves downward.
-      setFlow('#energy-grid-flow', gridFlowActive && inverterActive, gridImporting, gridPower);
+      // Grid is a one-way source: animation always travels upward toward the inverter.
+      setFlow('#energy-grid-flow', gridFlowActive && inverterActive, true, gridPower);
       // Battery and inverter exchange energy in both directions.
       setFlow('#energy-battery-flow', batteryActive && inverterActive, batteryCharging, batteryPower);
 
