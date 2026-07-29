@@ -2585,9 +2585,11 @@ WEB_DASHBOARD = r"""<!doctype html>
       const homePowerDerivedFromBattery = !Number.isFinite(measuredLoadPower) && Number.isFinite(loadPower);
       const homePowerSource = loadPowerSource || (homePowerDerivedFromBattery ? batteryPowerSource : null);
       const measuredHomeCurrent = homeCurrentSource ? numericValue(homeCurrentSource.display) : null;
-      const homeCurrent = Number.isFinite(loadPower) && Number.isFinite(homeVoltage) && homeVoltage > .1
-        ? loadPower / homeVoltage
-        : Number.isFinite(measuredHomeCurrent) ? Math.abs(measuredHomeCurrent) : null;
+      const homeCurrent = Number.isFinite(measuredHomeCurrent)
+        ? Math.abs(measuredHomeCurrent)
+        : Number.isFinite(loadPower) && Number.isFinite(homeVoltage) && homeVoltage > .1
+          ? loadPower / homeVoltage
+          : null;
       const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
