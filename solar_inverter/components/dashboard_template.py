@@ -1433,7 +1433,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Параметр налаштування 415': {ru:'Параметр настройки 415', en:'Setting parameter 415'},
       'Параметр налаштування 416': {ru:'Параметр настройки 416', en:'Setting parameter 416'},
       'Параметр налаштування 417': {ru:'Параметр настройки 417', en:'Setting parameter 417'},
-      'Нижній поріг SOC': {ru:'Нижний порог SOC', en:'Lower SOC threshold'},
+      'Максимальний струм заряджання від мережі': {ru:'Максимальный ток зарядки от сети', en:'Maximum grid charging current'},
       'Середній поріг SOC': {ru:'Средний порог SOC', en:'Middle SOC threshold'},
       'Верхній поріг SOC': {ru:'Верхний порог SOC', en:'Upper SOC threshold'},
       'Регістр живої потужності PV не визначено; накопичення енергії призупинено': {ru:'Регистр фактической мощности PV не определён; накопление энергии приостановлено', en:'Live PV power register is not identified; energy accumulation is paused'},
