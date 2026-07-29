@@ -1980,8 +1980,8 @@ WEB_DASHBOARD = r"""<!doctype html>
         values: new Map([
           [89, gridVoltage], [90, 0], [91, gridFrequency],
           [92, loadPower], [93, apparentLoadPower], [94, powerFactor * 100],
-          [129, batteryVoltage], [130, batteryCurrent],
-          [133, batterySoc], [134, -batteryPower],
+          [129, batteryVoltage], [130, batteryChargeCurrent],
+          [133, batterySoc], [134, batteryPower],
           [137, batteryVoltage], [138, batteryChargeCurrent], [139, batterySoc],
           [140, batteryTemperature + .6], [141, 57.1],
           [144, Math.max(0, pvVoltage)], [145, Math.max(0, pvPower)],
@@ -2599,8 +2599,9 @@ WEB_DASHBOARD = r"""<!doctype html>
           : null;
       const batteryActive = (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3)
         || (Number.isFinite(batteryPower) && Math.abs(batteryPower) > 20);
-      const batteryCharging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower < 0 : batteryCurrent < 0);
-      const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
+      // Battery sign convention: positive charges, negative discharges.
+      const batteryCharging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
+      const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower < 0 : batteryCurrent < 0);
       // R144 can contain a small induced voltage with no panels; R145 confirms real PV production.
       const pvActive = Number.isFinite(pvPower) && pvPower > 20;
       const solarDataVisible = pvActive;
