@@ -1581,8 +1581,17 @@ WEB_DASHBOARD = r"""<!doctype html>
     let refreshTimer = null;
     let refreshController = null;
     let lastLoggedSiteVisits = null;
+    const INVERTER_SELF_CONSUMPTION_W = 50;
     const requestIntervals = [500, 1000, 2000, 5000, 10000];
     let chartDefinitions = new Map();
+    function calculateHomeConsumption(measuredPower, batteryPower, pvActive, gridAvailable) {
+      if (Number.isFinite(measuredPower)) return Math.abs(measuredPower);
+      // With battery as the only source, R134 includes both home load and inverter overhead.
+      if (!pvActive && !gridAvailable && Number.isFinite(batteryPower) && batteryPower > 0) {
+        return Math.max(0, batteryPower - INVERTER_SELF_CONSUMPTION_W);
+      }
+      return null;
+    }
     function savedSelections(name) {
       try {
         return new Set(JSON.parse(window.localStorage.getItem(name) || '[]'));
@@ -2523,13 +2532,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         ? Math.abs(pvPower / pvVoltage)
         : null;
       const loadPowerReading = loadPowerSource ? numericValue(loadPowerSource.display) : null;
-      const loadPower = Number.isFinite(loadPowerReading) ? Math.abs(loadPowerReading) : null;
+      const measuredLoadPower = Number.isFinite(loadPowerReading) ? loadPowerReading : null;
       const loadPercent = loadPercentSource ? numericValue(loadPercentSource.display) : null;
       const homeVoltageReading = homeVoltageSource ? numericValue(homeVoltageSource.display) : null;
       const homeVoltage = Number.isFinite(homeVoltageReading) ? Math.abs(homeVoltageReading) : null;
-      const homeCurrent = Number.isFinite(loadPower) && Number.isFinite(homeVoltage) && homeVoltage > .1
-        ? loadPower / homeVoltage
-        : null;
       const batteryVoltage = batteryVoltageSource ? numericValue(batteryVoltageSource.display) : null;
       const batteryCurrentReading = batteryCurrentSource ? numericValue(batteryCurrentSource.display) : null;
       const batteryCurrent = Number.isFinite(batteryCurrentReading)
@@ -2558,6 +2564,12 @@ WEB_DASHBOARD = r"""<!doctype html>
             const value = numericValue(register.display);
             return Number.isFinite(value) && Math.abs(value) > .1;
           });
+      const loadPower = calculateHomeConsumption(measuredLoadPower, batteryPower, pvActive, gridAvailable);
+      const homePowerDerivedFromBattery = !Number.isFinite(measuredLoadPower) && Number.isFinite(loadPower);
+      const homePowerSource = loadPowerSource || (homePowerDerivedFromBattery ? batteryPowerSource : null);
+      const homeCurrent = Number.isFinite(loadPower) && Number.isFinite(homeVoltage) && homeVoltage > .1
+        ? loadPower / homeVoltage
+        : null;
       const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
@@ -2600,8 +2612,8 @@ WEB_DASHBOARD = r"""<!doctype html>
         [144, 143, 145]
       ));
       setText('#energy-home-registers', registerText(
-        [homeVoltageSource, Number.isFinite(loadPower) ? loadPowerSource : loadPercentSource],
-        [90]
+        [homeVoltageSource, Number.isFinite(loadPower) ? homePowerSource : loadPercentSource],
+        homePowerDerivedFromBattery ? [90, 134] : [90]
       ));
       setText('#energy-battery-registers', registerText(
         [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource],
