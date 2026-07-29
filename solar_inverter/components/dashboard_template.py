@@ -254,7 +254,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       text-align: center; font-size: 14px; transform: translate(-50%,-50%);
     }
     .energy-battery .flow-direction {
-      position: absolute; left: 40px; right: 6px; bottom: 8px; margin: 0;
+      position: absolute; left: 6px; right: 6px; bottom: 8px; margin: 0; text-align: center;
     }
     .energy-battery-icon {
       --battery-level: 0%;
@@ -657,11 +657,11 @@ WEB_DASHBOARD = r"""<!doctype html>
       .energy-battery-icon::after { top: -6px; width: 9px }
       .energy-battery-percent { padding-inline: 1px; overflow: hidden; font-size: 7px }
       .energy-battery-values {
-        left: 37px; right: 3px; width: auto; max-width: none; gap: 3px;
+        left: 50%; right: auto; width: max-content; max-width: calc(100% - 10px); gap: 3px;
         overflow: hidden; font-size: 11.5px; line-height: 1.1;
-        transform: translateY(-50%);
+        text-align: center; transform: translate(-50%,-50%);
       }
-      .energy-battery .flow-direction { left: 38px; right: 3px; bottom: 7px }
+      .energy-battery .flow-direction { left: 3px; right: 3px; bottom: 7px; text-align: center }
       .energy-node:not(.energy-battery) .flow-direction { bottom: 7px }
       .flow-direction { left: 3px; right: 3px; font-size: 7px }
       .inverter-mode-definitions { grid-template-columns: 1fr; gap: 5px; margin-top: 9px }
@@ -746,8 +746,8 @@ WEB_DASHBOARD = r"""<!doctype html>
       .energy-generator { padding-left: 38px }
       .energy-generator .energy-node-image-icon { left: 4px; top: 6px; bottom: 6px;  height: auto }
       .energy-battery-icon { left: 5px; width: 23px }
-      .energy-battery-values { left: 34px; font-size: 10.5px }
-      .energy-battery .flow-direction { left: 35px }
+      .energy-battery-values { left: 50%; font-size: 10.5px }
+      .energy-battery .flow-direction { left: 3px; right: 3px }
       .chart-card-head { flex-direction: column; gap: 3px }
     }
     @media (max-width: 640px) {
