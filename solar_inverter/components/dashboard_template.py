@@ -282,6 +282,12 @@ WEB_DASHBOARD = r"""<!doctype html>
     .energy-solar { grid-column: 1; grid-row: 1; --node-colour: #fbbf24 }
     .energy-inverter { grid-column: 3; grid-row: 1; --node-colour: #22d3ee }
     .energy-home { grid-column: 5; grid-row: 1; --node-colour: #a78bfa }
+    .energy-solar .energy-node-icon,
+    .energy-inverter .energy-node-icon,
+    .energy-home .energy-node-icon {
+      left: 7px; top: 7px; bottom: 7px; display: grid; place-items: center;
+      width: 60px; height: auto; font-size: 52px;
+    }
     .energy-battery { grid-column: 1; grid-row: 3; padding-left: 40px; --node-colour: #34d399 }
     .energy-grid {
       grid-column: 3; grid-row: 3; padding-left: 68px; --node-colour: #60a5fa;
@@ -745,6 +751,9 @@ WEB_DASHBOARD = r"""<!doctype html>
       .chart-card-head { flex-direction: column; gap: 3px }
     }
     @media (max-width: 640px) {
+      .energy-solar .energy-node-icon,
+      .energy-inverter .energy-node-icon,
+      .energy-home .energy-node-icon,
       .energy-grid .energy-node-image-icon,
       .energy-generator .energy-node-image-icon {
         inset: 0; z-index: 0; width: 100%; height: 100%; opacity: .18;
@@ -754,6 +763,18 @@ WEB_DASHBOARD = r"""<!doctype html>
         -webkit-mask-size: 100% 100%;
         mask-size: 100% 100%;
       }
+      .energy-solar .energy-node-icon,
+      .energy-inverter .energy-node-icon,
+      .energy-home .energy-node-icon { font-size: clamp(64px, 20vw, 86px) }
+      .energy-solar .energy-node-register,
+      .energy-solar .energy-node-value,
+      .energy-solar .flow-direction,
+      .energy-inverter .energy-node-register,
+      .energy-inverter .energy-node-value,
+      .energy-inverter .flow-direction,
+      .energy-home .energy-node-register,
+      .energy-home .energy-node-value,
+      .energy-home .flow-direction,
       .energy-grid .energy-node-register,
       .energy-grid .energy-node-value,
       .energy-grid .flow-direction,
