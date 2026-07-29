@@ -1614,13 +1614,13 @@ WEB_DASHBOARD = r"""<!doctype html>
     const requestIntervals = [500, 1000, 2000, 5000, 10000];
     let chartDefinitions = new Map();
     function calculateHomeConsumption(measuredPower, batteryPower, pvActive, gridAvailable, subtractOverhead = false) {
+      // Off-grid discharge is measured at the battery and includes the inverter's own 50 W load.
+      if (!pvActive && !gridAvailable && Number.isFinite(batteryPower) && batteryPower > 0) {
+        return Math.max(0, batteryPower - INVERTER_SELF_CONSUMPTION_W);
+      }
       if (Number.isFinite(measuredPower)) {
         const overhead = subtractOverhead ? INVERTER_SELF_CONSUMPTION_W : 0;
         return Math.max(0, Math.abs(measuredPower) - overhead);
-      }
-      // With battery as the only source, R134 includes both home load and inverter overhead.
-      if (!pvActive && !gridAvailable && Number.isFinite(batteryPower) && batteryPower > 0) {
-        return Math.max(0, batteryPower - INVERTER_SELF_CONSUMPTION_W);
       }
       return null;
     }
@@ -2585,14 +2585,10 @@ WEB_DASHBOARD = r"""<!doctype html>
         || (Number.isFinite(pvVoltage) && pvVoltage > 30);
       const solarDataVisible = pvActive;
       const pvReceiving = Number.isFinite(pvPower) && pvPower < -20;
-      // With PV absent, simultaneous AC output and battery charging prove grid import.
-      const gridSupplyingFromBalance = !chartDemoRunning
-        && !pvActive
-        && batteryCharging
-        && Number.isFinite(measuredLoadPower);
+      // Live operating rule: charging means grid present; discharging means grid absent.
       const gridAvailable = chartDemoRunning
         ? Number.isFinite(gridVoltage) && gridVoltage > 40
-        : gridSupplyingFromBalance;
+        : batteryCharging;
       const loadPower = calculateHomeConsumption(
         measuredLoadPower,
         batteryPower,
@@ -2600,8 +2596,12 @@ WEB_DASHBOARD = r"""<!doctype html>
         gridAvailable,
         loadPowerSource?.register === 93
       );
-      const homePowerDerivedFromBattery = !Number.isFinite(measuredLoadPower) && Number.isFinite(loadPower);
-      const homePowerSource = loadPowerSource || (homePowerDerivedFromBattery ? batteryPowerSource : null);
+      const homePowerDerivedFromBattery = !pvActive
+        && !gridAvailable
+        && Number.isFinite(batteryPower)
+        && batteryPower > 0
+        && Number.isFinite(loadPower);
+      const homePowerSource = homePowerDerivedFromBattery ? batteryPowerSource : loadPowerSource;
       const measuredHomeCurrent = homeCurrentSource ? numericValue(homeCurrentSource.display) : null;
       const homeCurrent = Number.isFinite(measuredHomeCurrent)
         ? Math.abs(measuredHomeCurrent)
@@ -2611,12 +2611,18 @@ WEB_DASHBOARD = r"""<!doctype html>
       const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
+      // R93 includes the house output plus the inverter's own 50 W consumption.
+      const inverterOutputPower = Number.isFinite(measuredLoadPower)
+        ? Math.abs(measuredLoadPower)
+        : Number.isFinite(loadPower)
+          ? loadPower + INVERTER_SELF_CONSUMPTION_W
+          : null;
       const calculatedGridPower = chartDemoRunning
         ? Number.isFinite(pvPower) && Number.isFinite(loadPower)
           ? loadPower + batteryChargePower - pvPower - batteryDischargePower
           : null
-        : gridSupplyingFromBalance
-          ? Math.abs(measuredLoadPower) + batteryChargePower
+        : gridAvailable && Number.isFinite(inverterOutputPower)
+          ? inverterOutputPower + batteryChargePower
           : null;
       // Grid is a one-way source. Surplus energy is never represented as grid export.
       const gridPower = Number.isFinite(calculatedGridPower) ? Math.max(0, calculatedGridPower) : null;
