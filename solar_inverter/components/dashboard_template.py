@@ -1373,6 +1373,8 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Упаковане знакове значення 69': {ru:'Упакованное знаковое значение 69', en:'Packed signed value 69'},
       'Номінальна або вихідна напруга AC': {ru:'Номинальное или выходное напряжение AC', en:'Nominal or output AC voltage'},
       'Вихідна напруга AC': {ru:'Выходное напряжение AC', en:'Output AC voltage'},
+      'Вихідний струм AC': {ru:'Выходной ток AC', en:'Output AC current'},
+      'Вихідна потужність AC': {ru:'Выходная мощность AC', en:'Output AC power'},
       'Температура': {ru:'Температура', en:'Temperature'},
       'Температура інвертора або радіатора': {ru:'Температура инвертора или радиатора', en:'Inverter or heatsink temperature'},
       'Напруга батареї або внутрішньої DC-шини': {ru:'Напряжение батареи или внутренней DC-шины', en:'Battery or internal DC bus voltage'},
@@ -1393,6 +1395,8 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Режим входу інвертора': {ru:'Режим входа инвертора', en:'Inverter input mode'},
       'Режим виходу інвертора': {ru:'Режим выхода инвертора', en:'Inverter output mode'},
       'Режим заряджання інвертора': {ru:'Режим зарядки инвертора', en:'Inverter charging mode'},
+      'Слово стану BMS 144': {ru:'Слово состояния BMS 144', en:'BMS status word 144'},
+      'Параметр BMS 145': {ru:'Параметр BMS 145', en:'BMS parameter 145'},
       'Системний параметр стану 158': {ru:'Системный параметр состояния 158', en:'System status parameter 158'},
       'Прапорець каналу BMS': {ru:'Флаг канала BMS', en:'BMS channel flag'},
       'Код конфігурації BMS 324': {ru:'Код конфигурации BMS 324', en:'BMS configuration code 324'},
@@ -1404,6 +1408,10 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Код верхнього аварійного порога частоти CA_HF2': {ru:'Код верхнего аварийного порога частоты CA_HF2', en:'Upper frequency fault-threshold code CA_HF2'},
       'Аварійний поріг частоти CA_LF1': {ru:'Аварийный порог частоты CA_LF1', en:'Frequency fault threshold CA_LF1'},
       'Аварійний поріг частоти CA_LF2': {ru:'Аварийный порог частоты CA_LF2', en:'Frequency fault threshold CA_LF2'},
+      'Струм BMS, канал 343': {ru:'Ток BMS, канал 343', en:'BMS current, channel 343'},
+      'Струм батареї BMS, канал 344': {ru:'Ток батареи BMS, канал 344', en:'BMS battery current, channel 344'},
+      'Верхня межа напруги BMS': {ru:'Верхний предел напряжения BMS', en:'BMS upper voltage limit'},
+      'Нижня межа напруги BMS 1': {ru:'Нижний предел напряжения BMS 1', en:'BMS lower voltage limit 1'},
       'Нижня межа напруги BMS 2': {ru:'Нижний предел напряжения BMS 2', en:'BMS lower voltage limit 2'},
       'Знаковий струмовий параметр BMS': {ru:'Знаковый параметр тока BMS', en:'Signed BMS current parameter'},
       'Напруга заряджання, налаштування 376': {ru:'Напряжение зарядки, настройка 376', en:'Charging voltage, setting 376'},
@@ -1584,8 +1592,11 @@ WEB_DASHBOARD = r"""<!doctype html>
     const INVERTER_SELF_CONSUMPTION_W = 50;
     const requestIntervals = [500, 1000, 2000, 5000, 10000];
     let chartDefinitions = new Map();
-    function calculateHomeConsumption(measuredPower, batteryPower, pvActive, gridAvailable) {
-      if (Number.isFinite(measuredPower)) return Math.abs(measuredPower);
+    function calculateHomeConsumption(measuredPower, batteryPower, pvActive, gridAvailable, subtractOverhead = false) {
+      if (Number.isFinite(measuredPower)) {
+        const overhead = subtractOverhead ? INVERTER_SELF_CONSUMPTION_W : 0;
+        return Math.max(0, Math.abs(measuredPower) - overhead);
+      }
       // With battery as the only source, R134 includes both home load and inverter overhead.
       if (!pvActive && !gridAvailable && Number.isFinite(batteryPower) && batteryPower > 0) {
         return Math.max(0, batteryPower - INVERTER_SELF_CONSUMPTION_W);
@@ -1935,12 +1946,11 @@ WEB_DASHBOARD = r"""<!doctype html>
           [129, batteryVoltage], [130, batteryCurrent],
           [133, batterySoc], [134, batteryPower],
           [137, batteryVoltage], [138, -batteryCurrent], [139, batterySoc],
-          [140, batteryTemperature + .6], [141, 57.1],
-          [143, outputPriority], [144, inputMode], [145, chargingPriority],
+          [140, batteryTemperature + .6], [141, 57.1], [144, 8306], [145, 0],
           [157, statusCode], [158, 190 + statusCode],
           [321, 1], [324, 1], [325, 1], [337, 2], [339, batterySoc],
           [341, Math.max(0, pvVoltage)], [342, batteryVoltage],
-          [343, -79], [344, -81],
+          [343, -batteryCurrent * 1.06], [344, -batteryCurrent * .98],
           [345, 61], [346, 48], [349, 48], [350, -1.5],
           [376, 57.1], [377, 54.4], [378, 80], [379, 80], [383, 58.4],
           [385, pvPower], [386, Math.max(0, loadPower)],
@@ -2515,16 +2525,17 @@ WEB_DASHBOARD = r"""<!doctype html>
       const gridVoltageSource = chartDemoRunning ? firstRegister([89]) : null;
       const pvVoltageSource = chartDemoRunning ? firstRegister([341]) : null;
       const pvPowerSource = chartDemoRunning ? firstRegister([385]) : null;
-      const loadPowerSource = chartDemoRunning ? firstRegister([386]) : null;
+      const loadPowerSource = chartDemoRunning ? firstRegister([386]) : firstRegister([93]);
       const loadPercentSource = firstRegister([94]);
-      const homeVoltageSource = firstRegister([90]);
+      const homeVoltageSource = firstRegister([89]);
+      const homeCurrentSource = firstRegister([90]);
       const batteryVoltageSource = firstRegister([137]);
-      const batteryCurrentSource = firstRegister([130, 138, 405]);
+      const batteryCurrentSource = firstRegister([130, 138, 405, 343, 344]);
       const batterySocSource = firstRegister([133, 139, 407, 339]);
       const batteryPowerSource = firstRegister([134]);
-      const inverterOutputModeSource = firstRegister([144]);
-      const inverterInputModeSource = firstRegister([143]);
-      const inverterChargeModeSource = firstRegister([145]);
+      const inverterOutputModeSource = firstRegister([16644]);
+      const inverterInputModeSource = firstRegister([16643]);
+      const inverterChargeModeSource = firstRegister([16645]);
       const gridVoltage = gridVoltageSource ? numericValue(gridVoltageSource.display) : null;
       const pvVoltage = pvVoltageSource ? numericValue(pvVoltageSource.display) : null;
       const pvPower = pvPowerSource ? numericValue(pvPowerSource.display) : null;
@@ -2564,12 +2575,19 @@ WEB_DASHBOARD = r"""<!doctype html>
             const value = numericValue(register.display);
             return Number.isFinite(value) && Math.abs(value) > .1;
           });
-      const loadPower = calculateHomeConsumption(measuredLoadPower, batteryPower, pvActive, gridAvailable);
+      const loadPower = calculateHomeConsumption(
+        measuredLoadPower,
+        batteryPower,
+        pvActive,
+        gridAvailable,
+        loadPowerSource?.register === 93
+      );
       const homePowerDerivedFromBattery = !Number.isFinite(measuredLoadPower) && Number.isFinite(loadPower);
       const homePowerSource = loadPowerSource || (homePowerDerivedFromBattery ? batteryPowerSource : null);
+      const measuredHomeCurrent = homeCurrentSource ? numericValue(homeCurrentSource.display) : null;
       const homeCurrent = Number.isFinite(loadPower) && Number.isFinite(homeVoltage) && homeVoltage > .1
         ? loadPower / homeVoltage
-        : null;
+        : Number.isFinite(measuredHomeCurrent) ? Math.abs(measuredHomeCurrent) : null;
       const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
@@ -2609,11 +2627,11 @@ WEB_DASHBOARD = r"""<!doctype html>
         : '—');
       setText('#energy-inverter-registers', registerText(
         [inverterOutputModeSource, inverterInputModeSource, inverterChargeModeSource],
-        [144, 143, 145]
+        [16644, 16643, 16645]
       ));
       setText('#energy-home-registers', registerText(
-        [homeVoltageSource, Number.isFinite(loadPower) ? homePowerSource : loadPercentSource],
-        homePowerDerivedFromBattery ? [90, 134] : [90]
+        [homeCurrentSource, homeVoltageSource, Number.isFinite(loadPower) ? homePowerSource : loadPercentSource],
+        homePowerDerivedFromBattery ? [90, 89, 134] : [90, 89, 93]
       ));
       setText('#energy-battery-registers', registerText(
         [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource],
@@ -2745,7 +2763,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       const frequency = numberValue([91]);
       const pvVoltage = chartDemoRunning ? numberValue([341]) : null;
       const batteryVoltage = numberValue([137]);
-      const lcdBatteryCurrentSource = firstRegister([130, 138, 405]);
+      const lcdBatteryCurrentSource = firstRegister([130, 138, 405, 343, 344]);
       const lcdBatteryCurrentReading = lcdBatteryCurrentSource
         ? numericValue(lcdBatteryCurrentSource.display)
         : null;
