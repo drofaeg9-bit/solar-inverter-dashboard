@@ -1967,7 +1967,8 @@ WEB_DASHBOARD = r"""<!doctype html>
           [129, batteryVoltage], [130, batteryCurrent],
           [133, batterySoc], [134, batteryPower],
           [137, batteryVoltage], [138, -batteryCurrent], [139, batterySoc],
-          [140, batteryTemperature + .6], [141, 57.1], [144, 8306], [145, 0],
+          [140, batteryTemperature + .6], [141, 57.1],
+          [143, inputMode], [144, outputPriority], [145, chargingPriority],
           [157, statusCode], [158, 190 + statusCode],
           [321, 1], [324, 1], [325, 1], [337, 2], [339, batterySoc],
           [341, Math.max(0, pvVoltage)], [342, batteryVoltage],
@@ -2551,9 +2552,9 @@ WEB_DASHBOARD = r"""<!doctype html>
       const batteryCurrentSource = firstRegister([130, 138, 405, 343, 344]);
       const batterySocSource = firstRegister([133, 139, 407, 339]);
       const batteryPowerSource = firstRegister([134]);
-      const inverterOutputModeSource = firstRegister([16644]);
-      const inverterInputModeSource = firstRegister([16643]);
-      const inverterChargeModeSource = firstRegister([16645]);
+      const inverterOutputModeSource = firstRegister([144]);
+      const inverterInputModeSource = firstRegister([143]);
+      const inverterChargeModeSource = firstRegister([145]);
       const gridVoltage = gridVoltageSource ? numericValue(gridVoltageSource.display) : null;
       const pvVoltage = pvVoltageSource ? numericValue(pvVoltageSource.display) : null;
       const pvPower = pvPowerSource ? numericValue(pvPowerSource.display) : null;
@@ -2653,7 +2654,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         : '—');
       setText('#energy-inverter-registers', registerText(
         [inverterOutputModeSource, inverterInputModeSource, inverterChargeModeSource],
-        [16644, 16643, 16645]
+        [144, 143, 145]
       ));
       setText('#energy-home-registers', registerText(
         [homeCurrentSource, homeVoltageSource, Number.isFinite(loadPower) ? homePowerSource : loadPercentSource],
