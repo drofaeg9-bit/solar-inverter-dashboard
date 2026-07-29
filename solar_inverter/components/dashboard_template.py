@@ -1390,6 +1390,9 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Недоступний параметр BMS 142': {ru:'Недоступный параметр BMS 142', en:'Unavailable BMS parameter 142'},
       'Недоступний параметр BMS 143': {ru:'Недоступный параметр BMS 143', en:'Unavailable BMS parameter 143'},
       'Параметр BMS 144': {ru:'Параметр BMS 144', en:'BMS parameter 144'},
+      'Режим входу інвертора': {ru:'Режим входа инвертора', en:'Inverter input mode'},
+      'Режим виходу інвертора': {ru:'Режим выхода инвертора', en:'Inverter output mode'},
+      'Режим заряджання інвертора': {ru:'Режим зарядки инвертора', en:'Inverter charging mode'},
       'Системний параметр стану 158': {ru:'Системный параметр состояния 158', en:'System status parameter 158'},
       'Прапорець каналу BMS': {ru:'Флаг канала BMS', en:'BMS channel flag'},
       'Код конфігурації BMS 324': {ru:'Код конфигурации BMS 324', en:'BMS configuration code 324'},
@@ -1923,7 +1926,8 @@ WEB_DASHBOARD = r"""<!doctype html>
           [129, batteryVoltage], [130, batteryCurrent],
           [133, batterySoc], [134, batteryPower],
           [137, batteryVoltage], [138, -batteryCurrent], [139, batterySoc],
-          [140, batteryTemperature + .6], [141, 57.1], [144, 11.4],
+          [140, batteryTemperature + .6], [141, 57.1],
+          [143, outputPriority], [144, inputMode], [145, chargingPriority],
           [157, statusCode], [158, 190 + statusCode],
           [321, 1], [324, 1], [325, 1], [337, 2], [339, batterySoc],
           [341, Math.max(0, pvVoltage)], [342, batteryVoltage],
@@ -2509,9 +2513,9 @@ WEB_DASHBOARD = r"""<!doctype html>
       const batteryCurrentSource = firstRegister([130, 138, 405]);
       const batterySocSource = firstRegister([133, 139, 407, 339]);
       const batteryPowerSource = firstRegister([134]);
-      const inverterOutputModeSource = firstRegister([16643]);
-      const inverterInputModeSource = firstRegister([16644]);
-      const inverterChargeModeSource = firstRegister([16645]);
+      const inverterOutputModeSource = firstRegister([144]);
+      const inverterInputModeSource = firstRegister([143]);
+      const inverterChargeModeSource = firstRegister([145]);
       const gridVoltage = gridVoltageSource ? numericValue(gridVoltageSource.display) : null;
       const pvVoltage = pvVoltageSource ? numericValue(pvVoltageSource.display) : null;
       const pvPower = pvPowerSource ? numericValue(pvPowerSource.display) : null;
@@ -2593,7 +2597,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         : '—');
       setText('#energy-inverter-registers', registerText(
         [inverterOutputModeSource, inverterInputModeSource, inverterChargeModeSource],
-        [16643, 16644, 16645]
+        [144, 143, 145]
       ));
       setText('#energy-home-registers', registerText(
         [homeVoltageSource, Number.isFinite(loadPower) ? loadPowerSource : loadPercentSource],
@@ -2616,7 +2620,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           ? pvReceiving ? t('receiving') : t('supplying')
           : t('batteryIdle'));
       setMode('#energy-inverter-output-mode', '#energy-inverter-output-definition',
-        inverterInputModeSource,
+        inverterOutputModeSource,
         [
           {label: 'APP', description: 'modeAppDescription'},
           {label: 'UPS', description: 'modeUpsDescription'},
@@ -2625,7 +2629,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         'outputMode'
       );
       setMode('#energy-inverter-input-mode', '#energy-inverter-input-definition',
-        inverterOutputModeSource,
+        inverterInputModeSource,
         [
           {label: 'Grid', description: 'modeGridDescription'},
           {label: 'Solar', description: 'modeSolarDescription'},
