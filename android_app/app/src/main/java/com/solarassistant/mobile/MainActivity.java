@@ -43,6 +43,7 @@ import java.net.URISyntaxException;
 public final class MainActivity extends Activity {
     private static final String PREFERENCES = "solar_invertor_mobile";
     private static final String SERVER_URL_KEY = "server_url";
+    private static final String LAST_APP_VERSION_KEY = "last_app_version";
     private static final String DEFAULT_SERVER_URL = "http://192.168.1.100:8080";
     private static final int STORAGE_PERMISSION_REQUEST = 41;
 
@@ -70,6 +71,7 @@ public final class MainActivity extends Activity {
         preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE);
         createInterface();
         configureWebView();
+        clearStaleWebCacheAfterUpgrade();
 
         serverUrl = preferences.getString(SERVER_URL_KEY, "");
         if (serverUrl.isBlank()) {
@@ -92,9 +94,9 @@ public final class MainActivity extends Activity {
         root.addView(toolbar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
 
-        toolbar.addView(toolbarButton("\u2039", view -> goBack()));
-        toolbar.addView(toolbarButton("\u21bb", view -> webView.reload()));
-        toolbar.addView(toolbarButton("\u2302", view -> loadDashboard()));
+        toolbar.addView(toolbarButton("\u2039", R.string.action_back, view -> goBack()));
+        toolbar.addView(toolbarButton("\u21bb", R.string.action_reload, view -> reloadDashboard()));
+        toolbar.addView(toolbarButton("\u2302", R.string.action_home, view -> loadDashboard()));
 
         addressLabel = new TextView(this);
         addressLabel.setTextColor(Color.rgb(148, 163, 184));
@@ -103,7 +105,7 @@ public final class MainActivity extends Activity {
         addressLabel.setGravity(Gravity.CENTER_VERTICAL);
         addressLabel.setPadding(dp(8), 0, dp(8), 0);
         toolbar.addView(addressLabel, new LinearLayout.LayoutParams(0, dp(44), 1));
-        toolbar.addView(toolbarButton("\u2699", view -> showServerDialog(false)));
+        toolbar.addView(toolbarButton("\u2699", R.string.action_settings, view -> showServerDialog(false)));
 
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(100);
@@ -142,8 +144,8 @@ public final class MainActivity extends Activity {
 
         LinearLayout errorActions = new LinearLayout(this);
         errorActions.setGravity(Gravity.CENTER);
-        errorActions.addView(actionButton("Retry", view -> loadDashboard()));
-        errorActions.addView(actionButton("Server URL", view -> showServerDialog(false)));
+        errorActions.addView(actionButton(R.string.action_retry, view -> loadDashboard()));
+        errorActions.addView(actionButton(R.string.action_server_url, view -> showServerDialog(false)));
         errorPanel.addView(errorActions);
 
         content.addView(errorPanel, new FrameLayout.LayoutParams(
@@ -170,7 +172,11 @@ public final class MainActivity extends Activity {
         root.requestApplyInsets();
     }
 
-    private Button toolbarButton(String label, View.OnClickListener listener) {
+    private Button toolbarButton(
+            String label,
+            int contentDescriptionResource,
+            View.OnClickListener listener
+    ) {
         Button button = new Button(this);
         button.setText(label);
         button.setTextColor(Color.WHITE);
@@ -181,14 +187,14 @@ public final class MainActivity extends Activity {
         button.setPadding(0, 0, 0, 0);
         button.setBackgroundColor(Color.TRANSPARENT);
         button.setOnClickListener(listener);
-        button.setContentDescription(label);
+        button.setContentDescription(getString(contentDescriptionResource));
         button.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
         return button;
     }
 
-    private Button actionButton(String label, View.OnClickListener listener) {
+    private Button actionButton(int labelResource, View.OnClickListener listener) {
         Button button = new Button(this);
-        button.setText(label);
+        button.setText(labelResource);
         button.setTextColor(Color.rgb(6, 32, 42));
         button.setBackgroundColor(Color.rgb(34, 211, 238));
         button.setOnClickListener(listener);
@@ -209,9 +215,15 @@ public final class MainActivity extends Activity {
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setUserAgentString(settings.getUserAgentString() + " SolarInverterAndroid/1.1");
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(false);
+        settings.setUserAgentString(
+                settings.getUserAgentString() + " SolarInverterAndroid/" + BuildConfig.VERSION_NAME);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WebView.startSafeBrowsing(this, null);
+        }
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
 
@@ -246,7 +258,7 @@ public final class MainActivity extends Activity {
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, uri));
                 } catch (ActivityNotFoundException error) {
-                    Toast.makeText(MainActivity.this, "No app can open this link", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, R.string.no_link_handler, Toast.LENGTH_SHORT).show();
                 }
                 return true;
             }
@@ -261,19 +273,27 @@ public final class MainActivity extends Activity {
             @Override
             public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
                 if (request.isForMainFrame() && response.getStatusCode() >= 400) {
-                    showLoadError("HTTP " + response.getStatusCode());
+                    showLoadError(getString(R.string.http_error, response.getStatusCode()));
                 }
             }
 
             @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, android.net.http.SslError error) {
                 handler.cancel();
-                showLoadError("The server certificate is not trusted");
+                showLoadError(getString(R.string.untrusted_certificate));
             }
         });
 
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) ->
                 requestDownload(new PendingDownload(url, userAgent, contentDisposition, mimeType)));
+    }
+
+    private void clearStaleWebCacheAfterUpgrade() {
+        int previousVersion = preferences.getInt(LAST_APP_VERSION_KEY, -1);
+        if (previousVersion != BuildConfig.VERSION_CODE) {
+            webView.clearCache(true);
+            preferences.edit().putInt(LAST_APP_VERSION_KEY, BuildConfig.VERSION_CODE).apply();
+        }
     }
 
     private void loadDashboard() {
@@ -285,6 +305,15 @@ public final class MainActivity extends Activity {
         webView.setVisibility(View.VISIBLE);
         addressLabel.setText(Uri.parse(serverUrl).getHost());
         webView.loadUrl(serverUrl);
+    }
+
+    private void reloadDashboard() {
+        if (webView.getUrl() == null) {
+            loadDashboard();
+            return;
+        }
+        webView.clearCache(false);
+        webView.reload();
     }
 
     private void showServerDialog(boolean required) {
@@ -299,20 +328,22 @@ public final class MainActivity extends Activity {
         container.addView(input, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
+        AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(this)
                 .setTitle(R.string.server_dialog_title)
-                .setMessage("Enter the dashboard address reachable from this phone. Use a LAN IP or Tailscale address.")
+                .setMessage(R.string.server_dialog_message)
                 .setView(container)
-                .setPositiveButton("Connect", null)
-                .setNegativeButton(required ? null : "Cancel", null)
-                .create();
+                .setPositiveButton(R.string.action_connect, null);
+        if (!required) {
+            dialogBuilder.setNegativeButton(R.string.action_cancel, null);
+        }
+        AlertDialog dialog = dialogBuilder.create();
         dialog.setCanceledOnTouchOutside(!required);
         dialog.setCancelable(!required);
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(view -> {
                     String normalized = normalizeServerUrl(input.getText().toString());
                     if (normalized == null) {
-                        input.setError("Enter a valid http:// or https:// address");
+                        input.setError(getString(R.string.invalid_server_url));
                         return;
                     }
                     serverUrl = normalized;
@@ -375,9 +406,9 @@ public final class MainActivity extends Activity {
             if (download.userAgent() != null) request.addRequestHeader("User-Agent", download.userAgent());
             DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
             manager.enqueue(request);
-            Toast.makeText(this, "Downloading " + fileName, Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.download_started, fileName), Toast.LENGTH_LONG).show();
         } catch (RuntimeException error) {
-            Toast.makeText(this, "Download failed: " + error.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.download_failed, error.getMessage()), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -390,7 +421,7 @@ public final class MainActivity extends Activity {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 enqueueDownload(download);
             } else {
-                Toast.makeText(this, "Storage permission is required to save the CSV", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, R.string.storage_permission_required, Toast.LENGTH_LONG).show();
             }
         }
     }

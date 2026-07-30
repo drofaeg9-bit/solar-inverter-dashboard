@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Солнечный инвертор</string>
+    <string name="server_dialog_title">Сервер солнечного инвертора</string>
+    <string name="server_dialog_message">Введите адрес панели, доступный с телефона. Используйте IP-адрес локальной сети или адрес Tailscale.</string>
+    <string name="dashboard_unavailable">Панель недоступна</string>
+    <string name="load_error_details">%1$s\n\n%2$s</string>
+    <string name="action_back">Назад</string>
+    <string name="action_reload">Обновить панель</string>
+    <string name="action_home">Главная панель</string>
+    <string name="action_settings">Настройки сервера</string>
+    <string name="action_retry">Повторить</string>
+    <string name="action_server_url">Адрес сервера</string>
+    <string name="action_connect">Подключиться</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="invalid_server_url">Введите корректный адрес http:// или https://</string>
+    <string name="no_link_handler">Нет приложения для открытия этой ссылки</string>
+    <string name="http_error">HTTP %1$d</string>
+    <string name="untrusted_certificate">Сертификат сервера не является доверенным</string>
+    <string name="download_started">Загрузка %1$s</string>
+    <string name="download_failed">Ошибка загрузки: %1$s</string>
+    <string name="storage_permission_required">Для сохранения CSV требуется разрешение на доступ к хранилищу</string>
+</resources>

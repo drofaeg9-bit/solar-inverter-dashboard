@@ -24,16 +24,29 @@ export interface RegisterReading {
   available: boolean;
 }
 
-/** Persistent solar-production totals calculated from PV power register R385. */
+/** A confirmed engineering-value definition used by dashboard gauges and charts. */
+export interface MeterReading {
+  register: number;
+  label: string;
+  minimum: number;
+  maximum: number;
+  unit: string;
+  value: number;
+  source: string;
+  /** Whether the latest poll supplied a usable value rather than the API fallback zero. */
+  available: boolean;
+}
+
+/** Stored solar-production totals; accumulation pauses while no live PV-power register is confirmed. */
 export interface SolarEnergySummary {
-  today_kwh: number;
-  week_kwh: number;
-  month_kwh: number;
-  year_kwh: number;
-  total_kwh: number;
-  source_register: 385;
+  today_kwh: number | null;
+  week_kwh: number | null;
+  month_kwh: number | null;
+  year_kwh: number | null;
+  total_kwh: number | null;
+  source_register: number | null;
   storage: "sqlite";
-  estimated: true;
+  estimated: boolean;
   error: string;
 }
 
@@ -62,6 +75,7 @@ export interface DashboardState {
   error: string;
   identifier: string;
   paused: boolean;
+  meters: MeterReading[];
   registers: RegisterReading[];
   solar_energy: SolarEnergySummary;
   register_log: RegisterLogStatus;

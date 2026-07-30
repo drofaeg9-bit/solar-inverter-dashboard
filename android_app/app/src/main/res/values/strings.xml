@@ -2,6 +2,22 @@
 <resources>
     <string name="app_name">Solar Inverter</string>
     <string name="server_dialog_title">Solar Inverter server</string>
+    <string name="server_dialog_message">Enter the dashboard address reachable from this phone. Use a LAN IP or Tailscale address.</string>
     <string name="dashboard_unavailable">Dashboard unavailable</string>
     <string name="load_error_details">%1$s\n\n%2$s</string>
+    <string name="action_back">Back</string>
+    <string name="action_reload">Reload dashboard</string>
+    <string name="action_home">Dashboard home</string>
+    <string name="action_settings">Server settings</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_server_url">Server URL</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="invalid_server_url">Enter a valid http:// or https:// address</string>
+    <string name="no_link_handler">No app can open this link</string>
+    <string name="http_error">HTTP %1$d</string>
+    <string name="untrusted_certificate">The server certificate is not trusted</string>
+    <string name="download_started">Downloading %1$s</string>
+    <string name="download_failed">Download failed: %1$s</string>
+    <string name="storage_permission_required">Storage permission is required to save the CSV</string>
 </resources>

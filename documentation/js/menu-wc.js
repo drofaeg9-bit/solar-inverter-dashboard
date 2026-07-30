@@ -107,6 +107,9 @@ customElements.define('compodoc-menu', class extends HTMLElement {
                                 <a href="interfaces/DashboardState.html" data-type="entity-link" >DashboardState</a>
                             </li>
                             <li class="link">
+                                <a href="interfaces/MeterReading.html" data-type="entity-link" >MeterReading</a>
+                            </li>
+                            <li class="link">
                                 <a href="interfaces/RegisterLogStatus.html" data-type="entity-link" >RegisterLogStatus</a>
                             </li>
                             <li class="link">

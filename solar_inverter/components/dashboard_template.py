@@ -190,14 +190,15 @@ WEB_DASHBOARD = r"""<!doctype html>
       color: var(--muted); background: var(--control); font-size: 11px; font-weight: 800; text-transform: uppercase;
     }
     .energy-flow-status.active { color: var(--green); border-color: rgba(52,211,153,.4); background: rgba(16,185,129,.13) }
+    .energy-flow-scroll { width: 100%; overflow: visible }
     .energy-flow-diagram {
       display: grid;
-      grid-template-columns: minmax(78px,1fr) minmax(34px,.45fr) minmax(88px,1fr) minmax(34px,.45fr) minmax(78px,1fr);
-      grid-template-rows: auto 48px auto; align-items: center; width: 100%; max-width: 850px; margin: 0 auto;
+      grid-template-columns: minmax(130px,1fr) minmax(34px,.32fr) minmax(150px,1.08fr) minmax(34px,.32fr) minmax(130px,1fr);
+      grid-template-rows: auto 52px auto; align-items: center; width: 100%; max-width: 1120px; margin: 0 auto;
     }
     .energy-node {
       position: relative; z-index: 2; display: flex; flex-direction: column; justify-content: center;
-      width: 100%; min-width: 0; height: 100px; padding: 11px 8px 10px 38px;
+      width: 100%; min-width: 0; height: 128px; padding: 28px 8px 22px 38px;
       border: 1px solid var(--line); border-radius: 15px; text-align: center;
       background: var(--control); transition: border-color .3s ease, box-shadow .3s ease, transform .3s ease;
     }
@@ -222,16 +223,18 @@ WEB_DASHBOARD = r"""<!doctype html>
       overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
     }
     .energy-node-register {
-      position: absolute; z-index: 1; right: 7px; top: 7px; max-width: calc(100% - 44px);
-      overflow: hidden; color: var(--node-colour); font-size: 7px; font-weight: 900;
-      font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1.2;
-      text-align: right; text-overflow: ellipsis; white-space: nowrap; opacity: .78;
+      position: absolute; z-index: 1; left: 42px; right: 7px; top: 7px;
+      display: -webkit-box; max-width: none; max-height: 21px; overflow: hidden;
+      color: var(--node-colour); font-size: 8px; font-weight: 900;
+      font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 10px;
+      text-align: right; white-space: normal; opacity: .88;
+      -webkit-box-orient: vertical; -webkit-line-clamp: 2;
     }
     .energy-node-value {
-      position: absolute; left: 50%; top: 50%; display: block;
-      width: max-content; max-width: calc(100% - 16px); margin: 0;
-      overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap;
-      font-size: 13px; font-weight: 850; font-variant-numeric: tabular-nums;
+      position: absolute; left: 50%; top: 55%; display: block;
+      width: calc(100% - 48px); max-width: none; margin: 0;
+      overflow: visible; text-align: center; white-space: normal;
+      font-size: 14px; font-weight: 850; font-variant-numeric: tabular-nums;
       transform: translate(-50%,-50%);
     }
     .energy-node-value[hidden] { display: none }
@@ -240,17 +243,26 @@ WEB_DASHBOARD = r"""<!doctype html>
       display: grid; gap: 2px; margin-top: 0; overflow: visible;
       text-align: center; text-overflow: clip; white-space: normal;
     }
-    .energy-solar-values span, .energy-inverter-values span,
-    .energy-generator-values span, .energy-home-values span, .energy-grid-values span,
-    .energy-battery-values span { white-space: nowrap }
-    .energy-mode-row { display: flex; align-items: baseline; justify-content: center; gap: 4px }
+    .energy-solar-values > span, .energy-inverter-values > span,
+    .energy-generator-values > span, .energy-home-values > span, .energy-grid-values > span,
+    .energy-battery-values > span { white-space: nowrap }
+    .energy-inverter-values { gap: 3px }
+    .energy-mode-row {
+      display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center;
+      width: 100%; gap: 5px; white-space: normal !important;
+    }
     .energy-mode-label {
       color: var(--muted); font-size: 7px; font-weight: 800; letter-spacing: .03em;
-      text-transform: uppercase;
+      line-height: 1.1; text-align: left; text-transform: uppercase; white-space: normal;
     }
-    .energy-mode-code { color: var(--node-colour) }
+    .energy-mode-value { display: grid; min-width: 0; justify-items: end; line-height: 1.05 }
+    .energy-mode-code { color: var(--node-colour); text-align: right; white-space: nowrap }
+    .energy-mode-definition {
+      max-width: 100%; color: var(--muted); font-size: 6.5px; font-weight: 700;
+      line-height: 1.05; text-align: right; white-space: normal;
+    }
     .energy-battery-values {
-      position: absolute; left: 50%; top: 50%; width: auto;
+      position: absolute; left: 50%; top: 55%; width: calc(100% - 48px);
       text-align: center; font-size: 14px; transform: translate(-50%,-50%);
     }
     .energy-battery .flow-direction {
@@ -287,6 +299,21 @@ WEB_DASHBOARD = r"""<!doctype html>
     .energy-home .energy-node-icon {
       left: 7px; top: 7px; bottom: 7px; display: grid; place-items: center;
       width: 60px; height: auto; font-size: 52px;
+    }
+    .energy-inverter { height: 148px; padding-inline: 8px }
+    .energy-inverter .energy-node-icon {
+      inset: 0; z-index: 0; width: 100%; height: 100%; opacity: .13;
+      font-size: 76px; filter: none;
+    }
+    .energy-inverter .energy-node-register {
+      left: 7px; right: 7px; text-align: center;
+    }
+    .energy-inverter .energy-node-value {
+      z-index: 1; left: 50%; width: calc(100% - 16px); font-size: 12px;
+      text-shadow: 0 1px 3px var(--card-start), 0 0 5px var(--card-start);
+    }
+    .energy-inverter-apparent-power {
+      color: var(--node-colour); font-size: 16px; line-height: 1.1;
     }
     .energy-battery { grid-column: 1; grid-row: 3; padding-left: 40px; --node-colour: #34d399 }
     .energy-grid {
@@ -346,20 +373,6 @@ WEB_DASHBOARD = r"""<!doctype html>
       text-align: center; text-overflow: ellipsis; font-size: 8px; font-weight: 900;
       line-height: 10px; white-space: nowrap;
     }
-    .inverter-mode-definitions {
-      display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px;
-      margin-top: 12px;
-    }
-    .inverter-mode-definition {
-      min-width: 0; padding: 7px 9px; border: 1px solid color-mix(in srgb, #22d3ee 28%, var(--line));
-      border-radius: 10px; background: color-mix(in srgb, #22d3ee 7%, var(--control));
-      font-size: 10px; line-height: 1.3;
-    }
-    .inverter-mode-definition strong {
-      display: block; margin-bottom: 2px; color: #22d3ee; font-size: 8px;
-      letter-spacing: .04em; text-transform: uppercase;
-    }
-    .inverter-mode-definition span { display: block; color: var(--text) }
     @keyframes energy-track-x { from { background-position: 0 0 } to { background-position: 34px 0 } }
     @keyframes energy-track-y { from { background-position: 0 0 } to { background-position: 0 34px } }
     .solar-energy-panel { margin-bottom: 18px }
@@ -627,7 +640,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       }
       .energy-flow-diagram {
         grid-template-columns: minmax(0,1fr) clamp(24px,8vw,36px) minmax(0,1.08fr) clamp(24px,8vw,36px) minmax(0,1fr);
-        grid-template-rows: 108px 46px 108px;
+        grid-template-rows: 136px 46px 136px;
       }
       .flow-pv, .flow-home { min-height: 30px }
       .flow-battery { width: 170% }
@@ -637,15 +650,23 @@ WEB_DASHBOARD = r"""<!doctype html>
       .solar-energy-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px }
       .solar-energy-head { align-items: flex-start; flex-direction: column; gap: 4px }
       .solar-energy-note { text-align: left }
-      .energy-node { height: 108px; padding: 10px 4px 10px 31px; border-radius: 12px }
+      .energy-node { height: 136px; padding: 29px 4px 22px; border-radius: 12px }
       .energy-node-icon { left: 6px; top: 7px; font-size: 21px }
       .energy-node-register {
-        top: 7px; right: 5px; display: -webkit-box; max-width: calc(100% - 35px);
-        max-height: 17px; overflow: hidden; font-size: 6.5px; line-height: 8px;
-        text-align: right; text-overflow: clip; white-space: normal;
+        left: 5px; top: 7px; right: 5px; max-width: none;
+        max-height: 25px; overflow: hidden; font-size: 6.5px; line-height: 8px;
+        text-align: center; white-space: normal;
         -webkit-box-orient: vertical; -webkit-line-clamp: 2;
       }
-      .energy-node-value { max-width: calc(100% - 10px); font-size: 12px }
+      .energy-node-value {
+        left: 50%; top: 55%; width: calc(100% - 8px); max-width: none;
+        overflow: visible; font-size: 11.5px;
+      }
+      .energy-inverter-values, .energy-home-values { font-size: 10.5px; line-height: 1.12 }
+      .energy-inverter .energy-node-value { width: calc(100% - 6px); font-size: 10.5px }
+      .energy-inverter-apparent-power { font-size: 13px }
+      .energy-mode-row { gap: 3px }
+      .energy-mode-label { font-size: 6.5px; letter-spacing: 0 }
       .energy-solar-values { gap: 3px; line-height: 1.12 }
       .energy-battery { padding-left: 39px }
       .energy-generator { padding-left: 43px }
@@ -657,17 +678,13 @@ WEB_DASHBOARD = r"""<!doctype html>
       .energy-battery-icon::after { top: -6px; width: 9px }
       .energy-battery-percent { padding-inline: 1px; overflow: hidden; font-size: 7px }
       .energy-battery-values {
-        left: 50%; right: auto; width: max-content; max-width: calc(100% - 10px); gap: 3px;
-        overflow: hidden; font-size: 11.5px; line-height: 1.1;
+        left: 50%; right: auto; width: calc(100% - 8px); max-width: none; gap: 3px;
+        overflow: visible; font-size: 11.5px; line-height: 1.1;
         text-align: center; transform: translate(-50%,-50%);
       }
       .energy-battery .flow-direction { left: 3px; right: 3px; bottom: 7px; text-align: center }
       .energy-node:not(.energy-battery) .flow-direction { bottom: 7px }
       .flow-direction { left: 3px; right: 3px; font-size: 7px }
-      .inverter-mode-definitions { grid-template-columns: 1fr; gap: 5px; margin-top: 9px }
-      .inverter-mode-definition { padding: 6px 8px; font-size: 9px }
-      .inverter-mode-definition strong { display: inline; margin: 0 5px 0 0; font-size: 7px }
-      .inverter-mode-definition span { display: inline }
       .gauge-card { padding: 11px 8px 10px; border-radius: 15px }
       .gauge-heading { gap: 5px; padding-right: 56px }
       .gauge-title { font-size: 12px }
@@ -736,12 +753,14 @@ WEB_DASHBOARD = r"""<!doctype html>
       .energy-flow-status { max-width: 62%; padding-inline: 7px; font-size: 8px }
       .energy-flow-diagram {
         grid-template-columns: minmax(0,1fr) 22px minmax(0,1.06fr) 22px minmax(0,1fr);
-        grid-template-rows: 104px 42px 104px;
+        grid-template-rows: 140px 42px 140px;
       }
-      .energy-node { height: 104px; padding-left: 28px }
+      .energy-node { height: 140px; padding: 29px 3px 22px }
       .energy-node-icon { left: 5px; font-size: 19px }
-      .energy-node-register { max-width: calc(100% - 31px); font-size: 6px }
-      .energy-node-value { font-size: 11px }
+      .energy-node-register { left: 3px; right: 3px; max-width: none; font-size: 6px }
+      .energy-node-value { width: calc(100% - 6px); font-size: 10.5px }
+      .energy-inverter-values, .energy-home-values { font-size: 9.5px }
+      .energy-mode-label { font-size: 5.8px }
       .energy-battery { padding-left: 36px }
       .energy-generator { padding-left: 38px }
       .energy-generator .energy-node-image-icon { left: 4px; top: 6px; bottom: 6px;  height: auto }
@@ -784,6 +803,47 @@ WEB_DASHBOARD = r"""<!doctype html>
         z-index: 1;
         text-shadow: 0 1px 3px var(--card-start), 0 0 5px var(--card-start);
       }
+      .energy-flow-scroll {
+        margin-inline: -2px; padding: 2px 2px 10px; overflow-x: auto; overflow-y: hidden;
+        overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: var(--cyan) transparent;
+        scroll-snap-type: x proximity; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch;
+      }
+      .energy-flow-scroll:focus-visible {
+        outline: 2px solid rgba(56,189,248,.45); outline-offset: 2px; border-radius: 10px;
+      }
+      .energy-flow-scroll::-webkit-scrollbar { height: 5px }
+      .energy-flow-scroll::-webkit-scrollbar-track { background: transparent }
+      .energy-flow-scroll::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(34,211,238,.55) }
+      .energy-flow-diagram {
+        width: 560px; min-width: 560px; max-width: none;
+        grid-template-columns: 150px 40px 160px 40px 150px;
+        grid-template-rows: 148px 48px 132px;
+      }
+      .energy-node {
+        height: 132px; padding: 28px 6px 22px; border-radius: 13px;
+        scroll-snap-align: center;
+      }
+      .energy-inverter { height: 148px }
+      .energy-node-register {
+        left: 6px; right: 6px; top: 7px; max-height: 20px;
+        font-size: 7px; line-height: 9px;
+      }
+      .energy-node-value,
+      .energy-inverter .energy-node-value {
+        left: 50%; top: 55%; width: calc(100% - 16px);
+        font-size: 12px; line-height: 1.15;
+      }
+      .energy-inverter-values, .energy-home-values { font-size: 11.5px; line-height: 1.15 }
+      .energy-inverter-apparent-power { font-size: 15px }
+      .energy-mode-label { font-size: 7px; letter-spacing: .02em }
+      .energy-mode-definition { font-size: 6px }
+      .energy-battery, .energy-grid, .energy-generator { padding-inline: 6px }
+      .energy-battery-values {
+        left: 50%; width: calc(100% - 42px); font-size: 12px;
+      }
+      .flow-direction { left: 5px; right: 5px; bottom: 7px; font-size: 7.5px }
+      .flow-battery { width: 150% }
+      .flow-generator { width: 150% }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -791,6 +851,17 @@ WEB_DASHBOARD = r"""<!doctype html>
         transition-duration: .01ms !important;
         animation-duration: .01ms !important;
         animation-iteration-count: 1 !important;
+      }
+      html.demo-energy-flow .flow-connector.active::before {
+        animation-duration: var(--flow-duration,1.4s) !important;
+        animation-iteration-count: infinite !important;
+        animation-play-state: running !important;
+      }
+      html.demo-energy-flow .flow-connector.active:not(.flow-grid)::before {
+        animation-name: energy-track-x !important;
+      }
+      html.demo-energy-flow .flow-grid.active::before {
+        animation-name: energy-track-y !important;
       }
     }
   </style>
@@ -853,6 +924,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         <h2 data-i18n="energyFlowTitle">Потік енергії</h2>
         <span class="energy-flow-status" id="energy-flow-status">—</span>
       </div>
+      <div class="energy-flow-scroll" tabindex="0" aria-label="Схема потоків енергії" data-i18n-aria="energyFlowAria">
       <div class="energy-flow-diagram">
         <div class="energy-node energy-solar" id="energy-solar-node">
           <span class="energy-node-icon" aria-hidden="true">&#9728;</span>
@@ -871,9 +943,10 @@ WEB_DASHBOARD = r"""<!doctype html>
           <span class="energy-node-register" id="energy-inverter-registers">—</span>
           <span class="energy-node-label" data-i18n="inverter">Інвертор</span>
           <span class="energy-node-value energy-inverter-values">
-            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="outputMode">Вихід</span><span class="energy-mode-code" id="energy-inverter-output-mode">—</span></span>
-            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="inputMode">Вхід</span><span class="energy-mode-code" id="energy-inverter-input-mode">—</span></span>
-            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="chargeMode">Заряд</span><span class="energy-mode-code" id="energy-inverter-charge-mode">—</span></span>
+            <span class="energy-inverter-apparent-power" id="energy-inverter-apparent-power">— VA</span>
+            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="outputMode">Режим AC</span><span class="energy-mode-value"><strong class="energy-mode-code" id="energy-inverter-ac-mode">—</strong><small class="energy-mode-definition" id="energy-inverter-ac-definition"></small></span></span>
+            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="inputMode">Джерело входу</span><span class="energy-mode-value"><strong class="energy-mode-code" id="energy-inverter-input-mode">—</strong><small class="energy-mode-definition" id="energy-inverter-input-definition"></small></span></span>
+            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="chargeMode">Режим батареї</span><span class="energy-mode-value"><strong class="energy-mode-code" id="energy-inverter-charge-mode">—</strong><small class="energy-mode-definition" id="energy-inverter-charge-definition"></small></span></span>
           </span>
           <span class="flow-direction" aria-hidden="true"></span>
         </div>
@@ -897,6 +970,7 @@ WEB_DASHBOARD = r"""<!doctype html>
           <span class="energy-node-value energy-home-values">
             <span id="energy-home-current">— A</span>
             <span id="energy-home-voltage">— V</span>
+            <span id="energy-home-load">— %</span>
             <span id="energy-home-power">— W</span>
           </span>
           <span class="flow-direction" id="energy-home-direction"></span>
@@ -929,10 +1003,6 @@ WEB_DASHBOARD = r"""<!doctype html>
           <span class="flow-direction" id="energy-battery-direction"></span>
         </div>
       </div>
-      <div class="inverter-mode-definitions" aria-label="Режими інвертора" data-i18n-aria="inverterModeDefinitions">
-        <div class="inverter-mode-definition"><strong data-i18n="outputMode">Вихід</strong><span id="energy-inverter-output-definition">—</span></div>
-        <div class="inverter-mode-definition"><strong data-i18n="inputMode">Вхід</strong><span id="energy-inverter-input-definition">—</span></div>
-        <div class="inverter-mode-definition"><strong data-i18n="chargeMode">Заряд</strong><span id="energy-inverter-charge-definition">—</span></div>
       </div>
     </article>
     <section class="panel solar-energy-panel" aria-label="Вироблена сонячна енергія" data-i18n-aria="solarEnergyAria">
@@ -996,18 +1066,26 @@ WEB_DASHBOARD = r"""<!doctype html>
             <div class="lcd-node" id="lcd-load-node"><span class="lcd-node-icon">⌂</span><span class="lcd-node-label" data-i18n="load">Навантаження</span><span class="lcd-node-value" id="lcd-load">—</span></div>
           </div>
           <div class="lcd-main">
-            <div class="lcd-primary" id="lcd-pv-card"><span class="lcd-primary-label" data-i18n="pvInput">Вхід PV</span><span class="lcd-primary-value" id="lcd-pv">—</span></div>
+            <div class="lcd-primary" id="lcd-ac-output-card"><span class="lcd-primary-label" data-i18n="acOutputCurrent">Вихідний струм AC</span><span class="lcd-primary-value" id="lcd-ac-output-current">—</span></div>
             <div class="lcd-primary" id="lcd-battery-card"><span class="lcd-primary-label" data-i18n="batteryVoltage">Напруга батареї</span><span class="lcd-primary-value" id="lcd-battery-voltage">—</span></div>
             <div class="lcd-primary" id="lcd-soc-card"><span class="lcd-primary-label" data-i18n="batterySoc">Заряд батареї</span><span class="lcd-primary-value" id="lcd-soc">—</span></div>
           </div>
           <div class="lcd-readouts">
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridVoltage">Напруга мережі</span><span class="lcd-readout-value" id="lcd-grid-voltage">—</span></div>
             <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="frequency">Частота</span><span class="lcd-readout-value" id="lcd-frequency">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridCurrent">Струм мережі</span><span class="lcd-readout-value" id="lcd-grid-current">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridPower">Потужність мережі</span><span class="lcd-readout-value" id="lcd-grid-power">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="inverterLoad">Завантаження інвертора</span><span class="lcd-readout-value" id="lcd-inverter-load">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="loadPower">Активна потужність навантаження</span><span class="lcd-readout-value" id="lcd-load-power">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="apparentLoadPower">Повна потужність навантаження</span><span class="lcd-readout-value" id="lcd-apparent-load-power">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridLowVoltageThreshold">Нижній поріг напруги мережі</span><span class="lcd-readout-value" id="lcd-grid-low-voltage-threshold">—</span></div>
             <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryCurrent">Струм батареї</span><span class="lcd-readout-value" id="lcd-battery-current">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryPower">Потужність батареї</span><span class="lcd-readout-value" id="lcd-battery-power">—</span></div>
             <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryTemperature">Температура батареї</span><span class="lcd-readout-value" id="lcd-temperature">—</span></div>
             <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="maxChargeVoltage">Макс. напруга заряду</span><span class="lcd-readout-value" id="lcd-charge-voltage">—</span></div>
             <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="currentLimit">Ліміт струму</span><span class="lcd-readout-value" id="lcd-current-limit">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="lowSocThreshold">Нижній поріг SOC</span><span class="lcd-readout-value" id="lcd-low-soc-threshold">—</span></div>
             <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryState">Стан батареї</span><span class="lcd-readout-value" id="lcd-battery-state">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="inverterTemperature">Температура інвертора</span><span class="lcd-readout-value" id="lcd-inverter-temperature">—</span></div>
             <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="systemStatus">Стан системи</span><span class="lcd-readout-value" id="lcd-system-status">—</span></div>
           </div>
           <div class="lcd-status-line" id="lcd-status-line">—</div>
@@ -1083,14 +1161,14 @@ WEB_DASHBOARD = r"""<!doctype html>
         grid: 'Мережа', generator: 'Генератор', inverter: 'Інвертор', load: 'Навантаження', pvInput: 'Вхід PV',
         energyFlowTitle: 'Потік енергії', energyFlowAria: 'Поточний потік енергії між сонячними панелями, міською мережею або генератором, інвертором, батареєю та домом',
         solarPanels: 'Сонячні панелі', home: 'Дім', battery: 'Батарея', cityGenerator: 'Місто / Генератор',
-        importing: 'СПОЖИВАННЯ', exporting: 'ВІДДАЧА', gridReady: 'AC ДОСТУПНА',
-        supplying: 'ВІДДАЄ', receiving: 'ОТРИМУЄ', consuming: 'СПОЖИВАЄ',
-        outputMode: 'Вихід', inputMode: 'Вхід', chargeMode: 'Заряд', inverterModeDefinitions: 'Пояснення режимів інвертора',
-        modeGridDescription: 'Мережа живить навантаження першою', modeSolarDescription: 'Сонячна енергія живить навантаження першою',
-        modePbgDescription: 'Пріоритет: сонячні панелі → батарея → мережа', modeMksDescription: 'Пріоритет генератора',
-        modeAppDescription: 'Широкий діапазон AC для побутових приладів', modeUpsDescription: 'Діапазон входу UPS для чутливих пристроїв',
-        modeGenDescription: 'Генератор підключений до входу AC', modePngDescription: 'Батарею заряджають PV і мережа',
-        modeOpvDescription: 'Батарею заряджає лише PV', modePvfDescription: 'Спочатку заряджає PV; мережа використовується без сонця',
+        gridReady: 'AC ДОСТУПНА',
+        supplying: 'ВІДДАЄ', gridSupplying: 'ЖИВИТЬ ІНВЕРТОР', receiving: 'ОТРИМУЄ', consuming: 'СПОЖИВАЄ',
+        outputMode: 'Режим AC', inputMode: 'Джерело входу', chargeMode: 'Режим батареї',
+        modeGridShort: 'Мережа першою', modeSolarShort: 'PV першими',
+        modePbgShort: 'PV → батарея → мережа', modeMksShort: 'Пріоритет генератора',
+        modeAppShort: 'Широкий діапазон AC', modeUpsShort: 'Стабільний вхід UPS', modeGenShort: 'Вхід генератора',
+        modePngShort: 'Заряд від PV і мережі', modeOpvShort: 'Заряд лише від PV', modePvfShort: 'PV першими, мережа резерв',
+        modeGridInputShort: 'Мережа живить інвертор', modeBatteryInputShort: 'Батарея живить інвертор',
         demoSolarChargeExport: 'ДЕМО · PV → ДІМ + БАТ.',
         demoGridHome: 'ДЕМО · МЕРЕЖА → ДІМ', demoBatteryHome: 'ДЕМО · БАТ. → ДІМ',
         demoSolarExport: 'ДЕМО · PV → ДІМ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ІНВЕРТОР → ДІМ',
@@ -1100,25 +1178,28 @@ WEB_DASHBOARD = r"""<!doctype html>
         today: 'Сьогодні', thisWeek: 'Цього тижня', thisMonth: 'Цього місяця', thisYear: 'Цього року',
         waitingSolar: 'ОЧІКУЄ PV',
         batteryVoltage: 'Напруга батареї', batterySoc: 'Заряд батареї', frequency: 'Частота',
-        batteryCurrent: 'Струм батареї', batteryTemperature: 'Температура батареї',
+        gridVoltage: 'Напруга мережі', gridCurrent: 'Струм мережі', gridPower: 'Потужність мережі',
+        pvPower: 'Потужність PV', loadPower: 'Активна потужність навантаження', apparentLoadPower: 'Повна потужність навантаження', loadPowerFactor: 'Коефіцієнт потужності',
+        acOutputCurrent: 'Вихідний струм AC', inverterLoad: 'Завантаження інвертора', gridLowVoltageThreshold: 'Нижній поріг напруги мережі',
+        batteryCurrent: 'Струм батареї', batteryPower: 'Потужність батареї', batteryTemperature: 'Температура батареї', lowSocThreshold: 'Нижній поріг SOC',
         maxChargeVoltage: 'Макс. напруга заряду', currentLimit: 'Ліміт струму', batteryState: 'Стан батареї',
-        inverterTemperature: 'Температура інвертора', systemStatus: 'Стан системи',
+        systemStatus: 'Стан системи',
         charging: 'ЗАРЯДЖАННЯ', discharging: 'РОЗРЯДЖАННЯ', batteryIdle: 'ОЧІКУВАННЯ',
         lcdControls: 'Керування LCD', lcdEscapeAria: 'Повернутися на головний екран LCD',
         lcdUpAria: 'Попередня інформаційна сторінка LCD', lcdDownAria: 'Наступна інформаційна сторінка LCD',
         lcdEnterAria: 'Відкрити вибрану сторінку LCD',
         lcdControlsLocalOnly: 'Віртуальні клавіші керують лише сторінками застосунку. У демо активний CSV-журнал фіксує кожне натискання. Налаштування інвертора не змінюються.',
         mainDisplay: 'Головний екран', dailyPvEnergy: 'Сонячна енергія за день', totalPvEnergy: 'Загальна сонячна енергія',
-        ratedCapacity: 'Номінальна ємність', remainingCapacity: 'Залишкова ємність',
-        minDischargeVoltage: 'Мін. напруга розряду', maxChargeCurrent: 'Макс. струм заряду',
-        maxDischargeCurrent: 'Макс. струм розряду', alarmFault: 'Аварії та попередження', faultCode: 'Код аварії', alarmCode: 'Код попередження', firmwareVersion: 'Версія прошивки',
+        availableCapacity: 'Параметр ємності', possibleBatteryHealth: 'SOH батареї', lowerBmsVoltageLimit: 'Нижня межа напруги BMS',
+        alarmFault: 'Стан BMS', alarmFlags: 'Прапорці стану BMS', bmsConnection: 'Зв’язок із BMS',
+        deviceInformation: 'Інформація про пристрій', protocolVersion: 'Код протоколу / версії', deviceConfiguration: 'Код конфігурації пристрою',
         lcdMainPageHelp: 'ESC повертає на цей екран. UP і DOWN перемикають інформаційні сторінки P1–P9 з інструкції.',
         lcdP1Help: 'P1 показує денне вироблення. Якщо значення Modbus недоступне, використовується розраховане значення з локальної SQLite.',
         lcdP2Help: 'P2 показує загальне вироблення. Якщо значення Modbus недоступне, використовується накопичене значення з локальної SQLite.',
         lcdP3Help: 'P3 показує напругу та струм літієвої батареї.', lcdP4Help: 'P4 показує температуру та SOC літієвої батареї.',
-        lcdP5Help: 'P5 показує номінальну та залишкову ємність батареї.', lcdP6Help: 'P6 показує максимальну напругу заряду та мінімальну напругу розряду.',
-        lcdP7Help: 'P7 показує максимальний струм заряду та розряду.', lcdP8Help: 'P8 показує коди аварій і попереджень батареї.',
-        lcdP9Help: 'P9 показує версію прошивки інвертора.', settingsReadOnly: 'Режим налаштувань недоступний: інструкція не містить безпечних Modbus-адрес для запису.',
+        lcdP5Help: 'P5 показує параметр ємності акумулятора R413 та SOH батареї R408.', lcdP6Help: 'P6 показує максимальну напругу заряду та нижню межу напруги BMS.',
+        lcdP7Help: 'P7 показує максимальний дозволений струм та нижній поріг SOC.', lcdP8Help: 'P8 показує зв’язок із BMS та прапорці стану BMS.',
+        lcdP9Help: 'P9 показує коди протоколу/версії та конфігурації пристрою.', settingsReadOnly: 'Режим налаштувань недоступний: інструкція не містить безпечних Modbus-адрес для запису.',
         offline: 'НЕМАЄ ЗВ’ЯЗКУ', online: 'У МЕРЕЖІ', notConnected: 'НЕ ПІДКЛЮЧЕНО', paused: 'ПРИЗУПИНЕНО', demoMode: 'ДЕМО',
         requestEvery: 'Запит кожні', pollAria: 'Інтервал опитування',
         interval05: '0.5 с', interval1: '1 с', interval2: '2 с', interval5: '5 с', interval10: '10 с',
@@ -1182,14 +1263,14 @@ WEB_DASHBOARD = r"""<!doctype html>
         grid: 'Сеть', generator: 'Генератор', inverter: 'Инвертор', load: 'Нагрузка', pvInput: 'Вход PV',
         energyFlowTitle: 'Поток энергии', energyFlowAria: 'Текущий поток энергии между солнечными панелями, городской сетью или генератором, инвертором, батареей и домом',
         solarPanels: 'Солнечные панели', home: 'Дом', battery: 'Батарея', cityGenerator: 'Сеть / Генератор',
-        importing: 'ПОТРЕБЛЕНИЕ', exporting: 'ОТДАЧА', gridReady: 'AC ДОСТУПЕН',
-        supplying: 'ОТДАЁТ', receiving: 'ПОЛУЧАЕТ', consuming: 'ПОТРЕБЛЯЕТ',
-        outputMode: 'Выход', inputMode: 'Вход', chargeMode: 'Заряд', inverterModeDefinitions: 'Описание режимов инвертора',
-        modeGridDescription: 'Сеть питает нагрузку первой', modeSolarDescription: 'Солнечная энергия питает нагрузку первой',
-        modePbgDescription: 'Приоритет: солнечные панели → батарея → сеть', modeMksDescription: 'Приоритет генератора',
-        modeAppDescription: 'Широкий диапазон AC для бытовых приборов', modeUpsDescription: 'Диапазон входа UPS для чувствительных устройств',
-        modeGenDescription: 'Генератор подключён ко входу AC', modePngDescription: 'Батарею заряжают PV и сеть',
-        modeOpvDescription: 'Батарею заряжает только PV', modePvfDescription: 'Сначала заряжает PV; сеть используется без солнца',
+        gridReady: 'AC ДОСТУПЕН',
+        supplying: 'ОТДАЁТ', gridSupplying: 'ПИТАЕТ ИНВЕРТОР', receiving: 'ПОЛУЧАЕТ', consuming: 'ПОТРЕБЛЯЕТ',
+        outputMode: 'Режим AC', inputMode: 'Источник входа', chargeMode: 'Режим батареи',
+        modeGridShort: 'Сеть первой', modeSolarShort: 'PV первыми',
+        modePbgShort: 'PV → батарея → сеть', modeMksShort: 'Приоритет генератора',
+        modeAppShort: 'Широкий диапазон AC', modeUpsShort: 'Стабильный вход UPS', modeGenShort: 'Вход генератора',
+        modePngShort: 'Заряд от PV и сети', modeOpvShort: 'Заряд только от PV', modePvfShort: 'PV сначала, сеть резерв',
+        modeGridInputShort: 'Сеть питает инвертор', modeBatteryInputShort: 'Батарея питает инвертор',
         demoSolarChargeExport: 'ДЕМО · PV → ДОМ + БАТ.',
         demoGridHome: 'ДЕМО · СЕТЬ → ДОМ', demoBatteryHome: 'ДЕМО · БАТ. → ДОМ',
         demoSolarExport: 'ДЕМО · PV → ДОМ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ИНВЕРТОР → ДОМ',
@@ -1199,25 +1280,28 @@ WEB_DASHBOARD = r"""<!doctype html>
         today: 'Сегодня', thisWeek: 'На этой неделе', thisMonth: 'В этом месяце', thisYear: 'В этом году',
         waitingSolar: 'ОЖИДАЕТ PV',
         batteryVoltage: 'Напряжение батареи', batterySoc: 'Заряд батареи', frequency: 'Частота',
-        batteryCurrent: 'Ток батареи', batteryTemperature: 'Температура батареи',
+        gridVoltage: 'Напряжение сети', gridCurrent: 'Ток сети', gridPower: 'Мощность сети',
+        pvPower: 'Мощность PV', loadPower: 'Активная мощность нагрузки', apparentLoadPower: 'Полная мощность нагрузки', loadPowerFactor: 'Коэффициент мощности',
+        acOutputCurrent: 'Выходной ток AC', inverterLoad: 'Загрузка инвертора', gridLowVoltageThreshold: 'Нижний порог напряжения сети',
+        batteryCurrent: 'Ток батареи', batteryPower: 'Мощность батареи', batteryTemperature: 'Температура батареи', lowSocThreshold: 'Нижний порог SOC',
         maxChargeVoltage: 'Макс. напряжение заряда', currentLimit: 'Предел тока', batteryState: 'Состояние батареи',
-        inverterTemperature: 'Температура инвертора', systemStatus: 'Состояние системы',
+        systemStatus: 'Состояние системы',
         charging: 'ЗАРЯДКА', discharging: 'РАЗРЯДКА', batteryIdle: 'ОЖИДАНИЕ',
         lcdControls: 'Управление LCD', lcdEscapeAria: 'Вернуться на главный экран LCD',
         lcdUpAria: 'Предыдущая информационная страница LCD', lcdDownAria: 'Следующая информационная страница LCD',
         lcdEnterAria: 'Открыть выбранную страницу LCD',
         lcdControlsLocalOnly: 'Виртуальные клавиши управляют только страницами приложения. В демо активный CSV-журнал фиксирует каждое нажатие. Настройки инвертора не изменяются.',
         mainDisplay: 'Главный экран', dailyPvEnergy: 'Солнечная энергия за день', totalPvEnergy: 'Общая солнечная энергия',
-        ratedCapacity: 'Номинальная ёмкость', remainingCapacity: 'Оставшаяся ёмкость',
-        minDischargeVoltage: 'Мин. напряжение разряда', maxChargeCurrent: 'Макс. ток заряда',
-        maxDischargeCurrent: 'Макс. ток разряда', alarmFault: 'Аварии и предупреждения', faultCode: 'Код аварии', alarmCode: 'Код предупреждения', firmwareVersion: 'Версия прошивки',
+        availableCapacity: 'Параметр ёмкости', possibleBatteryHealth: 'SOH батареи', lowerBmsVoltageLimit: 'Нижний предел напряжения BMS',
+        alarmFault: 'Состояние BMS', alarmFlags: 'Флаги состояния BMS', bmsConnection: 'Связь с BMS',
+        deviceInformation: 'Информация об устройстве', protocolVersion: 'Код протокола / версии', deviceConfiguration: 'Код конфигурации устройства',
         lcdMainPageHelp: 'ESC возвращает на этот экран. UP и DOWN переключают информационные страницы P1–P9 из инструкции.',
         lcdP1Help: 'P1 показывает дневную выработку. Если значение Modbus недоступно, используется расчётное значение из локальной SQLite.',
         lcdP2Help: 'P2 показывает общую выработку. Если значение Modbus недоступно, используется накопленное значение из локальной SQLite.',
         lcdP3Help: 'P3 показывает напряжение и ток литиевой батареи.', lcdP4Help: 'P4 показывает температуру и SOC литиевой батареи.',
-        lcdP5Help: 'P5 показывает номинальную и оставшуюся ёмкость батареи.', lcdP6Help: 'P6 показывает максимальное напряжение заряда и минимальное напряжение разряда.',
-        lcdP7Help: 'P7 показывает максимальный ток заряда и разряда.', lcdP8Help: 'P8 показывает коды аварий и предупреждений батареи.',
-        lcdP9Help: 'P9 показывает версию прошивки инвертора.', settingsReadOnly: 'Режим настроек недоступен: инструкция не содержит безопасных Modbus-адресов для записи.',
+        lcdP5Help: 'P5 показывает параметр ёмкости аккумулятора R413 и SOH батареи R408.', lcdP6Help: 'P6 показывает максимальное напряжение заряда и нижний предел напряжения BMS.',
+        lcdP7Help: 'P7 показывает максимальный разрешённый ток и нижний порог SOC.', lcdP8Help: 'P8 показывает связь с BMS и флаги состояния BMS.',
+        lcdP9Help: 'P9 показывает коды протокола/версии и конфигурации устройства.', settingsReadOnly: 'Режим настроек недоступен: инструкция не содержит безопасных Modbus-адресов для записи.',
         offline: 'НЕТ СВЯЗИ', online: 'В СЕТИ', notConnected: 'НЕ ПОДКЛЮЧЕНО', paused: 'ПРИОСТАНОВЛЕНО', demoMode: 'ДЕМО',
         requestEvery: 'Запрос каждые', pollAria: 'Интервал опроса',
         interval05: '0.5 с', interval1: '1 с', interval2: '2 с', interval5: '5 с', interval10: '10 с',
@@ -1281,14 +1365,14 @@ WEB_DASHBOARD = r"""<!doctype html>
         grid: 'Grid', generator: 'Generator', inverter: 'Inverter', load: 'Load', pvInput: 'PV input',
         energyFlowTitle: 'Energy flow', energyFlowAria: 'Current energy flow between the solar panels, city grid or generator, inverter, battery, and home',
         solarPanels: 'Solar panels', home: 'Home', battery: 'Battery', cityGenerator: 'Grid / Generator',
-        importing: 'IMPORTING', exporting: 'EXPORTING', gridReady: 'AC AVAILABLE',
-        supplying: 'SUPPLYING', receiving: 'RECEIVING', consuming: 'CONSUMING',
-        outputMode: 'Output', inputMode: 'Input', chargeMode: 'Charge', inverterModeDefinitions: 'Inverter mode descriptions',
-        modeGridDescription: 'Grid powers the loads first', modeSolarDescription: 'Solar power supplies the loads first',
-        modePbgDescription: 'Priority: solar → battery → grid', modeMksDescription: 'Generator-priority mode',
-        modeAppDescription: 'Wide AC input range for household appliances', modeUpsDescription: 'UPS input range for sensitive devices',
-        modeGenDescription: 'Generator connected to the AC input', modePngDescription: 'PV and grid charge the battery',
-        modeOpvDescription: 'Only PV charges the battery', modePvfDescription: 'PV charges first; grid is used without solar',
+        gridReady: 'AC AVAILABLE',
+        supplying: 'SUPPLYING', gridSupplying: 'SUPPLIES INVERTER', receiving: 'RECEIVING', consuming: 'CONSUMING',
+        outputMode: 'AC mode', inputMode: 'Input source', chargeMode: 'Battery mode',
+        modeGridShort: 'Grid first', modeSolarShort: 'PV first',
+        modePbgShort: 'PV → battery → grid', modeMksShort: 'Generator priority',
+        modeAppShort: 'Wide AC range', modeUpsShort: 'Stable UPS input', modeGenShort: 'Generator input',
+        modePngShort: 'PV and grid charge', modeOpvShort: 'PV charging only', modePvfShort: 'PV first, grid backup',
+        modeGridInputShort: 'Grid supplies inverter', modeBatteryInputShort: 'Battery supplies inverter',
         demoSolarChargeExport: 'DEMO · PV → HOME + BAT.',
         demoGridHome: 'DEMO · GRID → HOME', demoBatteryHome: 'DEMO · BAT. → HOME',
         demoSolarExport: 'DEMO · PV → HOME', demoGeneratorHome: 'DEMO · GENERATOR → INVERTER → HOME',
@@ -1298,25 +1382,28 @@ WEB_DASHBOARD = r"""<!doctype html>
         today: 'Today', thisWeek: 'This week', thisMonth: 'This month', thisYear: 'This year',
         waitingSolar: 'WAITING FOR PV',
         batteryVoltage: 'Battery voltage', batterySoc: 'Battery charge', frequency: 'Frequency',
-        batteryCurrent: 'Battery current', batteryTemperature: 'Battery temperature',
+        gridVoltage: 'Grid voltage', gridCurrent: 'Grid current', gridPower: 'Grid power',
+        pvPower: 'PV power', loadPower: 'Active load power', apparentLoadPower: 'Apparent load power', loadPowerFactor: 'Power factor',
+        acOutputCurrent: 'AC output current', inverterLoad: 'Inverter load', gridLowVoltageThreshold: 'Grid low-voltage threshold',
+        batteryCurrent: 'Battery current', batteryPower: 'Battery power', batteryTemperature: 'Battery temperature', lowSocThreshold: 'Low SOC threshold',
         maxChargeVoltage: 'Max. charge voltage', currentLimit: 'Current limit', batteryState: 'Battery state',
-        inverterTemperature: 'Inverter temperature', systemStatus: 'System status',
+        systemStatus: 'System status',
         charging: 'CHARGING', discharging: 'DISCHARGING', batteryIdle: 'IDLE',
         lcdControls: 'LCD controls', lcdEscapeAria: 'Return to the main LCD screen',
         lcdUpAria: 'Previous LCD information page', lcdDownAria: 'Next LCD information page',
         lcdEnterAria: 'Open the selected LCD page',
         lcdControlsLocalOnly: 'The virtual keys control app pages only. During demo, an active CSV log records every press. Inverter settings are not changed.',
         mainDisplay: 'Main display', dailyPvEnergy: 'Daily solar energy', totalPvEnergy: 'Total solar energy',
-        ratedCapacity: 'Rated capacity', remainingCapacity: 'Remaining capacity',
-        minDischargeVoltage: 'Min. discharge voltage', maxChargeCurrent: 'Max. charging current',
-        maxDischargeCurrent: 'Max. discharging current', alarmFault: 'Faults and alarms', faultCode: 'Fault code', alarmCode: 'Alarm code', firmwareVersion: 'Firmware version',
+        availableCapacity: 'Capacity parameter', possibleBatteryHealth: 'Battery SOH', lowerBmsVoltageLimit: 'Lower BMS voltage limit',
+        alarmFault: 'BMS status', alarmFlags: 'BMS status flags', bmsConnection: 'BMS connection',
+        deviceInformation: 'Device information', protocolVersion: 'Protocol / version code', deviceConfiguration: 'Device configuration code',
         lcdMainPageHelp: 'ESC returns to this screen. UP and DOWN browse the manual’s P1–P9 information pages.',
         lcdP1Help: 'P1 shows daily production. When no Modbus value is available, it uses the calculated value from local SQLite.',
         lcdP2Help: 'P2 shows total production. When no Modbus value is available, it uses the accumulated value from local SQLite.',
         lcdP3Help: 'P3 shows lithium-battery voltage and current.', lcdP4Help: 'P4 shows lithium-battery temperature and SOC.',
-        lcdP5Help: 'P5 shows rated and remaining battery capacity.', lcdP6Help: 'P6 shows maximum charging and minimum discharging voltage.',
-        lcdP7Help: 'P7 shows maximum charging and discharging current.', lcdP8Help: 'P8 shows battery fault and alarm codes.',
-        lcdP9Help: 'P9 shows the inverter firmware version.', settingsReadOnly: 'Settings mode is unavailable because the manual provides no safe Modbus write addresses.',
+        lcdP5Help: 'P5 shows battery capacity parameter R413 and battery SOH R408.', lcdP6Help: 'P6 shows maximum charge voltage and the lower BMS voltage limit.',
+        lcdP7Help: 'P7 shows maximum allowed current and the low SOC threshold.', lcdP8Help: 'P8 shows BMS communication and BMS status flags.',
+        lcdP9Help: 'P9 shows the device protocol/version and configuration codes.', settingsReadOnly: 'Settings mode is unavailable because the manual provides no safe Modbus write addresses.',
         offline: 'OFFLINE', online: 'ONLINE', notConnected: 'NOT CONNECTED', paused: 'PAUSED', demoMode: 'DEMO',
         requestEvery: 'Request every', pollAria: 'Polling interval',
         interval05: '0.5 s', interval1: '1 s', interval2: '2 s', interval5: '5 s', interval10: '10 s',
@@ -1386,28 +1473,14 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Код протоколу або версії': {ru:'Код протокола или версии', en:'Protocol or version code'},
       'Системне слово 27': {ru:'Системное слово 27', en:'System word 27'},
       'Системний прапорець 28': {ru:'Системный флаг 28', en:'System flag 28'},
-      'Режим роботи інвертора': {ru:'Режим работы инвертора', en:'Inverter operating mode'},
-      'Line Mode (від мережі)': {ru:'Line Mode (от сети)', en:'Line Mode (grid)'},
       'Напруга зовнішньої мережі': {ru:'Напряжение внешней сети', en:'External grid voltage'},
-      'Внутрішній сервісний струм інвертора': {ru:'Внутренний сервисный ток инвертора', en:'Internal inverter service current'},
       'Частота зовнішньої мережі': {ru:'Частота внешней сети', en:'External grid frequency'},
       'Активна потужність навантаження': {ru:'Активная мощность нагрузки', en:'Active load power'},
       'Повна потужність навантаження': {ru:'Полная мощность нагрузки', en:'Apparent load power'},
-      'Коефіцієнт потужності навантаження': {ru:'Коэффициент мощности нагрузки', en:'Load power factor'},
       'Рівень заряду акумулятора': {ru:'Уровень заряда аккумулятора', en:'Battery state of charge'},
-      'Температура інвертора': {ru:'Температура инвертора', en:'Inverter temperature'},
-      'Струм заряджання акумулятора': {ru:'Ток зарядки аккумулятора', en:'Battery charging current'},
       'Температура акумулятора': {ru:'Температура аккумулятора', en:'Battery temperature'},
-      'Напруга завершення заряджання': {ru:'Напряжение окончания зарядки', en:'Charge termination voltage'},
-      'Напруга PV-масиву': {ru:'Напряжение PV-массива', en:'PV array voltage'},
-      'Потужність сонячних панелей': {ru:'Мощность солнечных панелей', en:'Solar panel power'},
-      'Ліміт розряджання Time-of-Use': {ru:'Лимит разряда Time-of-Use', en:'Time-of-Use discharge limit'},
       'Фактичний струм із мережі': {ru:'Фактический ток из сети', en:'Actual grid current'},
       'Фактична потужність мережі': {ru:'Фактическая мощность сети', en:'Actual grid power'},
-      'Поріг захисту за частотою CA_LF3': {ru:'Порог защиты по частоте CA_LF3', en:'CA_LF3 frequency protection threshold'},
-      'Ліміт струму заряджання/розряджання': {ru:'Лимит тока зарядки/разрядки', en:'Charge/discharge current limit'},
-      'Ліміт потужності розряджання акумулятора': {ru:'Лимит мощности разряда аккумулятора', en:'Battery discharge power limit'},
-      'Статус та аварійні прапорці інвертора': {ru:'Статус и аварийные флаги инвертора', en:'Inverter status and alarm flags'},
       'Бітова маска можливостей або стану': {ru:'Битовая маска возможностей или состояния', en:'Capability or status bitmask'},
       'Системне слово 65': {ru:'Системное слово 65', en:'System word 65'},
       'Код конфігурації 66': {ru:'Код конфигурации 66', en:'Configuration code 66'},
@@ -1417,74 +1490,68 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Номінальна або вихідна напруга AC': {ru:'Номинальное или выходное напряжение AC', en:'Nominal or output AC voltage'},
       'Вихідна напруга AC': {ru:'Выходное напряжение AC', en:'Output AC voltage'},
       'Вихідний струм AC': {ru:'Выходной ток AC', en:'Output AC current'},
+      'Завантаження інвертора': {ru:'Загрузка инвертора', en:'Inverter load'},
+      'Нижній поріг вхідної напруги мережі': {ru:'Нижний порог входного напряжения сети', en:'Grid input low-voltage threshold'},
+      'Робочий режим інвертора': {ru:'Рабочий режим инвертора', en:'Inverter operating mode'},
+      'Напруга акумулятора від BMS': {ru:'Напряжение аккумулятора от BMS', en:'Battery voltage from BMS'},
+      'Струм акумулятора від BMS': {ru:'Ток аккумулятора от BMS', en:'Battery current from BMS'},
+      'SOC від BMS': {ru:'SOC от BMS', en:'SOC from BMS'},
+      'Максимальна напруга заряду BMS': {ru:'Максимальное напряжение заряда BMS', en:'BMS maximum charge voltage'},
+      'Недоступне значення BMS 142': {ru:'Недоступное значение BMS 142', en:'Unavailable BMS value 142'},
+      'Недоступне значення BMS 143': {ru:'Недоступное значение BMS 143', en:'Unavailable BMS value 143'},
+      'Прапорці стану BMS': {ru:'Флаги состояния BMS', en:'BMS status flags'},
+      'Непідтверджений параметр 145': {ru:'Неподтверждённый параметр 145', en:'Unconfirmed parameter 145'},
+      'Активність BMS': {ru:'Активность BMS', en:'BMS activity'},
+      'Тип або протокол BMS': {ru:'Тип или протокол BMS', en:'BMS type or protocol'},
+      'Конфігурація BMS': {ru:'Конфигурация BMS', en:'BMS configuration'},
+      'Стан BMS': {ru:'Состояние BMS', en:'BMS status'},
+      'SOC акумулятора BMS': {ru:'SOC аккумулятора BMS', en:'BMS battery SOC'},
+      'Невідомий динамічний параметр': {ru:'Неизвестный динамический параметр', en:'Unknown dynamic parameter'},
+      'Напруга акумулятора BMS': {ru:'Напряжение аккумулятора BMS', en:'BMS battery voltage'},
+      'Струм BMS, канал 1': {ru:'Ток BMS, канал 1', en:'BMS current, channel 1'},
+      'Струм BMS, канал 2': {ru:'Ток BMS, канал 2', en:'BMS current, channel 2'},
+      'Верхня межа напруги': {ru:'Верхний предел напряжения', en:'Upper voltage limit'},
+      'Нижня межа напруги': {ru:'Нижний предел напряжения', en:'Lower voltage limit'},
+      'Поріг низької напруги': {ru:'Порог низкого напряжения', en:'Low-voltage threshold'},
+      'Невідомий знаковий параметр': {ru:'Неизвестный знаковый параметр', en:'Unknown signed parameter'},
+      'Напруга заряду': {ru:'Напряжение заряда', en:'Charge voltage'},
+      'Підтримувальна напруга': {ru:'Поддерживающее напряжение', en:'Float voltage'},
+      'Максимальний струм заряду': {ru:'Максимальный ток заряда', en:'Maximum charge current'},
+      'Додаткова межа струму заряду': {ru:'Дополнительный предел тока заряда', en:'Additional charge-current limit'},
+      'Поріг високої напруги': {ru:'Порог высокого напряжения', en:'High-voltage threshold'},
+      'Межа або номінальна потужність': {ru:'Предел или номинальная мощность', en:'Limit or rated power'},
+      'Параметр обмеження потужності': {ru:'Параметр ограничения мощности', en:'Power-limiting parameter'},
+      'Тип батареї або кількість модулів': {ru:'Тип батареи или число модулей', en:'Battery type or module count'},
+      'Зв’язок із BMS': {ru:'Связь с BMS', en:'BMS communication'},
+      'Напруга батареї': {ru:'Напряжение батареи', en:'Battery voltage'},
+      'Струм батареї': {ru:'Ток батареи', en:'Battery current'},
+      'Температура батареї': {ru:'Температура батареи', en:'Battery temperature'},
+      'SOC батареї': {ru:'SOC батареи', en:'Battery SOC'},
+      'SOH батареї': {ru:'SOH батареи', en:'Battery SOH'},
+      'Недоступне значення 409': {ru:'Недоступное значение 409', en:'Unavailable value 409'},
+      'Недоступне значення 410': {ru:'Недоступное значение 410', en:'Unavailable value 410'},
+      'Максимальна напруга заряду': {ru:'Максимальное напряжение заряда', en:'Maximum charge voltage'},
+      'Максимальний дозволений струм': {ru:'Максимальный разрешённый ток', en:'Maximum allowed current'},
+      'Параметр ємності акумулятора': {ru:'Параметр ёмкости аккумулятора', en:'Battery capacity parameter'},
+      'Резерв': {ru:'Резерв', en:'Reserved'},
+      'Нижній поріг SOC': {ru:'Нижний порог SOC', en:'Low SOC threshold'},
       'Вихідна потужність AC': {ru:'Выходная мощность AC', en:'Output AC power'},
       'Температура': {ru:'Температура', en:'Temperature'},
-      'Температура інвертора або радіатора': {ru:'Температура инвертора или радиатора', en:'Inverter or heatsink temperature'},
-      'Напруга батареї або внутрішньої DC-шини': {ru:'Напряжение батареи или внутренней DC-шины', en:'Battery or internal DC bus voltage'},
-      'Відсотковий або режимний параметр 94': {ru:'Процентный или режимный параметр 94', en:'Percentage or mode parameter 94'},
       'Напруга акумулятора': {ru:'Напряжение аккумулятора', en:'Battery voltage'},
       'Струм акумулятора': {ru:'Ток аккумулятора', en:'Battery current'},
       'SOC акумулятора': {ru:'SOC аккумулятора', en:'Battery SOC'},
       'Потужність акумулятора': {ru:'Мощность аккумулятора', en:'Battery power'},
-      'Напруга батареї BMS': {ru:'Напряжение батареи BMS', en:'BMS battery voltage'},
-      'Струм батареї BMS': {ru:'Ток батареи BMS', en:'BMS battery current'},
-      'Рівень заряду батареї BMS': {ru:'Уровень заряда батареи BMS', en:'BMS battery state of charge'},
-      'Температура BMS': {ru:'Температура BMS', en:'BMS temperature'},
-      'Температура BMS, канал 140': {ru:'Температура BMS, канал 140', en:'BMS temperature, channel 140'},
-      'Верхня напруга заряджання BMS': {ru:'Верхнее напряжение зарядки BMS', en:'BMS upper charging voltage'},
-      'Недоступний параметр BMS 142': {ru:'Недоступный параметр BMS 142', en:'Unavailable BMS parameter 142'},
-      'Недоступний параметр BMS 143': {ru:'Недоступный параметр BMS 143', en:'Unavailable BMS parameter 143'},
-      'Параметр BMS 144': {ru:'Параметр BMS 144', en:'BMS parameter 144'},
       'Режим входу інвертора': {ru:'Режим входа инвертора', en:'Inverter input mode'},
       'Режим виходу інвертора': {ru:'Режим выхода инвертора', en:'Inverter output mode'},
       'Режим заряджання інвертора': {ru:'Режим зарядки инвертора', en:'Inverter charging mode'},
-      'Слово стану BMS 144': {ru:'Слово состояния BMS 144', en:'BMS status word 144'},
-      'Параметр BMS 145': {ru:'Параметр BMS 145', en:'BMS parameter 145'},
-      'Системний параметр стану 158': {ru:'Системный параметр состояния 158', en:'System status parameter 158'},
-      'Прапорець каналу BMS': {ru:'Флаг канала BMS', en:'BMS channel flag'},
-      'Код конфігурації BMS 324': {ru:'Код конфигурации BMS 324', en:'BMS configuration code 324'},
-      'Код конфігурації BMS 325': {ru:'Код конфигурации BMS 325', en:'BMS configuration code 325'},
-      'Код стану BMS 337': {ru:'Код состояния BMS 337', en:'BMS status code 337'},
-      'Невідомий канал 341': {ru:'Неизвестный канал 341', en:'Unknown channel 341'},
-      'Напруга батареї BMS, канал 342': {ru:'Напряжение батареи BMS, канал 342', en:'BMS battery voltage, channel 342'},
+      'Пріоритет вихідного джерела': {ru:'Приоритет выходного источника', en:'Output source priority'},
+      'Режим входу AC': {ru:'Режим входа AC', en:'AC input mode'},
+      'Пріоритет джерела заряджання': {ru:'Приоритет источника зарядки', en:'Charging source priority'},
       'Код верхнього аварійного порога частоти CA_HF1': {ru:'Код верхнего аварийного порога частоты CA_HF1', en:'Upper frequency fault-threshold code CA_HF1'},
       'Код верхнього аварійного порога частоти CA_HF2': {ru:'Код верхнего аварийного порога частоты CA_HF2', en:'Upper frequency fault-threshold code CA_HF2'},
       'Аварійний поріг частоти CA_LF1': {ru:'Аварийный порог частоты CA_LF1', en:'Frequency fault threshold CA_LF1'},
       'Аварійний поріг частоти CA_LF2': {ru:'Аварийный порог частоты CA_LF2', en:'Frequency fault threshold CA_LF2'},
-      'Струм BMS, канал 343': {ru:'Ток BMS, канал 343', en:'BMS current, channel 343'},
-      'Струм батареї BMS, канал 344': {ru:'Ток батареи BMS, канал 344', en:'BMS battery current, channel 344'},
-      'Верхня межа напруги BMS': {ru:'Верхний предел напряжения BMS', en:'BMS upper voltage limit'},
-      'Нижня межа напруги BMS 1': {ru:'Нижний предел напряжения BMS 1', en:'BMS lower voltage limit 1'},
-      'Нижня межа напруги BMS 2': {ru:'Нижний предел напряжения BMS 2', en:'BMS lower voltage limit 2'},
-      'Знаковий струмовий параметр BMS': {ru:'Знаковый параметр тока BMS', en:'Signed BMS current parameter'},
-      'Напруга заряджання, налаштування 376': {ru:'Напряжение зарядки, настройка 376', en:'Charging voltage, setting 376'},
-      'Напруга заряджання, налаштування 377': {ru:'Напряжение зарядки, настройка 377', en:'Charging voltage, setting 377'},
-      'Ліміт струму 378': {ru:'Предел тока 378', en:'Current limit 378'},
-      'Ліміт струму 379': {ru:'Предел тока 379', en:'Current limit 379'},
-      'Верхня напруга батареї, налаштування 383': {ru:'Верхнее напряжение батареи, настройка 383', en:'Upper battery voltage, setting 383'},
       'Потужність': {ru:'Мощность', en:'Power'},
-      'Параметр потужності 385': {ru:'Параметр мощности 385', en:'Power parameter 385'},
-      'Параметр потужності 386': {ru:'Параметр мощности 386', en:'Power parameter 386'},
-      'Гранична або номінальна потужність': {ru:'Предельная или номинальная мощность', en:'Limit or rated power'},
-      'Налаштування або ліміт потужності': {ru:'Настройка или предел мощности', en:'Power setting or limit'},
-      'Код BMS або стану 401': {ru:'Код BMS или состояния 401', en:'BMS or status code 401'},
-      'Прапорець BMS або стану 402': {ru:'Флаг BMS или состояния 402', en:'BMS or status flag 402'},
-      'Упакований параметр BMS 403': {ru:'Упакованный параметр BMS 403', en:'Packed BMS parameter 403'},
-      'Напруга батареї BMS, канал 404': {ru:'Напряжение батареи BMS, канал 404', en:'BMS battery voltage, channel 404'},
-      'Струм батареї BMS, канал 405': {ru:'Ток батареи BMS, канал 405', en:'BMS battery current, channel 405'},
-      'Температура BMS, канал 406': {ru:'Температура BMS, канал 406', en:'BMS temperature, channel 406'},
-      'Відсотковий параметр BMS': {ru:'Процентный параметр BMS', en:'BMS percentage parameter'},
-      'Відсотковий параметр BMS, можливо SOH': {ru:'Процентный параметр BMS, возможно SOH', en:'BMS percentage parameter, possibly SOH'},
-      'Недоступний параметр BMS 409': {ru:'Недоступный параметр BMS 409', en:'Unavailable BMS parameter 409'},
-      'Недоступний параметр BMS 410': {ru:'Недоступный параметр BMS 410', en:'Unavailable BMS parameter 410'},
-      'Ліміт струму BMS': {ru:'Предел тока BMS', en:'BMS current limit'},
-      'Параметр потужності BMS 413': {ru:'Параметр мощности BMS 413', en:'BMS power parameter 413'},
-      'Параметр потужності 413': {ru:'Параметр мощности 413', en:'Power parameter 413'},
-      'Можлива доступна ємність батареї': {ru:'Возможная доступная ёмкость батареи', en:'Possible available battery capacity'},
-      'Параметр налаштування 415': {ru:'Параметр настройки 415', en:'Setting parameter 415'},
-      'Параметр налаштування 416': {ru:'Параметр настройки 416', en:'Setting parameter 416'},
-      'Параметр налаштування 417': {ru:'Параметр настройки 417', en:'Setting parameter 417'},
-      'Максимальний струм заряджання від мережі': {ru:'Максимальный ток зарядки от сети', en:'Maximum grid charging current'},
       'Середній поріг SOC': {ru:'Средний порог SOC', en:'Middle SOC threshold'},
       'Верхній поріг SOC': {ru:'Верхний порог SOC', en:'Upper SOC threshold'},
       'Регістр живої потужності PV не визначено; накопичення енергії призупинено': {ru:'Регистр фактической мощности PV не определён; накопление энергии приостановлено', en:'Live PV power register is not identified; energy accumulation is paused'},
@@ -1518,7 +1585,6 @@ WEB_DASHBOARD = r"""<!doctype html>
       'Напруга AC': {ru:'Напряжение AC', en:'AC voltage'},
       'Вхідний струм AC / значення навантаження': {ru:'Входной ток AC / значение нагрузки', en:'AC input current / load value'},
       'Частота AC': {ru:'Частота AC', en:'AC frequency'},
-      'Температура інвертора': {ru:'Температура инвертора', en:'Inverter temperature'},
       'Напруга батареї (дані LCD)': {ru:'Напряжение батареи (данные LCD)', en:'Battery voltage (LCD data)'},
       'Відсоток заряду батареї/навантаження': {ru:'Процент заряда батареи/нагрузки', en:'Battery/load percentage'},
       'Напруга батареї': {ru:'Напряжение батареи', en:'Battery voltage'},
@@ -1625,6 +1691,8 @@ WEB_DASHBOARD = r"""<!doctype html>
     let demoRegisterRows = null;
     let demoFlowCase = '';
     let demoGeneratorPower = 0;
+    let demoPvVoltage = 0;
+    let demoPvPower = 0;
     let currentView = 'dashboard';
     let lcdPageIndex = 0;
     let lcdEnterNotice = false;
@@ -1633,6 +1701,7 @@ WEB_DASHBOARD = r"""<!doctype html>
     let refreshController = null;
     let lastLoggedSiteVisits = null;
     const requestIntervals = [500, 1000, 2000, 5000, 10000];
+    const flowAnimationStates = new Map();
     let chartDefinitions = new Map();
     function savedSelections(name) {
       try {
@@ -1688,10 +1757,10 @@ WEB_DASHBOARD = r"""<!doctype html>
             register: meter.register
           }),
           unit: meter.unit,
-          value: Number.isFinite(meter.value) ? meter.value : 0,
+          value: meter.available !== false && Number.isFinite(meter.value) ? meter.value : null,
           minimum: meter.minimum,
           maximum: meter.maximum,
-          available: !String(meter.source || '').toLowerCase().includes('mbpoll'),
+          available: meter.available ?? !String(meter.source || '').toLowerCase().includes('mbpoll'),
           source: localizeDataText(meter.source)
         });
       });
@@ -1752,8 +1821,11 @@ WEB_DASHBOARD = r"""<!doctype html>
 
     function updateChartDefinitions(data) {
       const next = collectChartDefinitions(data);
-      const oldSignature = [...chartDefinitions.keys()].join('|');
-      const nextSignature = [...next.keys()].join('|');
+      const definitionSignature = definitions => [...definitions.values()].map(item =>
+        `${item.key}:${item.label}:${item.detail}:${item.unit}:${item.minimum}:${item.maximum}`
+      ).join('|');
+      const oldSignature = definitionSignature(chartDefinitions);
+      const nextSignature = definitionSignature(next);
       chartDefinitions = next;
       if (oldSignature !== nextSignature) {
         renderChartValueList();
@@ -1820,7 +1892,7 @@ WEB_DASHBOARD = r"""<!doctype html>
 
     function dashboardGaugeSignature(gauges) {
       return `${currentLanguage}|${gauges.map(gauge =>
-        `${gauge.key}:${gauge.minimum}:${gauge.maximum}:${gauge.colour}`).join('|')}`;
+        `${gauge.key}:${gauge.label}:${gauge.detail}:${gauge.unit}:${gauge.minimum}:${gauge.maximum}:${gauge.colour}`).join('|')}`;
     }
 
     function renderDashboardValues() {
@@ -1870,7 +1942,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       const now = Date.now();
       chartSelections.forEach(key => {
         const item = chartDefinitions.get(key);
-        if (!item) return;
+        if (!item || item.available === false || !Number.isFinite(item.value)) return;
         const history = chartHistory.get(key) || [];
         history.push({time: now, value: item.value});
         trimChartHistory(history, now);
@@ -1901,17 +1973,17 @@ WEB_DASHBOARD = r"""<!doctype html>
         pvVoltage = 326 + ripple * 4;
         pvPower = 7200 + Math.sin(second * .21) * 260;
         loadPower = 2500 + Math.sin(second * .29) * 140;
-        batteryCurrent = -(42 + ripple * 1.5);
+        batteryCurrent = 42 + ripple * 1.5;
         batterySoc = 72 + second * .08;
         statusCode = 3;
         caseKey = 'demoSolarChargeExport';
       } else if (second < 40) {
-        // Grid/generator supplies the home; charging is solar-only.
+        // Grid supplies the home and charges the battery.
         pvVoltage = 0;
         pvPower = 0;
         loadPower = 2900 + ripple * 130;
-        batteryCurrent = 0;
-        batterySoc = 73.6;
+        batteryCurrent = 18 + ripple;
+        batterySoc = 73.6 + (second - 20) * .05;
         statusCode = 1;
         caseKey = 'demoGridHome';
       } else if (second < 60) {
@@ -1920,7 +1992,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         pvVoltage = 0;
         pvPower = 0;
         loadPower = 2300 + Math.sin(second * .31) * 160;
-        batteryCurrent = loadPower / 51.8;
+        batteryCurrent = -loadPower / 51.8;
         batterySoc = 74.4 - (second - 40) * .09;
         statusCode = 2;
         caseKey = 'demoBatteryHome';
@@ -1950,7 +2022,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         pvVoltage = 320 + ripple * 3;
         pvPower = 1500 + ripple * 120;
         loadPower = 2500 + Math.sin(second * .25) * 120;
-        batteryCurrent = 20 + ripple;
+        batteryCurrent = -(20 + ripple);
         batterySoc = 72.5 - (second - 100) * .07;
         statusCode = 2;
         caseKey = 'demoMixedSources';
@@ -1960,10 +2032,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       const gridFrequency = gridAvailable ? 50 + Math.sin(second * .17) * .025 : 0;
       const batteryVoltage = 52.1 + (batterySoc - 75) * .09 + batteryCurrent * .018;
       const batteryTemperature = 29.5 + Math.abs(batteryCurrent) * .055 + Math.sin(second * .08) * .3;
-      const inverterTemperature = 33 + loadPower / 1000 * 1.8 + Math.max(0, pvPower) / 1000 * .45;
-      const loadPercent = loadPower / 12000 * 100;
-      const batteryChargeCurrent = -batteryCurrent;
-      const batteryPower = batteryVoltage * batteryChargeCurrent;
+      const batteryPower = batteryVoltage * batteryCurrent;
       const powerFactor = .86;
       const apparentLoadPower = loadPower / powerFactor;
       const gridPower = Math.max(0,
@@ -1972,31 +2041,31 @@ WEB_DASHBOARD = r"""<!doctype html>
       const outputPriority = generatorPower > 20 ? 3 : pvPower > 20 ? 2 : 0;
       const inputMode = generatorPower > 20 ? 2 : 0;
       const chargingPriority = 2;
-
       return {
         statusCode,
         caseKey,
         generatorPower,
+        pvVoltage,
+        pvPower,
         values: new Map([
-          [89, gridVoltage], [90, 0], [91, gridFrequency],
-          [92, loadPower], [93, apparentLoadPower], [94, powerFactor * 100],
-          [129, batteryVoltage], [130, batteryChargeCurrent],
+          [89, gridVoltage], [90, loadPower / 230], [91, gridFrequency],
+          [92, loadPower], [93, apparentLoadPower], [94, loadPower / 120],
+          [129, batteryVoltage], [130, batteryCurrent],
           [133, batterySoc], [134, batteryPower],
-          [137, batteryVoltage], [138, batteryChargeCurrent], [139, batterySoc],
+          [137, batteryVoltage], [138, batteryCurrent], [139, batterySoc],
           [140, batteryTemperature + .6], [141, 57.1],
-          [144, Math.max(0, pvVoltage)], [145, Math.max(0, pvPower)],
-          [157, statusCode], [158, 190 + statusCode],
+          [144, 1], [157, statusCode], [158, 170],
           [160, gridVoltage > 0 ? gridPower / gridVoltage : 0], [166, gridPower],
           [321, 1], [324, 1], [325, 1], [337, 2], [339, batterySoc],
-          [341, Math.max(0, pvVoltage)], [342, batteryVoltage],
-          [343, -batteryCurrent * 1.06], [344, -batteryCurrent * .98],
+          [341, 47.5], [342, batteryVoltage],
+          [343, batteryCurrent * 1.06], [344, batteryCurrent * .98],
           [345, 61], [346, 48], [349, 48], [350, -1.5],
           [376, 57.1], [377, 54.4], [378, 80], [379, 80], [383, 58.4],
-          [385, pvPower], [386, Math.max(0, loadPower)],
-          [401, gridAvailable ? 2 : 0], [402, 1], [403, 8306],
-          [404, batteryVoltage], [405, -batteryCurrent],
+          [385, 8000], [386, 12000],
+          [401, 1], [402, 1], [403, 8306],
+          [404, batteryVoltage], [405, batteryCurrent],
           [406, batteryTemperature + .6], [407, batterySoc], [408, 100],
-          [411, 57.1], [412, 80], [413, 170],
+          [411, 57.1], [412, 80], [413, 170], [414, 0],
           [415, 20], [416, 50], [417, 90], [449, 584],
           [16643, outputPriority], [16644, inputMode], [16645, chargingPriority]
         ])
@@ -2011,7 +2080,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       let generatedKwh = 0;
       for (let second = 0; second < boundedSeconds; second += integrationStep) {
         const step = Math.min(integrationStep, boundedSeconds - second);
-        const pvPower = realisticDemoScenario(second + step / 2).values.get(385);
+        const pvPower = realisticDemoScenario(second + step / 2).pvPower;
         generatedKwh += Math.max(0, Number(pvPower) || 0)
           * step * simulatedSecondsPerDemoSecond / 3_600_000;
       }
@@ -2044,6 +2113,30 @@ WEB_DASHBOARD = r"""<!doctype html>
         2: 'Ймовірно робота інвертора від батареї або PV',
         3: 'Ймовірно заряджання або активна робота'
       })[statusCode] || 'Очікування або невідомий стан';
+    }
+
+    function applyDemoEnergyFrame(scenario) {
+      demoFlowCase = scenario.caseKey;
+      demoGeneratorPower = scenario.generatorPower;
+      demoPvVoltage = scenario.pvVoltage;
+      demoPvPower = scenario.pvPower;
+      demoRegisterRows = lastData ? lastData.registers.map(register => {
+        const value = scenario.values.get(register.register);
+        if (!Number.isFinite(value)) return register;
+        const display = register.register === 157
+          ? demoStatusText(scenario.statusCode)
+          : demoDisplayValue(value, Number(register.scale) || 1);
+        return {
+          ...register,
+          display,
+          raw: demoRawValue(register, value),
+          available: true
+        };
+      }) : [];
+      if (lastData) {
+        renderEnergyFlow(lastData, demoRegisterRows);
+        renderLcd(lastData, demoRegisterRows);
+      }
     }
 
     function trimChartHistory(history, currentTime) {
@@ -2080,7 +2173,9 @@ WEB_DASHBOARD = r"""<!doctype html>
       });
       chartDemoRunning = true;
       chartDemoCancelRequested = false;
+      document.documentElement.classList.add('demo-energy-flow');
       demoKeys.forEach(key => chartHistory.set(key, []));
+      applyDemoEnergyFrame(realisticDemoScenario(0));
       if (lastData) render(lastData);
       drawAllCharts();
 
@@ -2103,8 +2198,7 @@ WEB_DASHBOARD = r"""<!doctype html>
             (now - demoStartedAt) / 1000
           );
           const scenario = realisticDemoScenario(elapsedSeconds);
-          demoFlowCase = scenario.caseKey;
-          demoGeneratorPower = scenario.generatorPower;
+          applyDemoEnergyFrame(scenario);
           registerKeys.forEach(key => {
             const item = chartDefinitions.get(key);
             if (!item) return;
@@ -2129,19 +2223,6 @@ WEB_DASHBOARD = r"""<!doctype html>
             trimChartHistory(history, now);
             chartHistory.set(key, history);
           });
-          demoRegisterRows = lastData ? lastData.registers.map(register => {
-            const value = scenario.values.get(register.register);
-            if (!Number.isFinite(value)) return register;
-            const display = register.register === 157
-              ? demoStatusText(scenario.statusCode)
-              : demoDisplayValue(value, Number(register.scale) || 1);
-            return {
-              ...register,
-              display,
-              raw: demoRawValue(register, value),
-              available: true
-            };
-          }) : [];
           const elapsed = Math.min(
             chartWindowSeconds,
             Math.floor((now - demoStartedAt) / 1000)
@@ -2163,9 +2244,12 @@ WEB_DASHBOARD = r"""<!doctype html>
       } finally {
         chartDemoRunning = false;
         chartDemoCancelRequested = false;
+        document.documentElement.classList.remove('demo-energy-flow');
         demoRegisterRows = null;
         demoFlowCase = '';
         demoGeneratorPower = 0;
+        demoPvVoltage = 0;
+        demoPvPower = 0;
         setButtonState(t('runDemo'));
         if (lastData) {
           recordChartSamples(lastData);
@@ -2521,109 +2605,137 @@ WEB_DASHBOARD = r"""<!doctype html>
         const numbers = actualNumbers.length ? actualNumbers : fallbackNumbers;
         return [...new Set(numbers)].map(number => `R${number}`).join(' · ') || '—';
       };
-      const modeDetails = (source, modes) => {
-        const raw = Number(source?.raw);
-        if (!source?.available || !Number.isFinite(raw) || raw === 65535) return null;
-        return modes[raw] || {label: `#${raw}`, description: ''};
-      };
       const reading = (value, unit, digits = 0) =>
         Number.isFinite(value) ? `${Number(value.toFixed(digits))} ${unit}` : t('noData');
+      const modeDetails = (source, modes) => {
+        const raw = Number(source?.raw);
+        if (!source?.available || !Number.isFinite(raw) || raw === 65535) {
+          return {label: '—', description: ''};
+        }
+        return modes[raw] || {label: `#${raw}`, description: ''};
+      };
       const setText = (selector, value) => {
         const element = document.querySelector(selector);
         if (element && element.textContent !== value) element.textContent = value;
       };
-      const setMode = (selector, definitionSelector, source, modes, categoryKey) => {
+      const setModeText = (selector, definitionSelector, mode) => {
+        const description = mode.description ? t(mode.description) : '';
+        setText(selector, mode.label);
+        setText(definitionSelector, description);
         const element = document.querySelector(selector);
-        if (!element) return;
-        const mode = modeDetails(source, modes);
-        const description = mode?.description ? t(mode.description) : '';
-        element.textContent = mode?.label || '—';
-        element.title = description;
-        element.setAttribute(
-          'aria-label',
-          mode ? `${t(categoryKey)}: ${mode.label}. ${description}` : `${t(categoryKey)}: ${t('noData')}`
-        );
-        const definition = document.querySelector(definitionSelector);
-        if (definition) definition.textContent = mode ? `${mode.label} — ${description}` : t('noData');
+        if (element) element.title = description;
       };
       const setNode = (selector, enabled) =>
         document.querySelector(selector)?.classList.toggle('active', Boolean(enabled));
       const setFlow = (selector, enabled, reverse, watts) => {
         const connector = document.querySelector(selector);
         if (!connector) return;
-        connector.classList.toggle('active', Boolean(enabled));
-        connector.classList.toggle('reverse', Boolean(reverse));
-        const strength = Number.isFinite(watts) ? Math.abs(watts) : 0;
-        const duration = Math.max(.55, Math.min(2.2, 2.2 - strength / 5000 * 1.5));
-        connector.style.setProperty('--flow-duration', `${duration.toFixed(2)}s`);
+        const now = performance.now();
+        const previous = flowAnimationStates.get(selector) || {
+          active: false,
+          reverse: false,
+          lastConfirmedAt: 0
+        };
+        const confirmedActive = Boolean(enabled);
+        const selectedRate = Number(document.querySelector('#poll-rate')?.value);
+        const holdMilliseconds = Math.max(750, (requestIntervals[selectedRate] ?? 2000) * 1.25);
+        const temporarilyMissing = !confirmedActive && !Number.isFinite(watts);
+        const active = confirmedActive || (
+          temporarilyMissing
+          && previous.active
+          && now - previous.lastConfirmedAt <= holdMilliseconds
+        );
+        const directionReversed = confirmedActive ? Boolean(reverse) : previous.reverse;
+
+        // Set the speed only when a flow starts. Updating animation-duration on
+        // every Modbus cycle restarts the CSS animation and causes visible flicker.
+        if (active && !previous.active) {
+          const strength = Number.isFinite(watts) ? Math.abs(watts) : 0;
+          const duration = Math.max(.55, Math.min(2.2, 2.2 - strength / 5000 * 1.5));
+          connector.style.setProperty('--flow-duration', `${duration.toFixed(2)}s`);
+        }
+        if (connector.classList.contains('active') !== active) {
+          connector.classList.toggle('active', active);
+        }
+        if (connector.classList.contains('reverse') !== directionReversed) {
+          connector.classList.toggle('reverse', directionReversed);
+        }
+        flowAnimationStates.set(selector, {
+          active,
+          reverse: directionReversed,
+          lastConfirmedAt: confirmedActive ? now : previous.lastConfirmedAt
+        });
       };
 
       const gridVoltageSource = firstRegister([89]);
       const gridCurrentSource = firstRegister([160]);
       const gridPowerSource = firstRegister([166]);
-      const gridModeSource = firstRegister([401]);
-      const pvVoltageSource = firstRegister([144]);
-      const pvPowerSource = firstRegister([145]);
-      const loadPowerSource = chartDemoRunning ? firstRegister([386]) : firstRegister([92]);
+      const gridModeSource = firstRegister([157]);
+      // No live PV voltage or power register is confirmed in the supplied map.
+      const pvVoltageSource = null;
+      const pvPowerSource = null;
+      const loadPowerSource = firstRegister([92]);
       const loadApparentPowerSource = firstRegister([93]);
-      const homeVoltageSource = firstRegister([89]);
+      const inverterLoadSource = firstRegister([94]);
+      const outputCurrentSource = firstRegister([90]);
       const batteryVoltageSource = firstRegister([129, 137, 404, 342]);
       const batteryCurrentSource = firstRegister([130]);
       const batterySocSource = firstRegister([133, 139, 407, 339]);
       const batteryPowerSource = firstRegister([134]);
-      const inverterOutputModeSource = firstRegister([16644]);
-      const inverterInputModeSource = firstRegister([16643]);
+      const inverterPrioritySource = firstRegister([16643]);
+      const inverterAcModeSource = firstRegister([16644]);
       const inverterChargeModeSource = firstRegister([16645]);
       const gridVoltage = gridVoltageSource ? numericValue(gridVoltageSource.display) : null;
       const measuredGridCurrent = gridCurrentSource ? numericValue(gridCurrentSource.display) : null;
       const measuredGridPower = gridPowerSource ? numericValue(gridPowerSource.display) : null;
-      const pvVoltage = pvVoltageSource ? numericValue(pvVoltageSource.display) : null;
-      const pvPower = pvPowerSource ? numericValue(pvPowerSource.display) : null;
+      const pvVoltage = chartDemoRunning && Number.isFinite(demoPvVoltage) ? demoPvVoltage : null;
+      const pvPower = chartDemoRunning && Number.isFinite(demoPvPower) ? demoPvPower : null;
       const pvCurrent = Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .1 && Number.isFinite(pvPower)
         ? Math.abs(pvPower / pvVoltage)
         : null;
       const loadPowerReading = loadPowerSource ? numericValue(loadPowerSource.display) : null;
       const measuredLoadPower = Number.isFinite(loadPowerReading) ? loadPowerReading : null;
       const loadApparentPower = loadApparentPowerSource ? numericValue(loadApparentPowerSource.display) : null;
-      const homeVoltageReading = homeVoltageSource ? numericValue(homeVoltageSource.display) : null;
-      const homeVoltage = Number.isFinite(homeVoltageReading) ? Math.abs(homeVoltageReading) : null;
+      const inverterLoad = inverterLoadSource ? numericValue(inverterLoadSource.display) : null;
+      const outputCurrent = outputCurrentSource ? numericValue(outputCurrentSource.display) : null;
       const batteryVoltage = batteryVoltageSource ? numericValue(batteryVoltageSource.display) : null;
       const batteryCurrentReading = batteryCurrentSource ? numericValue(batteryCurrentSource.display) : null;
       const batteryCurrent = Number.isFinite(batteryCurrentReading) ? batteryCurrentReading : null;
       const batterySoc = batterySocSource ? numericValue(batterySocSource.display) : null;
       const batteryPowerReading = batteryPowerSource ? numericValue(batteryPowerSource.display) : null;
+      const calculatedBatteryPower = Number.isFinite(batteryVoltage) && Number.isFinite(batteryCurrent)
+        ? batteryVoltage * batteryCurrent
+        : null;
+      // R130 defines direction: positive charge, negative discharge. R134 supplies
+      // the preferred magnitude so both battery values always use the same sign.
       const batteryPower = Number.isFinite(batteryPowerReading)
-        ? batteryPowerReading
-        : Number.isFinite(batteryVoltage) && Number.isFinite(batteryCurrent)
-          ? batteryVoltage * batteryCurrent
-          : null;
+        ? Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3
+          ? Math.sign(batteryCurrent) * Math.abs(batteryPowerReading)
+          : batteryPowerReading
+        : calculatedBatteryPower;
       const batteryActive = (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3)
         || (Number.isFinite(batteryPower) && Math.abs(batteryPower) > 20);
-      // Battery sign convention: positive charges, negative discharges.
-      const batteryCharging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower > 0 : batteryCurrent > 0);
-      const batteryDischarging = batteryActive && (Number.isFinite(batteryPower) ? batteryPower < 0 : batteryCurrent < 0);
-      // R144 can contain a small induced voltage with no panels; R145 confirms real PV production.
+      const batteryCharging = batteryActive && (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3
+        ? batteryCurrent > 0
+        : batteryPower > 0);
+      const batteryDischarging = batteryActive && (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3
+        ? batteryCurrent < 0
+        : batteryPower < 0);
       const pvActive = Number.isFinite(pvPower) && pvPower > 20;
       const solarDataVisible = pvActive;
       const pvReceiving = false;
-      const gridLineMode = Number(gridModeSource?.raw) === 2;
-      const directGridActive = (Number.isFinite(measuredGridPower) && measuredGridPower > 20)
-        || (Number.isFinite(measuredGridCurrent) && measuredGridCurrent > .05);
-      // R401=2 is Line Mode; non-zero direct R166/R160 measurements independently prove grid input.
-      const gridAvailable = gridLineMode || directGridActive || (!gridModeSource && batteryCharging);
+      const gridVoltagePresent = Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .5;
+      // R89 is the physical grid-presence signal for every dashboard view.
+      const gridAvailable = gridVoltagePresent;
       const loadPower = Number.isFinite(measuredLoadPower) ? Math.max(0, measuredLoadPower) : null;
-      const homeCurrent = Number.isFinite(loadApparentPower)
-        && Number.isFinite(homeVoltage) && homeVoltage > .1
-        ? Math.abs(loadApparentPower / homeVoltage)
-        : Number.isFinite(loadPower) && Number.isFinite(homeVoltage) && homeVoltage > .1
-          ? loadPower / homeVoltage
-          : null;
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const calculatedGridPower = chartDemoRunning
-        ? Number.isFinite(pvPower) && Number.isFinite(loadPower)
+        ? gridAvailable && Number.isFinite(pvPower) && Number.isFinite(loadPower)
           ? loadPower + batteryChargePower - pvPower - batteryDischargePower
-          : null
+          : gridAvailable ? null : 0
+        : gridAvailable && batteryCharging && Number.isFinite(loadPower)
+          ? loadPower + batteryChargePower
         : gridAvailable && Number.isFinite(measuredGridPower)
           ? Math.abs(measuredGridPower)
           : gridAvailable && Number.isFinite(loadPower)
@@ -2647,33 +2759,61 @@ WEB_DASHBOARD = r"""<!doctype html>
       const batteryPowerSources = batteryPowerSource
         ? [batteryPowerSource]
         : [batteryVoltageSource, batteryCurrentSource];
-      const gridRegisterSources = Number.isFinite(gridPower)
+      const gridRegisterSources = gridAvailable && batteryCharging && Number.isFinite(loadPower)
+        ? [loadPowerSource, batteryPowerSources, gridVoltageSource, gridModeSource]
+        : Number.isFinite(gridPower)
         ? [gridPowerSource, gridCurrentSource, gridVoltageSource, gridModeSource]
         : gridAvailable ? [gridModeSource, gridVoltageSource] : [gridModeSource];
 
       const homeActive = Number.isFinite(loadPower) && loadPower > 20;
       const gridFlowActive = gridAvailable && Number.isFinite(gridPower) && gridPower > 20;
+      const displayedGridVoltage = gridAvailable && Number.isFinite(gridVoltage)
+        ? Math.abs(gridVoltage)
+        : 0;
+      // R89 is AC grid voltage. Battery and PV voltages are DC and must never be
+      // presented as Home AC voltage when the grid is disconnected.
+      const displayedHouseVoltage = gridVoltagePresent ? Math.abs(gridVoltage) : null;
+      const displayedGridPower = gridAvailable && Number.isFinite(gridPower) ? Math.abs(gridPower) : 0;
+      const displayedGridCurrent = gridAvailable && Number.isFinite(gridCurrent) ? Math.abs(gridCurrent) : 0;
       const inverterActive = chartDemoRunning || data.online || pvActive || homeActive || batteryActive;
+      const inverterAcMode = modeDetails(inverterAcModeSource, {
+        0: {label: 'APP', description: 'modeAppShort'},
+        1: {label: 'UPS', description: 'modeUpsShort'},
+        2: {label: 'GEN', description: 'modeGenShort'}
+      });
+      const inverterInputMode = !inverterActive
+        ? {label: '—', description: ''}
+        : gridAvailable
+          ? {label: t('grid'), description: 'modeGridInputShort'}
+          : (Number(inverterPrioritySource?.raw) === 1
+            || (Number(inverterPrioritySource?.raw) === 2 && !batteryDischarging)
+            || pvActive)
+            ? {label: t('solarPanels'), description: 'modeSolarShort'}
+            : {label: t('battery'), description: 'modeBatteryInputShort'};
+      const inverterBatteryMode = modeDetails(inverterChargeModeSource, {
+        0: {label: 'PNG', description: 'modePngShort'},
+        1: {label: 'OPV', description: 'modeOpvShort'},
+        2: {label: 'PVF', description: 'modePvfShort'}
+      });
 
       setText('#energy-flow-status', chartDemoRunning
         ? t(demoFlowCase || 'demoMode')
         : data.online ? t('online') : t('offline'));
-      setText('#energy-solar-registers', solarDataVisible
-        ? registerText([pvVoltageSource, pvPowerSource], [144, 145])
-        : '—');
+      setText('#energy-solar-registers', solarDataVisible && chartDemoRunning ? t('demoMode') : '—');
       setText('#energy-inverter-registers', registerText(
-        [inverterOutputModeSource, inverterInputModeSource, inverterChargeModeSource],
-        [16644, 16643, 16645]
+        [loadApparentPowerSource, inverterAcModeSource, gridVoltageSource, gridModeSource,
+          inverterPrioritySource, inverterChargeModeSource],
+        [93, 16644, 89, 157, 16643, 16645]
       ));
       setText('#energy-home-registers', registerText(
-        [loadPowerSource, loadApparentPowerSource, homeVoltageSource],
-        [92, 93, 89]
+        [outputCurrentSource, loadPowerSource, gridVoltageSource, inverterLoadSource],
+        [90, 92, 89, 94]
       ));
       setText('#energy-battery-registers', registerText(
         [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource],
         [129, 130, 134, 133]
       ));
-      setText('#energy-grid-registers', registerText(gridRegisterSources, [166, 160, 89, 401]));
+      setText('#energy-grid-registers', registerText(gridRegisterSources, [166, 160, 89, 157]));
       setText('#energy-generator-registers', generatorActive ? t('demoMode') : '—');
       setText('#energy-solar-voltage', Number.isFinite(pvVoltage) ? reading(Math.abs(pvVoltage), 'V', 1) : '— V');
       setText('#energy-solar-power', Number.isFinite(pvPower) ? reading(Math.abs(pvPower), 'W') : '— W');
@@ -2685,51 +2825,28 @@ WEB_DASHBOARD = r"""<!doctype html>
         : pvActive
           ? pvReceiving ? t('receiving') : t('supplying')
           : t('batteryIdle'));
-      setMode('#energy-inverter-output-mode', '#energy-inverter-output-definition',
-        inverterOutputModeSource,
-        [
-          {label: 'APP', description: 'modeAppDescription'},
-          {label: 'UPS', description: 'modeUpsDescription'},
-          {label: 'GEN', description: 'modeGenDescription'}
-        ],
-        'outputMode'
-      );
-      setMode('#energy-inverter-input-mode', '#energy-inverter-input-definition',
-        inverterInputModeSource,
-        [
-          {label: 'Grid', description: 'modeGridDescription'},
-          {label: 'Solar', description: 'modeSolarDescription'},
-          {label: 'PBG', description: 'modePbgDescription'},
-          {label: 'MKS', description: 'modeMksDescription'}
-        ],
-        'inputMode'
-      );
-      setMode('#energy-inverter-charge-mode', '#energy-inverter-charge-definition',
-        inverterChargeModeSource,
-        [
-          {label: 'PNG', description: 'modePngDescription'},
-          {label: 'OPV', description: 'modeOpvDescription'},
-          {label: 'PVF', description: 'modePvfDescription'}
-        ],
-        'chargeMode'
-      );
       setText('#energy-generator-power', generatorActive ? reading(generatorPower, 'W') : '— W');
       setText('#energy-generator-current', generatorActive ? reading(generatorCurrent, 'A', 1) : '— A');
       setText('#energy-generator-voltage', generatorActive ? reading(generatorVoltage, 'V', 1) : '— V');
       const generatorValues = document.querySelector('.energy-generator-values');
       if (generatorValues) generatorValues.hidden = !generatorActive;
       setText('#energy-generator-direction', generatorActive ? t('supplying') : t('notConnected'));
-      setText('#energy-home-current', Number.isFinite(homeCurrent) ? reading(homeCurrent, 'A', 2) : '— A');
-      setText('#energy-home-voltage', Number.isFinite(homeVoltage) ? reading(homeVoltage, 'V', 1) : '— V');
+      setText('#energy-inverter-apparent-power', Number.isFinite(loadApparentPower) ? reading(loadApparentPower, 'VA') : '— VA');
+      setModeText('#energy-inverter-ac-mode', '#energy-inverter-ac-definition', inverterAcMode);
+      setModeText('#energy-inverter-input-mode', '#energy-inverter-input-definition', inverterInputMode);
+      setModeText('#energy-inverter-charge-mode', '#energy-inverter-charge-definition', inverterBatteryMode);
+      setText('#energy-home-current', Number.isFinite(outputCurrent) ? reading(Math.abs(outputCurrent), 'A', 2) : '— A');
+      setText('#energy-home-voltage', Number.isFinite(displayedHouseVoltage)
+        ? reading(displayedHouseVoltage, 'V', 1)
+        : '— V');
+      setText('#energy-home-load', Number.isFinite(inverterLoad) ? reading(inverterLoad, '%', 1) : '— %');
       setText('#energy-home-power', Number.isFinite(loadPower) ? reading(loadPower, 'W') : '— W');
       setText('#energy-home-direction', homeActive ? t('consuming') : t('batteryIdle'));
-      setText('#energy-grid-power', Number.isFinite(gridPower) ? reading(Math.abs(gridPower), 'W') : '— W');
-      setText('#energy-grid-current', Number.isFinite(gridCurrent) ? reading(gridCurrent, 'A', 2) : '— A');
-      setText('#energy-grid-voltage', gridAvailable && Number.isFinite(gridVoltage)
-        ? reading(Math.abs(gridVoltage), 'V', 1)
-        : '— V');
+      setText('#energy-grid-power', reading(displayedGridPower, 'W'));
+      setText('#energy-grid-current', reading(displayedGridCurrent, 'A', 2));
+      setText('#energy-grid-voltage', reading(displayedGridVoltage, 'V', 1));
       setText('#energy-grid-direction', gridFlowActive
-        ? t('importing')
+        ? t('gridSupplying')
         : gridAvailable ? t('gridReady') : t('offline'));
       setText('#energy-battery-current', Number.isFinite(batteryCurrent) ? reading(batteryCurrent, 'A', 1) : '— A');
       setText('#energy-battery-power', Number.isFinite(batteryPower) ? reading(batteryPower, 'W') : '— W');
@@ -2781,11 +2898,6 @@ WEB_DASHBOARD = r"""<!doctype html>
         const register = firstRegister(numbers);
         return register ? numericValue(register.display) : null;
       };
-      const rawValue = (numbers, scale = 1) => {
-        const register = firstRegister(numbers);
-        const raw = Number(register?.raw);
-        return Number.isFinite(raw) && raw !== 65535 ? raw * scale : null;
-      };
       const textValue = numbers => {
         const register = firstRegister(numbers);
         return register ? localizeDataText(register.display) : t('noData');
@@ -2797,42 +2909,73 @@ WEB_DASHBOARD = r"""<!doctype html>
         if (element) element.textContent = value;
       };
 
-      const gridVoltage = chartDemoRunning ? numberValue([89]) : null;
+      const gridVoltage = numberValue([89]);
+      const gridCurrent = numberValue([160]);
+      const measuredGridPower = numberValue([166]);
       const frequency = numberValue([91]);
-      const pvVoltage = chartDemoRunning ? numberValue([341]) : null;
-      const batteryVoltage = numberValue([137]);
-      const lcdBatteryCurrentSource = firstRegister([130, 138, 405, 343, 344]);
-      const lcdBatteryCurrentReading = lcdBatteryCurrentSource
-        ? numericValue(lcdBatteryCurrentSource.display)
-        : null;
-      const batteryCurrent = Number.isFinite(lcdBatteryCurrentReading)
-        ? lcdBatteryCurrentSource.register === 130 ? lcdBatteryCurrentReading : -lcdBatteryCurrentReading
-        : null;
+      const outputCurrent = numberValue([90]);
+      const inverterLoad = numberValue([94]);
+      const gridLowVoltageThreshold = numberValue([158]);
+      const loadPower = numberValue([92]);
+      const apparentLoadPower = numberValue([93]);
+      const batteryVoltage = numberValue([129, 137, 404, 342]);
+      const batteryCurrent = numberValue([130]);
       const batterySoc = numberValue([133, 139, 407, 339]);
+      const batteryPowerReading = numberValue([134]);
       const batteryTemperature = numberValue([140, 406]);
-      const inverterTemperature = numberValue([92]);
       const maximumChargeVoltage = numberValue([141, 411, 376, 377]);
       const currentLimit = numberValue([412, 378, 379]);
-      const loadPercent = numberValue([94]);
-      const power = numberValue([134]);
+      const lowSocThreshold = numberValue([415]);
       const statusText = textValue([157]);
-      const batteryState = !Number.isFinite(batteryCurrent) || Math.abs(batteryCurrent) < .3
+      const calculatedBatteryPower = Number.isFinite(batteryVoltage) && Number.isFinite(batteryCurrent)
+        ? batteryVoltage * batteryCurrent
+        : null;
+      const batteryPower = Number.isFinite(batteryPowerReading)
+        ? Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3
+          ? Math.sign(batteryCurrent) * Math.abs(batteryPowerReading)
+          : batteryPowerReading
+        : calculatedBatteryPower;
+      const batteryDirectionFromCurrent = Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3;
+      const batteryActiveValue = batteryDirectionFromCurrent
+        ? batteryCurrent
+        : batteryPower;
+      const batteryActivityThreshold = batteryDirectionFromCurrent ? .3 : 20;
+      const batteryState = !Number.isFinite(batteryActiveValue) || Math.abs(batteryActiveValue) < batteryActivityThreshold
         ? t('batteryIdle')
-        : batteryCurrent < 0 ? t('charging') : t('discharging');
+        : batteryActiveValue > 0 ? t('charging') : t('discharging');
+      const batteryCharging = Number.isFinite(batteryActiveValue) && batteryActiveValue > batteryActivityThreshold;
+      const lcdGridVoltagePresent = Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .5;
+      const gridConnected = lcdGridVoltagePresent;
+      const displayedGridVoltage = gridConnected && Number.isFinite(gridVoltage) ? gridVoltage : 0;
+      const displayedGridCurrent = gridConnected && Number.isFinite(gridCurrent) ? gridCurrent : 0;
+      const displayedGridFrequency = gridConnected && Number.isFinite(frequency) ? frequency : 0;
+      const gridPower = !gridConnected
+        ? 0
+        : batteryCharging && Number.isFinite(loadPower)
+          ? loadPower + Math.abs(batteryPower || 0)
+          : measuredGridPower;
 
       setText('#lcd-mode', chartDemoRunning ? t('demoMode') : data.online ? t('online') : t('offline'));
-      setText('#lcd-grid', reading(gridVoltage, 'V'));
-      setText('#lcd-frequency', reading(frequency, 'Hz', 2));
-      setText('#lcd-pv', reading(pvVoltage, 'V', 2));
+      setText('#lcd-grid', reading(gridPower, 'W', 0));
+      setText('#lcd-grid-voltage', reading(displayedGridVoltage, 'V'));
+      setText('#lcd-grid-current', reading(displayedGridCurrent, 'A', 2));
+      setText('#lcd-grid-power', reading(gridPower, 'W', 0));
+      setText('#lcd-frequency', reading(displayedGridFrequency, 'Hz', 2));
+      setText('#lcd-ac-output-current', reading(outputCurrent, 'A', 2));
+      setText('#lcd-inverter-load', reading(inverterLoad, '%', 1));
+      setText('#lcd-load-power', reading(loadPower, 'W', 0));
+      setText('#lcd-apparent-load-power', reading(apparentLoadPower, 'VA', 0));
+      setText('#lcd-grid-low-voltage-threshold', reading(gridLowVoltageThreshold, 'V', 0));
       setText('#lcd-battery-voltage', reading(batteryVoltage, 'V'));
       setText('#lcd-battery-current', reading(batteryCurrent, 'A'));
+      setText('#lcd-battery-power', reading(batteryPower, 'W', 0));
       setText('#lcd-soc', reading(batterySoc, '%', 0));
       setText('#lcd-temperature', reading(batteryTemperature, '°C'));
-      setText('#lcd-inverter-temperature', reading(inverterTemperature, '°C'));
       setText('#lcd-charge-voltage', reading(maximumChargeVoltage, 'V'));
       setText('#lcd-current-limit', reading(currentLimit, 'A'));
-      setText('#lcd-load', reading(loadPercent, '%', 0));
-      setText('#lcd-power', reading(power, 'W', 0));
+      setText('#lcd-low-soc-threshold', reading(lowSocThreshold, '%', 0));
+      setText('#lcd-load', reading(loadPower, 'W', 0));
+      setText('#lcd-power', reading(apparentLoadPower, 'VA', 0));
       setText('#lcd-battery-state', batteryState);
       setText('#lcd-system-status', statusText);
       setText('#lcd-status-line', `${data.identifier || t('unknownDevice')} · ${t('updated', {time: data.updated_at})}`);
@@ -2841,7 +2984,7 @@ WEB_DASHBOARD = r"""<!doctype html>
         {
           code: 'LCD', title: t('mainDisplay'),
           label1: t('batteryVoltage'), value1: reading(batteryVoltage, 'V'),
-          label2: t('pvInput'), value2: reading(pvVoltage, 'V', 2), help: t('lcdMainPageHelp')
+          label2: t('acOutputCurrent'), value2: reading(outputCurrent, 'A', 2), help: t('lcdMainPageHelp')
         },
         {
           code: 'P1', title: t('dailyPvEnergy'),
@@ -2864,29 +3007,29 @@ WEB_DASHBOARD = r"""<!doctype html>
           label2: t('batterySoc'), value2: reading(batterySoc, '%', 0), help: t('lcdP4Help')
         },
         {
-          code: 'P5', title: t('ratedCapacity'),
-          label1: t('ratedCapacity'), value1: reading(rawValue([408]), 'Ah', 0),
-          label2: t('remainingCapacity'), value2: reading(rawValue([409], .1), 'Ah'), help: t('lcdP5Help')
+          code: 'P5', title: t('availableCapacity'),
+          label1: t('availableCapacity'), value1: reading(numberValue([413]), 'Ah'),
+          label2: t('possibleBatteryHealth'), value2: reading(numberValue([408]), '%', 0), help: t('lcdP5Help')
         },
         {
           code: 'P6', title: t('maxChargeVoltage'),
           label1: t('maxChargeVoltage'), value1: reading(maximumChargeVoltage, 'V'),
-          label2: t('minDischargeVoltage'), value2: reading(numberValue([410, 142]), 'V'), help: t('lcdP6Help')
+          label2: t('lowerBmsVoltageLimit'), value2: reading(numberValue([346, 349]), 'V'), help: t('lcdP6Help')
         },
         {
           code: 'P7', title: t('currentLimit'),
-          label1: t('maxChargeCurrent'), value1: reading(currentLimit, 'A'),
-          label2: t('maxDischargeCurrent'), value2: reading(rawValue([413], .1), 'A'), help: t('lcdP7Help')
+          label1: t('currentLimit'), value1: reading(currentLimit, 'A'),
+          label2: t('lowSocThreshold'), value2: reading(lowSocThreshold, '%', 0), help: t('lcdP7Help')
         },
         {
           code: 'P8', title: t('alarmFault'),
-          label1: t('faultCode'), value1: t('noData'),
-          label2: t('alarmCode'), value2: t('noData'), help: t('lcdP8Help')
+          label1: t('bmsConnection'), value1: textValue([402]),
+          label2: t('alarmFlags'), value2: textValue([403]), help: t('lcdP8Help')
         },
         {
-          code: 'P9', title: t('firmwareVersion'),
-          label1: t('firmwareVersion'), value1: textValue([17]),
-          label2: t('systemStatus'), value2: textValue([18]), help: t('lcdP9Help')
+          code: 'P9', title: t('deviceInformation'),
+          label1: t('protocolVersion'), value1: textValue([17]),
+          label2: t('deviceConfiguration'), value2: textValue([18]), help: t('lcdP9Help')
         }
       ];
       const page = pages[lcdPageIndex] || pages[0];
@@ -2901,12 +3044,12 @@ WEB_DASHBOARD = r"""<!doctype html>
 
       const active = (selector, enabled) =>
         document.querySelector(selector)?.classList.toggle('active', Boolean(enabled));
-      active('#lcd-grid-node', Number.isFinite(gridVoltage) && gridVoltage > 40);
-      active('#lcd-grid-arrow', Number.isFinite(gridVoltage) && gridVoltage > 40);
+      active('#lcd-grid-node', gridConnected);
+      active('#lcd-grid-arrow', gridConnected && Number.isFinite(gridPower) && Math.abs(gridPower) > 20);
       active('#lcd-inverter-node', chartDemoRunning || data.online);
-      active('#lcd-load-node', Number.isFinite(loadPercent) && loadPercent > 0);
-      active('#lcd-load-arrow', Number.isFinite(loadPercent) && loadPercent > 0);
-      active('#lcd-pv-card', Number.isFinite(pvVoltage) && pvVoltage > 20);
+      active('#lcd-load-node', Number.isFinite(loadPower) && loadPower > 20);
+      active('#lcd-load-arrow', Number.isFinite(loadPower) && loadPower > 20);
+      active('#lcd-ac-output-card', Number.isFinite(outputCurrent) && outputCurrent > .05);
       active('#lcd-battery-card', Number.isFinite(batteryVoltage) && batteryVoltage > 20);
       active('#lcd-soc-card', Number.isFinite(batterySoc));
     }
@@ -3038,6 +3181,9 @@ WEB_DASHBOARD = r"""<!doctype html>
         button.setAttribute('aria-selected', String(active));
       });
       if (currentView === 'charts') requestAnimationFrame(drawAllCharts);
+      if (currentView === 'dashboard' && chartDemoRunning && lastData && demoRegisterRows) {
+        requestAnimationFrame(() => renderEnergyFlow(lastData, demoRegisterRows));
+      }
     }
 
     async function recordDemoLcdKey(key) {

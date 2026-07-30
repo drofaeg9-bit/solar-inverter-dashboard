@@ -25,9 +25,22 @@ def web_state() -> dict[str, Any]:
         snapshot = dict(state)
         values = dict(state["values"])
 
+    battery_current_value: float | None = None
+    if 130 in values:
+        battery_current_value = normalize(130, values[130])[3]
+
+    def battery_power_with_current_direction(value: float | None) -> float | None:
+        """Use positive charge and negative discharge consistently for R134."""
+        if value is None or battery_current_value is None or abs(battery_current_value) < 0.3:
+            return value
+        return abs(value) if battery_current_value > 0 else -abs(value)
+
     meters = []
     for register, fallbacks, label, minimum, maximum, unit in METER_DEFINITIONS:
         value, source = meter_value(values, register, fallbacks)
+        if register == 134:
+            value = battery_power_with_current_direction(value)
+        available = value is not None
         if value is None:
             value = 0.0
             source = "Немає даних mbpoll"
@@ -39,6 +52,7 @@ def web_state() -> dict[str, Any]:
             "unit": unit,
             "value": value,
             "source": source,
+            "available": available,
         })
 
     registers = []
@@ -51,7 +65,11 @@ def web_state() -> dict[str, Any]:
         if raw is None:
             display = "0"
         else:
-            name, display, unit, _, group = normalize(register, raw)
+            name, display, unit, normalized_value, group = normalize(register, raw)
+            if register == 134:
+                normalized_value = battery_power_with_current_direction(normalized_value)
+                if normalized_value is not None:
+                    display = str(int(normalized_value))
         registers.append({
             "register": register,
             "group": group,
