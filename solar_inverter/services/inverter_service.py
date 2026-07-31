@@ -153,24 +153,24 @@ KNOWN_REGISTERS = [
     16649, 16650, 16651, 16652, 16653, 16654, 16655, 16656,
 ]
 
+# Live operating values are read every cycle. Slow-changing metadata, settings,
+# duplicate channels, and diagnostics are distributed across cycles below so
+# fast mode does not spend most of its time starting mbpoll subprocesses.
 FAST_BLOCKS = [
-    (1, 10),
-    (17, 2),
-    (27, 2),
-    (58, 1),
     (65, 31),
     (129, 62),
     (321, 30),
-    (375, 14),
     (401, 19),
-    (433, 5),
-    (448, 8),
-    (529, 2),
-    (537, 9),
     (801, 2),
     (817, 6),
-    (16641, 16),
 ]
+
+FAST_AUXILIARY_BLOCK_GROUPS = [
+    [(1, 18), (27, 2), (58, 1)],
+    [(375, 14), (448, 8), (16641, 16)],
+    [(433, 5), (529, 2), (537, 9)],
+]
+fast_auxiliary_group_index = 0
 
 # Public R-numbers are one-based references. The inverter's Modbus PDU addresses
 # are zero-based, so R89 is protocol address 0x0058. Metadata below follows the
@@ -749,12 +749,17 @@ def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:
 
 
 def read_fast() -> tuple[dict[int, int], int, int, str | None]:
+    global fast_auxiliary_group_index
     values: dict[int, int] = {}
     failed = 0
     requests = 0
     last_error = None
+    auxiliary_blocks = FAST_AUXILIARY_BLOCK_GROUPS[fast_auxiliary_group_index]
+    fast_auxiliary_group_index = (
+        fast_auxiliary_group_index + 1
+    ) % len(FAST_AUXILIARY_BLOCK_GROUPS)
 
-    for start, count in FAST_BLOCKS:
+    for start, count in [*FAST_BLOCKS, *auxiliary_blocks]:
         block_values, error = run_mbpoll(start, count)
         requests += 1
 
@@ -763,16 +768,10 @@ def read_fast() -> tuple[dict[int, int], int, int, str | None]:
             continue
 
         last_error = error
-
-        for register in range(start, start + count):
-            one, one_error = run_mbpoll(register, 1)
-            requests += 1
-
-            if one:
-                values.update(one)
-            else:
-                failed += 1
-                last_error = one_error
+        failed += sum(
+            1 for register in KNOWN_REGISTERS
+            if start <= register < start + count
+        )
 
     return values, failed, requests, last_error
 

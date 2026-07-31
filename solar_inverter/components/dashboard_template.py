@@ -631,6 +631,41 @@ WEB_DASHBOARD = r"""<!doctype html>
       display: grid; place-items: center; min-height: 340px; color: var(--muted);
       border: 1px dashed rgba(148,163,184,.22); border-radius: 18px; text-align: center; padding: 24px;
     }
+    @media (min-width: 641px) {
+      .energy-solar,
+      .energy-grid,
+      .energy-generator { padding-inline: 8px }
+      .energy-solar .energy-node-icon,
+      .energy-grid .energy-node-image-icon,
+      .energy-generator .energy-node-image-icon {
+        inset: 0; z-index: 0; display: grid; place-items: center;
+        width: 100%; height: 100%; opacity: .18; filter: none;
+        -webkit-mask-position: center;
+        mask-position: center;
+        -webkit-mask-size: 100% 100%;
+        mask-size: 100% 100%;
+      }
+      .energy-solar .energy-node-icon { font-size: 112px }
+      .energy-solar .energy-node-register,
+      .energy-grid .energy-node-register,
+      .energy-generator .energy-node-register {
+        left: 8px; right: 8px; text-align: center;
+      }
+      .energy-solar .energy-node-value,
+      .energy-grid .energy-node-value,
+      .energy-generator .energy-node-value {
+        z-index: 1; left: 50%; width: calc(100% - 16px);
+        font-size: 16px; text-align: center;
+        text-shadow: 0 1px 3px var(--card-start), 0 0 5px var(--card-start);
+        transform: translate(-50%,-50%);
+      }
+      .energy-solar .flow-direction,
+      .energy-grid .flow-direction,
+      .energy-generator .flow-direction {
+        z-index: 1; left: 8px; right: 8px; text-align: center;
+        text-shadow: 0 1px 3px var(--card-start), 0 0 5px var(--card-start);
+      }
+    }
     @media (max-width: 1120px) {
       .gauges, .custom-value-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) }
       .charts-layout { grid-template-columns: 250px minmax(0, 1fr) }
@@ -729,7 +764,7 @@ WEB_DASHBOARD = r"""<!doctype html>
       .energy-battery-icon {
         font-size: 7px;
       }
-      .energy-battery-percent { padding-inline: 1px; overflow: hidden; font-size: 7px }
+      .energy-battery-percent { padding-inline: 1px; overflow: hidden; font-size: 24px }
       .energy-battery-values {
         max-width: none; gap: 3px;
         overflow: visible; font-size: 11.5px; line-height: 1.1;
