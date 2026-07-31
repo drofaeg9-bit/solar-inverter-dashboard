@@ -2,7 +2,7 @@
 
 This Android application displays the complete existing Solar Inverter Web dashboard, including live data, demo mode, charts, register logging and CSV downloads, settings, translations, and the LCD tab. The Python dashboard must remain running on a computer connected to the inverter; the phone connects to that computer over LAN, VPN, or Tailscale.
 
-Version 1.3 disables stale WebView caching, uses the responsive mobile energy-flow layout, and localizes the native connection/error interface in English, Russian, and Ukrainian. The dashboard itself continues to receive live register logic and translations from the server.
+Version 1.6 uses the refined responsive energy-flow cards, component-matched gauge colors, updated inverter and battery graphics, corrected flow states, and complete Ukrainian, Russian, and English dashboard translations.
 
 ## Install
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import os
 import sys
@@ -16,6 +17,8 @@ from .dashboard_template import WEB_DASHBOARD
 DASHBOARD_IMAGE_PATHS = {
     "/assets/generator.png": PROJECT_ROOT / "0ecd531c-3081-48cd-9fe7-2ad66dcc8425.png",
     "/assets/grid.png": PROJECT_ROOT / "1258380.png",
+    "/assets/inverter.svg": PROJECT_ROOT / "inverter.svg",
+    "/assets/home.svg": PROJECT_ROOT / "home.svg",
 }
 
 
@@ -38,6 +41,9 @@ def web_state() -> dict[str, Any]:
     meters = []
     for register, fallbacks, label, minimum, maximum, unit in METER_DEFINITIONS:
         value, source = meter_value(values, register, fallbacks)
+        metadata_override = register_override(register)
+        label = str(metadata_override.get("name", label))
+        unit = str(metadata_override.get("unit", unit))
         if register == 134:
             value = battery_power_with_current_direction(value)
         available = value is not None
@@ -59,11 +65,9 @@ def web_state() -> dict[str, Any]:
     all_registers = sorted(set(KNOWN_REGISTERS) | set(values))
     for register in all_registers:
         raw = values.get(register)
-        name, scale, unit, signed, group = REGISTER_CONFIG.get(
-            register, (f"Регістр {register}", 1.0, "", False, "Сире")
-        )
+        name, scale, unit, signed, group = register_metadata(register)
         if raw is None:
-            display = "0"
+            display = str(register_override(register).get("display", "0"))
         else:
             name, display, unit, normalized_value, group = normalize(register, raw)
             if register == 134:
@@ -99,6 +103,7 @@ def web_state() -> dict[str, Any]:
         "site_visits_date": datetime.now(MADRID_TIME_ZONE).strftime("%d.%m.%Y"),
         "solar_energy": solar_energy_summary(),
         "register_log": register_log_status(),
+        "register_map": register_map_status(),
         "meters": meters,
         "registers": registers,
     }
@@ -171,11 +176,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         request_path = self.path.split("?", 1)[0]
         if request_path in DASHBOARD_IMAGE_PATHS:
             try:
+                content_type = (
+                    "image/svg+xml"
+                    if DASHBOARD_IMAGE_PATHS[request_path].suffix.lower() == ".svg"
+                    else "image/png"
+                )
                 self.send_content(
-                    DASHBOARD_IMAGE_PATHS[request_path].read_bytes(), "image/png"
+                    DASHBOARD_IMAGE_PATHS[request_path].read_bytes(), content_type
                 )
             except OSError:
-                self.send_content(b"", "image/png", HTTPStatus.NOT_FOUND)
+                self.send_content(b"", content_type, HTTPStatus.NOT_FOUND)
             return
         if request_path in {"/favicon.png", "/favicon.ico"}:
             try:
@@ -258,6 +268,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def do_POST(self) -> None:
+        if self.path == "/api/register-map":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0:
+                    raise ValueError("CSV file is empty")
+                if length > REGISTER_MAP_MAX_BYTES:
+                    raise ValueError("CSV file is larger than 1 MiB")
+                result = replace_register_map(self.rfile.read(length))
+                body = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8")
+            except (ValueError, OSError, csv.Error) as error:
+                body = json.dumps({"error": str(error)}, ensure_ascii=False).encode("utf-8")
+                self.send_content(
+                    body, "application/json; charset=utf-8", HTTPStatus.BAD_REQUEST
+                )
+            return
+
         if self.path == "/api/register-log":
             try:
                 length = int(self.headers.get("Content-Length", "0"))

@@ -29,6 +29,8 @@ PAYLOAD_FILES = (
     "favicon.png",
     "0ecd531c-3081-48cd-9fe7-2ad66dcc8425.png",
     "1258380.png",
+    "inverter.svg",
+    "home.svg",
     "solar_inverter/__init__.py",
     "solar_inverter/components/__init__.py",
     "solar_inverter/components/web_dashboard.py",

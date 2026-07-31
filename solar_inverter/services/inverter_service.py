@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
+import math
 import os
 import re
 import shutil
@@ -36,6 +38,13 @@ STATS_DB_PATH = (
     if _legacy_stats_path.exists() and not _new_stats_path.exists()
     else _new_stats_path
 )
+_register_map_path_setting = os.environ.get("INVERTER_REGISTER_MAP")
+REGISTER_MAP_PATH = (
+    Path(_register_map_path_setting)
+    if _register_map_path_setting
+    else STATS_DB_PATH.with_name("register_map_overrides.csv")
+)
+REGISTER_MAP_MAX_BYTES = 1024 * 1024
 stats_lock = threading.Lock()
 stats_error = ""
 site_visit_total = 0
@@ -117,42 +126,55 @@ REGISTER_LOG_CSV_LABELS = {
 POLL_RATES = [0.5, 1.0, 2.0, 5.0, 10.0]
 
 KNOWN_REGISTERS = [
-    1, 2, 3, 4, 5, 6, 7, 8, 9,
-    10, 11, 12, 13, 14, 15, 16,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
     17, 18, 27, 28, 58,
-    65, 66, 67, 68, 69,
+    65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80,
+    81, 82, 83, 84,
+    85, 86, 87, 88,
     89, 90, 91, 92, 93, 94,
+    95,
     129, 130, 131, 132, 133, 134, 135, 136,
-    137, 138, 139, 140, 141, 142, 143, 144, 145,
+    137, 138, 139, 140, 141, 142, 143, 144, 145, 146,
     147, 148, 149, 150, 151, 152, 153, 154, 155, 156,
-    157, 158, 160, 166,
-    321, 324, 325, 337, 339,
+    157, 158, 159, 160, 161, 162, 163, 164, 165, 166,
+    167, 168, 169, 170, 171, 172, 173, 174, 175, 176,
+    177, 178, 179, 180, 181, 182, 183, 184, 185, 186,
+    187, 188, 189, 190,
+    321, 322, 323, 324, 325, 337, 339,
     341, 342, 343, 344, 345, 346, 349, 350,
-    376, 377, 378, 379, 383, 385, 386,
+    375, 376, 377, 378, 379, 383, 384, 385, 386,
     401, 402, 403, 404, 405, 406, 407, 408,
-    409, 410, 411, 412, 413, 414, 415, 416, 417,
-    449, 451, 453, 455,
-    16643, 16644, 16645,
+    409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419,
+    433, 434, 435, 436, 437,
+    448, 449, 450, 451, 452, 453, 454, 455,
+    529, 530, 537, 538, 539, 541, 542, 545,
+    801, 802, 817, 818, 819, 820, 821, 822, 823,
+    16641, 16642, 16643, 16644, 16645, 16646, 16647, 16648,
+    16649, 16650, 16651, 16652, 16653, 16654, 16655, 16656,
 ]
 
 FAST_BLOCKS = [
-    (1, 18),
+    (1, 10),
+    (17, 2),
     (27, 2),
     (58, 1),
-    (65, 5),
-    (89, 6),
-    (129, 30),
-    (160, 1),
-    (166, 1),
+    (65, 31),
+    (129, 62),
     (321, 30),
-    (376, 11),
-    (401, 17),
-    (449, 7),
-    (16643, 3),
+    (375, 14),
+    (401, 19),
+    (433, 5),
+    (448, 8),
+    (529, 2),
+    (537, 9),
+    (801, 2),
+    (817, 6),
+    (16641, 16),
 ]
 
-# Register metadata is based on observed values. Conservative names such as
-# "channel" and "parameter" indicate meanings not confirmed by a vendor map.
+# Public R-numbers are one-based references. The inverter's Modbus PDU addresses
+# are zero-based, so R89 is protocol address 0x0058. Metadata below follows the
+# TTN/JSD Solar external Modbus map V1.31 used by compatible inverter models.
 # name, scale, unit, signed, group
 REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     **{
@@ -163,145 +185,404 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
             False,
             "Ідентифікація",
         )
-        for register in range(1, 10)
+        for register in range(1, 11)
     },
-    **{
-        register: (
-            f"Канал вимірювання зовнішньої мережі {register}",
-            1.0,
-            "",
-            False,
-            "AC",
-        )
-        for register in range(10, 17)
-    },
-    17: ("Код протоколу або версії", 1.0, "", False, "Система"),
-    18: ("Код конфігурації пристрою", 1.0, "", False, "Система"),
-    27: ("Системне слово 27", 1.0, "", False, "Система"),
-    28: ("Системний прапорець 28", 1.0, "", False, "Система"),
-    58: ("Бітова маска можливостей або стану", 1.0, "", False, "Система"),
-    65: ("Системне слово 65", 1.0, "", False, "Система"),
-    66: ("Код конфігурації 66", 1.0, "", False, "Система"),
-    67: ("Код конфігурації 67", 1.0, "", False, "Система"),
-    68: ("Системне значення 68", 1.0, "", False, "Система"),
-    69: ("Упаковане знакове значення 69", 1.0, "", True, "Система"),
+    17: ("Версія протоколу, старше слово", 1.0, "", False, "Система"),
+    18: ("Версія протоколу, молодше слово", 1.0, "", False, "Система"),
+    27: ("Версія ПЗ плати керування, старше слово", 1.0, "", False, "Система"),
+    28: ("Версія ПЗ плати керування, молодше слово", 1.0, "", False, "Система"),
+    58: ("Ідентифікатор протоколу B", 1.0, "", False, "Система"),
+    65: ("Версія ПЗ", 1.0, "", False, "Система"),
+    66: ("Стан з’єднання BMS", 1.0, "", False, "BMS"),
+    67: ("Стан інвертора", 1.0, "", False, "Система"),
+    68: ("Стан енергетичних клем", 1.0, "", False, "Система"),
+    69: ("Стан потоку енергії", 1.0, "", False, "Система"),
+    70: ("Стан паралельної роботи", 1.0, "", False, "Система"),
+    71: ("Код несправності 1", 1.0, "", False, "Помилки"),
+    72: ("Код несправності 2", 1.0, "", False, "Помилки"),
+    73: ("Код попередження 1", 1.0, "", False, "Помилки"),
+    74: ("Код попередження 2", 1.0, "", False, "Помилки"),
+    75: ("Колір переднього RGB, старше слово", 1.0, "", False, "RGB"),
+    76: ("Колір переднього RGB, молодше слово", 1.0, "", False, "RGB"),
+    77: ("Режим переднього RGB", 1.0, "", False, "RGB"),
+    78: ("Колір фонового RGB, старше слово", 1.0, "", False, "RGB"),
+    79: ("Колір фонового RGB, молодше слово", 1.0, "", False, "RGB"),
+    80: ("Режим фонового RGB", 1.0, "", False, "RGB"),
 
-    89: ("Напруга зовнішньої мережі", 0.1, "V", False, "AC"),
+    81: ("Напруга мережі, фаза A", 0.1, "V", True, "AC"),
+    82: ("Струм мережі, фаза A", 0.01, "A", True, "AC"),
+    83: ("Частота мережі, фаза A", 0.01, "Hz", True, "AC"),
+    84: ("Потужність мережі, фаза A", 1.0, "W", True, "Потужність"),
+    85: ("Напруга генератора, фаза A", 0.1, "V", False, "Генератор"),
+    86: ("Струм генератора, фаза A", 0.01, "A", False, "Генератор"),
+    87: ("Частота генератора, фаза A", 0.01, "Hz", False, "Генератор"),
+    88: ("Потужність генератора, фаза A", 1.0, "W", False, "Генератор"),
+    89: ("Вихідна напруга навантаження, фаза A", 0.1, "V", True, "AC"),
     90: ("Вихідний струм AC", 0.01, "A", False, "AC"),
-    91: ("Частота зовнішньої мережі", 0.01, "Hz", False, "AC"),
-    92: ("Активна потужність навантаження", 1.0, "W", False, "Потужність"),
-    93: ("Повна потужність навантаження", 1.0, "VA", False, "Потужність"),
+    91: ("Вихідна частота AC", 0.01, "Hz", True, "AC"),
+    92: ("Активна потужність навантаження", 1.0, "W", True, "Потужність"),
+    93: ("Повна потужність навантаження", 1.0, "VA", True, "Потужність"),
     94: ("Завантаження інвертора", 0.1, "%", False, "AC"),
+    95: ("Навантаження мережі, фаза A", 1.0, "W", True, "Потужність"),
 
     129: ("Напруга акумулятора", 0.1, "V", False, "Батарея"),
     130: ("Струм акумулятора", 0.1, "A", True, "Батарея"),
-    133: ("SOC акумулятора", 1.0, "%", False, "Батарея"),
+    131: ("Напруга від’ємної клеми батареї", 0.1, "V", True, "Батарея"),
+    132: ("Струм від’ємної клеми батареї", 0.1, "A", True, "Батарея"),
+    133: ("SOC акумулятора", 0.1, "%", True, "Батарея"),
     134: ("Потужність акумулятора", 1.0, "W", True, "Потужність"),
-    **{
-        register: (
-            f"Канал потужності або струму сонячного трекера {register}",
-            1.0,
-            "",
-            False,
-            "PV",
-        )
-        for register in (131, 132, 135, 136)
-    },
+    135: ("Резерв", 1.0, "", False, "Батарея"),
+    136: ("Резерв", 1.0, "", False, "Батарея"),
 
     137: ("Напруга акумулятора від BMS", 0.1, "V", False, "BMS"),
     138: ("Струм акумулятора від BMS", 0.1, "A", True, "BMS"),
     139: ("SOC від BMS", 1.0, "%", False, "BMS"),
-    140: ("Температура акумулятора", 0.1, "°C", False, "Температура"),
-    141: ("Максимальна напруга заряду BMS", 0.1, "V", False, "BMS"),
-    142: ("Недоступне значення BMS 142", 1.0, "", False, "BMS"),
-    143: ("Недоступне значення BMS 143", 1.0, "", False, "BMS"),
-    144: ("Прапорці стану BMS", 1.0, "", False, "BMS"),
-    145: ("Непідтверджений параметр 145", 1.0, "", False, "Сире"),
+    140: ("Температура акумулятора BMS", 0.1, "°C", True, "Температура"),
+    141: ("Точка постійної напруги BMS", 0.1, "V", False, "BMS"),
+    142: ("Номінальна ємність BMS", 0.1, "Ah", False, "BMS"),
+    143: ("Поточна ємність BMS", 0.1, "Ah", False, "BMS"),
+    144: ("Стан зв’язку BMS", 1.0, "", False, "BMS"),
+    145: ("Стан мережі літієвої батареї", 1.0, "", False, "BMS"),
+    146: ("Код несправності BMS", 1.0, "", False, "BMS"),
+    147: ("Код попередження BMS", 1.0, "", False, "BMS"),
+    148: ("Резерв", 1.0, "", False, "BMS"),
+    149: ("Резерв", 1.0, "", False, "BMS"),
+    150: ("Резерв", 1.0, "", False, "BMS"),
+    151: ("Напруга PV1", 0.1, "V", True, "PV"),
+    152: ("Струм PV1", 0.01, "A", True, "PV"),
+    153: ("Потужність PV1", 1.0, "W", True, "PV"),
+    154: ("Напруга PV2", 0.1, "V", True, "PV"),
+    155: ("Струм PV2", 0.01, "A", True, "PV"),
+    156: ("Потужність PV2", 1.0, "W", True, "PV"),
+    157: ("Енергія PV за сьогодні", 0.1, "kWh", False, "PV"),
+    158: ("Загальна енергія PV", 0.1, "kWh", False, "PV"),
+    159: ("Струм заряджання від PV1", 0.1, "A", False, "PV"),
+    160: ("Струм заряджання від PV2", 0.1, "A", False, "PV"),
+    161: ("Загальна потужність PV", 1.0, "W", False, "PV"),
+    162: ("Енергія PV за місяць", 0.1, "kWh", False, "PV"),
+    163: ("Енергія PV за рік", 0.1, "kWh", False, "PV"),
+    164: ("Енергія заряджання за день", 0.1, "kWh", False, "Енергія"),
+    165: ("Енергія заряджання за місяць", 0.1, "kWh", False, "Енергія"),
+    166: ("Енергія заряджання за рік", 0.1, "kWh", False, "Енергія"),
+    167: ("Загальна енергія заряджання", 0.1, "kWh", False, "Енергія"),
+    168: ("Енергія розряджання за день", 0.1, "kWh", False, "Енергія"),
+    169: ("Енергія розряджання за місяць", 0.1, "kWh", False, "Енергія"),
+    170: ("Енергія розряджання за рік", 0.1, "kWh", False, "Енергія"),
+    171: ("Загальна енергія розряджання", 0.1, "kWh", False, "Енергія"),
+    172: ("Енергія інвертування за день", 0.1, "kWh", False, "Енергія"),
+    173: ("Енергія інвертування за місяць", 0.1, "kWh", False, "Енергія"),
+    174: ("Енергія інвертування за рік", 0.1, "kWh", False, "Енергія"),
+    175: ("Загальна енергія інвертування", 0.1, "kWh", False, "Енергія"),
+    176: ("Енергія навантаження за день", 0.1, "kWh", False, "Енергія"),
+    177: ("Енергія навантаження за місяць", 0.1, "kWh", False, "Енергія"),
+    178: ("Енергія навантаження за рік", 0.1, "kWh", False, "Енергія"),
+    179: ("Загальна енергія навантаження", 0.1, "kWh", False, "Енергія"),
+    180: ("Енергія віддачі в мережу за день", 0.1, "kWh", False, "Енергія"),
+    181: ("Енергія віддачі в мережу за місяць", 0.1, "kWh", False, "Енергія"),
+    182: ("Енергія віддачі в мережу за рік", 0.1, "kWh", False, "Енергія"),
+    183: ("Загальна енергія віддачі в мережу", 0.1, "kWh", False, "Енергія"),
+    184: ("Енергія споживання з мережі за день", 0.1, "kWh", False, "Енергія"),
+    185: ("Енергія споживання з мережі за місяць", 0.1, "kWh", False, "Енергія"),
+    186: ("Енергія споживання з мережі за рік", 0.1, "kWh", False, "Енергія"),
+    187: ("Загальна енергія споживання з мережі", 0.1, "kWh", False, "Енергія"),
+    188: ("Потужність навантаження на виході, фаза A", 1.0, "W", False, "Потужність"),
+    189: ("Потужність навантаження на виході, фаза B", 1.0, "W", False, "Потужність"),
+    190: ("Потужність навантаження на виході, фаза C", 1.0, "W", False, "Потужність"),
 
-    **{
-        register: (
-            f"Прапорець помилки або аварійного попередження {register}",
-            1.0,
-            "",
-            False,
-            "Система",
-        )
-        for register in range(147, 157)
-    },
+    321: ("Режим виходу", 1.0, "", False, "Режими"),
+    322: ("Паралельний режим", 1.0, "", False, "Режими"),
+    323: ("Пріоритет виходу", 1.0, "", False, "Режими"),
+    324: ("Пріоритет заряджання", 1.0, "", False, "Режими"),
+    325: ("Стан автомата інвертора", 1.0, "", False, "Режими"),
+    337: ("Тип батареї", 1.0, "", False, "Батарея"),
+    339: ("SOC батареї", 1.0, "%", True, "Батарея"),
+    341: ("Напруга позитивної DC-шини", 0.1, "V", True, "Батарея"),
+    342: ("Напруга позитивної клеми батареї", 0.1, "V", True, "Батарея"),
+    343: ("Струм розряджання батареї", 0.1, "A", True, "Батарея"),
+    344: ("Струм заряджання батареї", 0.1, "A", True, "Батарея"),
+    345: ("Поріг сигналізації перенапруги", 0.1, "V", True, "Батарея"),
+    346: ("Поріг сигналізації низької напруги", 0.1, "V", True, "Батарея"),
+    349: ("Напруга відсікання другого виходу", 0.1, "V", True, "Батарея"),
+    350: ("Час відсікання другого виходу", 1.0, "h", False, "Батарея"),
 
-    157: ("Робочий режим інвертора", 1.0, "", False, "Система"),
-    158: ("Нижній поріг вхідної напруги мережі", 1.0, "V", False, "Налаштування"),
-    160: ("Фактичний струм із мережі", 0.01, "A", False, "AC"),
-    166: ("Фактична потужність мережі", 1.0, "W", False, "Потужність"),
+    375: ("Стан заряджання", 1.0, "", False, "Заряджання"),
+    376: ("Напруга заряджання CV", 0.1, "V", True, "Заряджання"),
+    377: ("Напруга підтримувального заряджання", 0.1, "V", True, "Заряджання"),
+    378: ("Струм заряджання CV", 0.1, "A", True, "Заряджання"),
+    379: ("Струм підтримувального заряджання", 0.1, "A", True, "Заряджання"),
+    383: ("Напруга вирівнювального заряджання", 0.1, "V", True, "Заряджання"),
+    384: ("Час вирівнювального заряджання", 1.0, "h", False, "Заряджання"),
+    385: ("Затримка вирівнювального заряджання", 1.0, "h", False, "Заряджання"),
+    386: ("Інтервал вирівнювального заряджання", 1.0, "d", False, "Заряджання"),
 
-    321: ("Активність BMS", 1.0, "", False, "BMS"),
-    324: ("Тип або протокол BMS", 1.0, "", False, "BMS"),
-    325: ("Конфігурація BMS", 1.0, "", False, "BMS"),
-    337: ("Стан BMS", 1.0, "", False, "BMS"),
-    339: ("SOC акумулятора BMS", 1.0, "%", False, "BMS"),
-    341: ("Невідомий динамічний параметр", 1.0, "", False, "BMS"),
-    342: ("Напруга акумулятора BMS", 0.1, "V", False, "BMS"),
-    343: ("Струм BMS, канал 1", 0.1, "A", True, "BMS"),
-    344: ("Струм BMS, канал 2", 0.1, "A", True, "BMS"),
-    345: ("Верхня межа напруги", 0.1, "V", False, "BMS"),
-    346: ("Нижня межа напруги", 0.1, "V", False, "BMS"),
-    349: ("Поріг низької напруги", 0.1, "V", False, "BMS"),
-    350: ("Невідомий знаковий параметр", 1.0, "", True, "BMS"),
-
-    376: ("Напруга заряду", 0.1, "V", False, "Налаштування"),
-    377: ("Підтримувальна напруга", 0.1, "V", False, "Налаштування"),
-    378: ("Максимальний струм заряду", 0.1, "A", False, "Налаштування"),
-    379: ("Додаткова межа струму заряду", 0.1, "A", False, "Налаштування"),
-    383: ("Поріг високої напруги", 0.1, "V", False, "Налаштування"),
-    385: ("Межа або номінальна потужність", 1.0, "W", False, "Налаштування"),
-    386: ("Параметр обмеження потужності", 1.0, "W", False, "Налаштування"),
-
-    401: ("Тип батареї або кількість модулів", 1.0, "", False, "BMS"),
-    402: ("Зв’язок із BMS", 1.0, "", False, "BMS"),
-    403: ("Прапорці стану BMS", 1.0, "", False, "BMS"),
+    401: ("Протокол зв’язку BMS (резерв)", 1.0, "", False, "BMS"),
+    402: ("Стан зв’язку BMS", 1.0, "", False, "BMS"),
+    403: ("ID пакета BMS", 1.0, "", False, "BMS"),
     404: ("Напруга батареї", 0.1, "V", False, "BMS"),
     405: ("Струм батареї", 0.1, "A", True, "BMS"),
-    406: ("Температура батареї", 0.1, "°C", False, "Температура"),
+    406: ("Температура батареї", 1.0, "°C", True, "Температура"),
     407: ("SOC батареї", 1.0, "%", False, "BMS"),
     408: ("SOH батареї", 1.0, "%", False, "BMS"),
-    409: ("Недоступне значення 409", 1.0, "", False, "BMS"),
-    410: ("Недоступне значення 410", 1.0, "", False, "BMS"),
-    411: ("Максимальна напруга заряду", 0.1, "V", False, "BMS"),
-    412: ("Максимальний дозволений струм", 0.1, "A", False, "BMS"),
-    413: ("Параметр ємності акумулятора", 0.1, "Ah", False, "BMS"),
-    414: ("Резерв", 1.0, "", False, "BMS"),
-    415: ("Нижній поріг SOC", 1.0, "%", False, "Налаштування"),
-    416: ("Середній поріг SOC", 1.0, "%", False, "Налаштування"),
-    417: ("Верхній поріг SOC", 1.0, "%", False, "Налаштування"),
+    409: ("Поточна ємність батареї", 0.01, "Ah", False, "BMS"),
+    410: ("Повна зарядна ємність батареї", 0.01, "Ah", False, "BMS"),
+    411: ("Точка постійної напруги BMS", 0.1, "V", True, "BMS"),
+    412: ("Максимальний струм заряджання BMS", 0.01, "A", True, "BMS"),
+    413: ("Дозволений тривалий струм розряджання батареї", 0.1, "A", False, "BMS"),
+    414: ("Поріг попередження низького SOC", 1.0, "%", True, "BMS"),
+    415: ("Поріг вимкнення за низьким SOC", 1.0, "%", True, "BMS"),
+    416: ("Резервний поріг перемикання низького SOC", 0.1, "V", True, "BMS"),
+    417: ("Резервний поріг відсікання високого SOC", 0.1, "V", True, "BMS"),
+    418: ("Сигналізація BMS", 1.0, "", False, "BMS"),
+    419: ("Помилка BMS", 1.0, "", False, "BMS"),
 
-    449: ("Параметр системи 449", 1.0, "", False, "Система"),
-    451: ("Упаковане значення 451", 1.0, "", False, "Система"),
-    453: ("Упаковане значення 453", 1.0, "", False, "Система"),
-    455: ("Упаковане знакове значення 455", 1.0, "", True, "Система"),
+    433: ("Напруга мережі, детальний канал", 0.1, "V", True, "AC"),
+    434: ("Струм мережі, детальний канал", 0.01, "A", True, "AC"),
+    435: ("Частота мережі, детальний канал", 0.01, "Hz", True, "AC"),
+    436: ("Потужність мережі, детальний канал", 10.0, "W", True, "Потужність"),
+    437: ("Потужність споживання з мережі", 10.0, "W", True, "Потужність"),
+    448: ("Споживання мережі за день, старше слово", 1.0, "", False, "Енергія"),
+    449: ("Споживання мережі за день, молодше слово", 1.0, "", False, "Енергія"),
+    450: ("Споживання мережі за місяць, старше слово", 1.0, "", False, "Енергія"),
+    451: ("Споживання мережі за місяць, молодше слово", 1.0, "", False, "Енергія"),
+    452: ("Споживання мережі за рік, старше слово", 1.0, "", False, "Енергія"),
+    453: ("Споживання мережі за рік, молодше слово", 1.0, "", False, "Енергія"),
+    454: ("Загальне споживання мережі, старше слово", 1.0, "", False, "Енергія"),
+    455: ("Загальне споживання мережі, молодше слово", 1.0, "", False, "Енергія"),
+    529: ("Пріоритет виходу (фактичний)", 1.0, "", False, "Режими"),
+    530: ("Режим входу AC (фактичний)", 1.0, "", False, "Режими"),
+    537: ("Вихідна напруга інвертора", 0.1, "V", True, "AC"),
+    538: ("Вихідна частота інвертора", 0.01, "Hz", True, "AC"),
+    539: ("Вихідний струм інвертора", 0.01, "A", True, "AC"),
+    541: ("Вихідна активна потужність інвертора", 1.0, "W", True, "Потужність"),
+    542: ("Вихідна повна потужність інвертора", 1.0, "VA", True, "Потужність"),
+    545: ("Завантаження виходу інвертора", 0.1, "%", True, "AC"),
+    801: ("Швидкість вентилятора", 1.0, "%", False, "Температура"),
+    802: ("Стан вентилятора", 1.0, "", False, "Температура"),
+    817: ("Температура PV", 0.1, "°C", True, "Температура"),
+    818: ("Температура інвертора", 0.1, "°C", True, "Температура"),
+    819: ("Температура зарядного модуля", 0.1, "°C", True, "Температура"),
+    820: ("Температура зарядного модуля 2", 0.1, "°C", True, "Температура"),
+    821: ("Температура довкілля", 0.1, "°C", True, "Температура"),
+    822: ("Температура розрядного модуля", 0.1, "°C", True, "Температура"),
+    823: ("Температура PV2", 0.1, "°C", True, "Температура"),
 
-    # LCD programs stored at Modbus addresses 0x4102-0x4104. mbpoll uses
-    # one-based references, hence register numbers 16643-16645 here.
+    # Writable setup block 0x4100+. Public R labels remain one-based.
+    16641: ("Налаштована вихідна напруга", 1.0, "", False, "Налаштування"),
+    16642: ("Налаштована вихідна частота", 1.0, "", False, "Налаштування"),
     16643: ("Пріоритет вихідного джерела", 1.0, "", False, "Налаштування"),
     16644: ("Режим входу AC", 1.0, "", False, "Налаштування"),
     16645: ("Пріоритет джерела заряджання", 1.0, "", False, "Налаштування"),
+    16646: ("Струм заряджання від AC", 1.0, "A", False, "Налаштування"),
+    16647: ("Максимальний струм заряджання", 1.0, "", False, "Налаштування"),
+    16648: ("Тип батареї", 1.0, "", False, "Налаштування"),
+    16649: ("Поріг низької напруги батареї", 0.1, "V", False, "Налаштування"),
+    16650: ("Поріг вимкнення батареї", 0.1, "V", False, "Налаштування"),
+    16651: ("Напруга основного заряджання", 0.1, "V", False, "Налаштування"),
+    16652: ("Напруга підтримувального заряджання", 0.1, "V", False, "Налаштування"),
+    16653: ("Поріг переходу батарея → AC", 0.1, "V", False, "Налаштування"),
+    16654: ("Поріг повернення AC → батарея", 0.1, "V", False, "Налаштування"),
+    16655: ("Нижній поріг напруги мережі", 1.0, "V", False, "Налаштування"),
+    16656: ("Верхній поріг напруги мережі", 1.0, "V", False, "Налаштування"),
 
 }
 
+REGISTER_MAP_COLUMNS = ("register", "name", "unit", "scale", "display")
+register_map_lock = threading.RLock()
+register_map_overrides: dict[int, dict[str, Any]] = {}
+register_map_error = ""
+
+
+def _safe_register_map_text(value: str, field: str, maximum: int) -> str:
+    """Validate user-visible CSV metadata before it reaches HTML rendering."""
+    cleaned = value.strip()
+    if len(cleaned) > maximum:
+        raise ValueError(f"{field} is longer than {maximum} characters")
+    if any(character in cleaned for character in '<>"'):
+        raise ValueError(f'{field} cannot contain <, >, or "')
+    if any(ord(character) < 32 and character not in "\t" for character in cleaned):
+        raise ValueError(f"{field} contains a control character")
+    return cleaned
+
+
+def parse_register_map_csv(payload: bytes) -> dict[int, dict[str, Any]]:
+    """Parse a metadata-only register override CSV without changing Modbus state."""
+    if len(payload) > REGISTER_MAP_MAX_BYTES:
+        raise ValueError("CSV file is larger than 1 MiB")
+    try:
+        text = payload.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise ValueError("CSV file must use UTF-8 encoding") from error
+
+    reader = csv.DictReader(io.StringIO(text))
+    if reader.fieldnames is None:
+        raise ValueError("CSV header is missing")
+    headers = {str(header).strip().lower(): str(header) for header in reader.fieldnames}
+
+    def column(*aliases: str) -> str | None:
+        return next((headers[alias] for alias in aliases if alias in headers), None)
+
+    register_column = column("register", "r", "address", "mbpoll_register")
+    name_column = column("name", "label")
+    unit_column = column("unit", "units")
+    scale_column = column("scale", "multiplier")
+    display_column = column("display", "display_value", "value")
+    if register_column is None:
+        raise ValueError("CSV must contain a register column")
+    if not any((name_column, unit_column, scale_column, display_column)):
+        raise ValueError("CSV must contain at least one of: name, unit, scale, display")
+
+    parsed: dict[int, dict[str, Any]] = {}
+    for row_number, row in enumerate(reader, start=2):
+        register_text = str(row.get(register_column, "") or "").strip()
+        if not register_text and not any(str(value or "").strip() for value in row.values()):
+            continue
+        if register_text.upper().startswith("R"):
+            register_text = register_text[1:].strip()
+        try:
+            register = int(register_text)
+        except ValueError as error:
+            raise ValueError(f"row {row_number}: invalid register {register_text!r}") from error
+        if not 1 <= register <= 65536:
+            raise ValueError(f"row {row_number}: register must be between 1 and 65536")
+        if register in parsed:
+            raise ValueError(f"row {row_number}: duplicate register R{register}")
+
+        override: dict[str, Any] = {}
+        if name_column is not None:
+            name = _safe_register_map_text(str(row.get(name_column, "") or ""), "name", 200)
+            if name:
+                override["name"] = name
+        if unit_column is not None:
+            unit = _safe_register_map_text(
+                str(row.get(unit_column, "") or ""), "unit", 30
+            )
+            if unit:
+                override["unit"] = unit
+        if scale_column is not None:
+            scale_text = str(row.get(scale_column, "") or "").strip()
+            if scale_text:
+                try:
+                    scale = float(scale_text)
+                except ValueError as error:
+                    raise ValueError(f"row {row_number}: invalid scale {scale_text!r}") from error
+                if not math.isfinite(scale) or scale <= 0 or scale > 1_000_000:
+                    raise ValueError(f"row {row_number}: scale must be greater than 0 and at most 1000000")
+                override["scale"] = scale
+        if display_column is not None:
+            display = _safe_register_map_text(
+                str(row.get(display_column, "") or ""), "display", 100
+            )
+            if display:
+                override["display"] = display
+        if not override:
+            raise ValueError(f"row {row_number}: no metadata override was provided")
+        parsed[register] = override
+    return parsed
+
+
+def _canonical_register_map_csv(overrides: dict[int, dict[str, Any]]) -> str:
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=REGISTER_MAP_COLUMNS, lineterminator="\n")
+    writer.writeheader()
+    for register, override in sorted(overrides.items()):
+        writer.writerow({
+            "register": register,
+            "name": override.get("name", ""),
+            "unit": override.get("unit", ""),
+            "scale": override.get("scale", ""),
+            "display": override.get("display", ""),
+        })
+    return output.getvalue()
+
+
+def replace_register_map(payload: bytes) -> dict[str, Any]:
+    """Persist and activate a complete metadata-only register override map."""
+    global register_map_error, register_map_overrides
+    overrides = parse_register_map_csv(payload)
+    csv_text = _canonical_register_map_csv(overrides)
+    temporary_path = REGISTER_MAP_PATH.with_suffix(REGISTER_MAP_PATH.suffix + ".tmp")
+    with register_map_lock:
+        try:
+            REGISTER_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path.write_text(csv_text, encoding="utf-8", newline="")
+            os.replace(temporary_path, REGISTER_MAP_PATH)
+        except OSError as error:
+            register_map_error = str(error)
+            raise
+        register_map_overrides = overrides
+        register_map_error = ""
+    return {"ok": True, "count": len(overrides), "filename": REGISTER_MAP_PATH.name}
+
+
+def load_register_map() -> None:
+    """Load persisted metadata overrides without preventing dashboard startup."""
+    global register_map_error, register_map_overrides
+    if not REGISTER_MAP_PATH.exists():
+        return
+    try:
+        overrides = parse_register_map_csv(REGISTER_MAP_PATH.read_bytes())
+    except (OSError, ValueError, csv.Error) as error:
+        register_map_error = str(error)
+        return
+    with register_map_lock:
+        register_map_overrides = overrides
+        register_map_error = ""
+
+
+def register_override(register: int) -> dict[str, Any]:
+    with register_map_lock:
+        return dict(register_map_overrides.get(register, {}))
+
+
+def register_metadata(register: int) -> tuple[str, float, str, bool, str]:
+    """Return built-in metadata merged with the current CSV override."""
+    name, scale, unit, signed, group = REGISTER_CONFIG.get(
+        register, (f"Регістр {register}", 1.0, "", False, "Сире")
+    )
+    override = register_override(register)
+    return (
+        str(override.get("name", name)),
+        float(override.get("scale", scale)),
+        str(override.get("unit", unit)),
+        signed,
+        group,
+    )
+
+
+def register_map_status() -> dict[str, Any]:
+    with register_map_lock:
+        return {
+            "count": len(register_map_overrides),
+            "filename": REGISTER_MAP_PATH.name if REGISTER_MAP_PATH.exists() else "",
+            "error": register_map_error,
+        }
+
+
+load_register_map()
+
 METER_DEFINITIONS = [
-    (89, [], "Напруга зовнішньої мережі", 0.0, 300.0, "V"),
-    (160, [], "Фактичний струм із мережі", 0.0, 100.0, "A"),
-    (166, [], "Фактична потужність мережі", 0.0, 15000.0, "W"),
-    (91, [], "Частота зовнішньої мережі", 45.0, 55.0, "Hz"),
+    (81, [433], "Напруга мережі", 0.0, 300.0, "V"),
+    (82, [434], "Струм мережі", 0.0, 100.0, "A"),
+    (84, [437, 436], "Потужність мережі", 0.0, 15000.0, "W"),
+    (83, [435], "Частота мережі", 45.0, 55.0, "Hz"),
+    (89, [537], "Вихідна напруга AC", 0.0, 300.0, "V"),
     (92, [], "Активна потужність навантаження", 0.0, 12000.0, "W"),
     (93, [], "Повна потужність навантаження", 0.0, 15000.0, "VA"),
     (90, [], "Вихідний струм AC", 0.0, 100.0, "A"),
     (94, [], "Завантаження інвертора", 0.0, 100.0, "%"),
-    (158, [], "Нижній поріг вхідної напруги мережі", 0.0, 300.0, "V"),
+    (151, [], "Напруга PV1", 0.0, 500.0, "V"),
+    (152, [], "Струм PV1", 0.0, 50.0, "A"),
+    (153, [], "Потужність PV1", 0.0, 12000.0, "W"),
+    (154, [], "Напруга PV2", 0.0, 500.0, "V"),
+    (155, [], "Струм PV2", 0.0, 50.0, "A"),
+    (156, [], "Потужність PV2", 0.0, 12000.0, "W"),
+    (16655, [], "Нижній поріг вхідної напруги мережі", 0.0, 300.0, "V"),
     (129, [137, 404, 342], "Напруга акумулятора", 40.0, 65.0, "V"),
     (130, [], "Струм акумулятора", -150.0, 150.0, "A"),
     (133, [139, 407, 339], "Рівень заряду акумулятора", 0.0, 100.0, "%"),
     (134, [], "Потужність акумулятора", -15000.0, 15000.0, "W"),
-    (140, [406], "Температура акумулятора", -20.0, 100.0, "°C"),
+    (818, [], "Температура інвертора", -20.0, 150.0, "°C"),
+    (140, [406], "Температура акумулятора BMS", -20.0, 100.0, "°C"),
     (408, [], "SOH батареї", 0.0, 100.0, "%"),
     (141, [411, 376, 377], "Максимальна напруга заряду", 40.0, 65.0, "V"),
     (343, [], "Струм BMS, канал 1", -150.0, 150.0, "A"),
@@ -309,12 +590,11 @@ METER_DEFINITIONS = [
     (345, [], "Верхня межа напруги", 40.0, 65.0, "V"),
     (346, [], "Нижня межа напруги", 40.0, 65.0, "V"),
     (349, [], "Поріг низької напруги", 40.0, 65.0, "V"),
-    (412, [378, 379], "Максимальний дозволений струм", 0.0, 150.0, "A"),
-    (350, [], "Невідомий знаковий параметр", -32768.0, 32767.0, ""),
-    (413, [], "Параметр ємності акумулятора", 0.0, 500.0, "Ah"),
-    (415, [], "Нижній поріг SOC", 0.0, 100.0, "%"),
-    (385, [], "Межа або номінальна потужність", 0.0, 15000.0, "W"),
-    (386, [], "Параметр обмеження потужності", 0.0, 15000.0, "W"),
+    (412, [378, 379], "Максимальний струм заряджання", 0.0, 150.0, "A"),
+    (413, [], "Дозволений тривалий струм розряджання батареї", 0.0, 250.0, "A"),
+    (409, [], "Поточна ємність батареї", 0.0, 1000.0, "Ah"),
+    (410, [], "Повна ємність батареї", 0.0, 1000.0, "Ah"),
+    (415, [], "Поріг вимкнення за низьким SOC", 0.0, 100.0, "%"),
 ]
 
 
@@ -391,27 +671,13 @@ def signed16(raw: int) -> int:
 
 
 def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str]:
-    if raw == 0xFFFF:
-        name, _, _, _, group = REGISTER_CONFIG.get(
-            register, (f"Регістр {register}", 1.0, "", False, "Сире")
-        )
-        return name, "Н/Д", "", None, group
-
-    if register == 157:
-        label = OPERATING_STATUS.get(raw, f"Код робочого стану {raw}")
-        return "Робочий режим інвертора", label, "", float(raw), "Система"
-
-    if 147 <= register <= 156 and raw == 0:
-        name, _, _, _, group = REGISTER_CONFIG[register]
-        return name, "Немає помилок або аварій", "", 0.0, group
-
-    name, scale, unit, use_signed, group = REGISTER_CONFIG.get(
-        register, (f"Регістр {register}", 1.0, "", False, "Сире")
-    )
+    name, scale, unit, use_signed, group = register_metadata(register)
 
     base = signed16(raw) if use_signed else raw
-    # Battery values use the UI convention requested for this inverter:
-    # positive while charging and negative while discharging.
+    # This installed inverter reports R130 with the opposite direction to the
+    # UI convention: charging is positive and discharging is negative.
+    if register == 130:
+        base = -base
     value = base * scale
 
     if scale == 1.0:
@@ -422,6 +688,7 @@ def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str
         display = f"{value:.2f}"
     else:
         display = f"{value:.3f}".rstrip("0").rstrip(".")
+    display = str(register_override(register).get("display", display))
 
     return name, display, unit, value, group
 
@@ -429,7 +696,7 @@ def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str
 def decode_identifier(values: dict[int, int]) -> str:
     data = bytearray()
 
-    for register in range(1, 10):
+    for register in range(1, 11):
         if register not in values:
             continue
         value = values[register] & 0xFFFF
@@ -912,7 +1179,7 @@ def record_demo_lcd_key(
     if clean_key not in {"escape", "up", "down", "enter"}:
         raise ValueError("invalid LCD key")
     clean_page = page.strip().upper()
-    if clean_page != "LCD" and re.fullmatch(r"P[1-9]", clean_page) is None:
+    if clean_page != "LCD" and re.fullmatch(r"P(?:[1-9]|1\d|2[0-6])", clean_page) is None:
         raise ValueError("invalid LCD page")
     clean_demo_case = demo_case.strip()
     if re.fullmatch(r"[A-Za-z0-9_-]{1,80}", clean_demo_case) is None:
@@ -986,8 +1253,34 @@ def flush_solar_energy() -> None:
 
 
 def record_solar_energy(fresh_values: dict[int, int]) -> None:
-    """Pause integration until a live PV power register is identified."""
-    return
+    """Integrate confirmed PV1 + PV2 power into daily energy storage."""
+    global solar_energy_last_sample_at, solar_energy_last_power_w
+    global solar_energy_last_flush_monotonic, solar_energy_error
+
+    powers: list[float] = []
+    for register in (153, 156):
+        if register not in fresh_values:
+            continue
+        value = normalize(register, fresh_values[register])[3]
+        if value is not None:
+            powers.append(max(0.0, value))
+    if not powers:
+        return
+
+    now = datetime.now(MADRID_TIME_ZONE)
+    power_w = sum(powers)
+    with stats_lock:
+        if solar_energy_last_sample_at is not None and solar_energy_last_power_w is not None:
+            elapsed_seconds = (now - solar_energy_last_sample_at).total_seconds()
+            if 0 < elapsed_seconds <= 30:
+                watt_hours = (solar_energy_last_power_w + power_w) / 2 * elapsed_seconds / 3600
+                day = now.date().isoformat()
+                solar_energy_pending_wh[day] = solar_energy_pending_wh.get(day, 0.0) + watt_hours
+        solar_energy_last_sample_at = now
+        solar_energy_last_power_w = power_w
+        if time.monotonic() - solar_energy_last_flush_monotonic >= 60:
+            if flush_solar_energy_locked():
+                solar_energy_last_flush_monotonic = time.monotonic()
 
 
 def solar_energy_summary() -> dict[str, Any]:
@@ -999,6 +1292,10 @@ def solar_energy_summary() -> dict[str, Any]:
     month_start = today.replace(day=1)
     year_start = today.replace(month=1, day=1)
     daily: dict[str, float] = {}
+    with state_lock:
+        live_values = dict(state.get("values", {}))
+    direct_today = normalize(157, live_values[157])[3] if 157 in live_values else None
+    direct_total = normalize(158, live_values[158])[3] if 158 in live_values else None
 
     try:
         with stats_lock:
@@ -1024,17 +1321,15 @@ def solar_energy_summary() -> dict[str, Any]:
         ) / 1000
 
     return {
-        # Preserve the stored samples, but do not present totals accumulated
-        # from R385 now that it is identified as a setting rather than live PV power.
-        "today_kwh": None,
-        "week_kwh": None,
-        "month_kwh": None,
-        "year_kwh": None,
-        "total_kwh": None,
-        "source_register": None,
+        "today_kwh": direct_today if direct_today is not None else total_since(today),
+        "week_kwh": total_since(week_start),
+        "month_kwh": total_since(month_start),
+        "year_kwh": total_since(year_start),
+        "total_kwh": direct_total if direct_total is not None else sum(daily.values()) / 1000,
+        "source_register": "R157 / R158; R153 + R156",
         "storage": "sqlite",
         "estimated": False,
-        "error": solar_energy_error or "Регістр живої потужності PV не визначено; накопичення енергії призупинено",
+        "error": solar_energy_error,
     }
 
 

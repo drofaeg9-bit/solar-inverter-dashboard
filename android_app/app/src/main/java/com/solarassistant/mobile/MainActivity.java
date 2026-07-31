@@ -1,6 +1,7 @@
 package com.solarassistant.mobile;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
@@ -205,6 +206,7 @@ public final class MainActivity extends Activity {
         return button;
     }
 
+    @SuppressLint("WebViewApiAvailability")
     private void configureWebView() {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -221,7 +223,7 @@ public final class MainActivity extends Activity {
         settings.setAllowContentAccess(false);
         settings.setUserAgentString(
                 settings.getUserAgentString() + " SolarInverterAndroid/" + BuildConfig.VERSION_NAME);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             WebView.startSafeBrowsing(this, null);
         }
         CookieManager.getInstance().setAcceptCookie(true);
