@@ -66,7 +66,8 @@
         const value = numericValue(register.display);
         if (value === null) return;
         const bmsFormula = register.register === 413 && register.available ? r413BmsFormula(value) : '';
-        const interpretation = registerInterpretation(register);
+        const displayValue = registerVersionDisplay(register, data.registers);
+        const interpretation = registerInterpretation({...register, versionDisplay: displayValue});
         const isPercentage = register.unit === '%';
         const chartValue = isPercentage ? Math.max(0, Math.min(100, value)) : value;
         definitions.set(`register-${register.register}`, {
@@ -78,6 +79,7 @@
           scale: Number(register.scale) || 1,
           signed: Boolean(register.signed),
           value: chartValue,
+          displayValue,
           minimum: isPercentage ? 0 : null,
           maximum: isPercentage ? 100 : null,
           available: register.available,
@@ -621,7 +623,12 @@
             : demoFallbackValue(item, scenario.elapsedSeconds);
           item.available = true;
           const demoRegister = demoRegistersByNumber.get(item.register);
-          item.interpretation = demoRegister ? registerInterpretation(demoRegister) : '';
+          item.displayValue = demoRegister
+            ? registerVersionDisplay(demoRegister, demoRegisterRows)
+            : item.displayValue;
+          item.interpretation = demoRegister
+            ? registerInterpretation({...demoRegister, versionDisplay: item.displayValue})
+            : '';
           item.source = `R${item.register} · ${t('demoMode')}`;
         });
         meterKeys.forEach(key => {

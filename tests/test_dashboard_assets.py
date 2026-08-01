@@ -176,6 +176,8 @@ class DashboardAssetTests(unittest.TestCase):
         html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn("display: grid; isolation: isolate", css)
         self.assertIn("position: relative; z-index: 1; align-self: stretch", css)
+        self.assertIn("position: absolute; inset: -8px; display: block", css)
+        self.assertIn("width: calc(100% + 16px); height: calc(100% + 16px)", css)
         self.assertIn(".flow-connector.active { z-index: 1", css)
         self.assertIn("position: relative; z-index: 2; display: flex", css)
         self.assertNotIn(".flow-connector.active { z-index: 4", css)
@@ -342,7 +344,8 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("const demoFanSpeed = Number(scenario.values.get(801))", chart_source)
         self.assertIn("updateInverterFanAnimation(", chart_source)
         self.assertIn("const synchronizeDemoDefinitions = scenario =>", chart_source)
-        self.assertIn("item.interpretation = demoRegister ? registerInterpretation(demoRegister) : ''", chart_source)
+        self.assertIn("item.displayValue = demoRegister", chart_source)
+        self.assertIn("registerInterpretation({...demoRegister, versionDisplay: item.displayValue})", chart_source)
         self.assertIn("item.source = `R${item.register} · ${t('demoMode')}`", chart_source)
         self.assertIn("renderLcd(lastData, demoRegisterRows)", chart_source)
         self.assertIn('id="lcd-inverter-fan-speed"', html_source)
@@ -362,7 +365,16 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("const playbackRate = normalizedSpeed / 100", flow_source)
         self.assertIn("inverterFanAnimation.pause()", flow_source)
         self.assertIn("Array.from(fullLabel).slice(0, 3).join('')", flow_source)
-        self.assertIn("setText(selector, displayLabel)", flow_source)
+        self.assertIn("element.dataset.sourceIcon = mode.icon", flow_source)
+        self.assertIn("element.setAttribute('aria-label', fullLabel)", flow_source)
+        self.assertIn("icon: 'grid'", flow_source)
+        self.assertIn("icon: 'pv'", flow_source)
+        self.assertIn("icon: 'generator'", flow_source)
+        self.assertIn("icon: 'battery'", flow_source)
+        self.assertIn('.energy-source-icon[data-source-icon="grid"]', css_source)
+        self.assertIn('.energy-source-icon[data-source-icon="pv"]::before', css_source)
+        self.assertIn('.energy-source-icon[data-source-icon="generator"]', css_source)
+        self.assertIn('.energy-source-icon[data-source-icon="battery"]::before', css_source)
         self.assertNotIn("--fan-duration", flow_source)
         self.assertNotIn("var(--fan-duration, 1s)", css_source)
         self.assertIn(".energy-inverter-fan-row.css-animation-fallback.active .energy-inverter-fan-rotor", css_source)
@@ -516,6 +528,12 @@ class DashboardRendererTests(unittest.TestCase):
             let currentLanguage = 'en';
             const source = fs.readFileSync(process.argv[1], 'utf8');
             eval(source + `
+              const versionRegisters = [
+                {register:17, raw:1, display:'1', available:true},
+                {register:18, raw:31, display:'31', available:true},
+                {register:27, raw:1, display:'1', available:true},
+                {register:28, raw:31, display:'31', available:true}
+              ];
               const englishState = registerInterpretation({register:67, raw:4, available:true, unit:'', name:'State'});
               currentLanguage = 'uk';
               const ukrainianState = registerInterpretation({register:67, raw:4, available:true, unit:'', name:'State'});
@@ -528,8 +546,10 @@ class DashboardRendererTests(unittest.TestCase):
                 russianState,
                 serialWord: registerInterpretation({register:3, raw:18766, available:true, unit:'', name:'SN'}),
                 serialPadding: registerInterpretation({register:10, raw:0, available:true, unit:'', name:'SN'}),
-                protocolMajor: registerInterpretation({register:17, raw:1, available:true, unit:'', name:'Version'}),
-                controlSoftwareMinor: registerInterpretation({register:28, raw:31, available:true, unit:'', name:'Version'}),
+                protocolDisplay: registerVersionDisplay(versionRegisters[0], versionRegisters),
+                controlSoftwareDisplay: registerVersionDisplay(versionRegisters[3], versionRegisters),
+                protocolMajor: registerInterpretation({register:17, raw:1, available:true, unit:'', name:'Version', versionDisplay:'V1.3'}),
+                controlSoftwareMinor: registerInterpretation({register:28, raw:31, available:true, unit:'', name:'Version', versionDisplay:'V1.3'}),
                 bmsCan: registerInterpretation({register:66, raw:1, available:true, unit:'', name:'Status'}),
                 energyFlow: registerInterpretation({register:69, raw:(1 << 4) | (1 << 9), available:true, unit:'', name:'Flow status'}),
                 faultsClear: registerInterpretation({register:71, raw:0, available:true, unit:'', name:'Fault'}),
@@ -555,8 +575,10 @@ class DashboardRendererTests(unittest.TestCase):
                 "russianState": "Работа от PV",
                 "serialWord": "SN word R3: 0x494E → “IN”; each word contains up to two ASCII characters",
                 "serialPadding": "SN word R10: 0x0000 is empty padding or the end of the identifier",
-                "protocolMajor": "protocol version: major component = 1; R17 and R18 together form V[R17].[R18]",
-                "controlSoftwareMinor": "control-board software version: minor component = 31; R27 and R28 together form V[R27].[R28]",
+                "protocolDisplay": "V1.3",
+                "controlSoftwareDisplay": "V1.3",
+                "protocolMajor": "protocol version: major component = 1; decoded display V1.3",
+                "controlSoftwareMinor": "control-board software version: minor component = 31; decoded display V1.3",
                 "bmsCan": "ID locked through CAN",
                 "energyFlow": "PV \N{RIGHTWARDS ARROW} rectifier; Inverter \N{RIGHTWARDS ARROW} main output",
                 "faultsClear": "No active faults",

@@ -179,7 +179,9 @@
         const ratio = hasValue ? Math.max(0, Math.min(1, (value - meter.minimum) / (meter.maximum - meter.minimum))) : 0;
         const needleTransform = `rotate(${-90 + ratio * 180}deg)`;
         const progressOffset = `${283 * (1 - ratio)}`;
-        const valueText = hasValue ? Number(value.toFixed(2)).toString() : '—';
+        const valueText = hasValue
+          ? meter.displayValue || Number(value.toFixed(2)).toString()
+          : '—';
         const needle = card.querySelector('.needle');
         const progress = card.querySelector('.progress');
         const valueElement = card.querySelector('.value');

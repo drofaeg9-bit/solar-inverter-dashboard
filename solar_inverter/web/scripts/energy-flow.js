@@ -110,10 +110,21 @@
         const fullLabel = String(mode.label ?? '\u2014');
         const displayLabel = Array.from(fullLabel).slice(0, 3).join('');
         const description = mode.description ? t(mode.description) : '';
-        setText(selector, displayLabel);
         setText(definitionSelector, description);
         const element = document.querySelector(selector);
-        if (element) element.title = [fullLabel, description].filter(Boolean).join(' \u2014 ');
+        if (element) {
+          if (mode.icon) {
+            element.textContent = '';
+            element.dataset.sourceIcon = mode.icon;
+            element.classList.add('energy-source-icon');
+          } else {
+            delete element.dataset.sourceIcon;
+            element.classList.remove('energy-source-icon');
+            if (element.textContent !== displayLabel) element.textContent = displayLabel;
+          }
+          element.setAttribute('aria-label', fullLabel);
+          element.title = [fullLabel, description].filter(Boolean).join(' \u2014 ');
+        }
       };
       const setFlow = (selector, enabled, reverse, watts) => {
         const connector = document.querySelector(selector);
@@ -282,19 +293,19 @@
       const inverterInputMode = !inverterActive
         ? {label: '—', description: ''}
         : inverterState === 3 && gridAvailable
-          ? {label: t('grid'), description: 'modeGridInputShort'}
+          ? {label: t('grid'), description: 'modeGridInputShort', icon: 'grid'}
           : inverterState === 4 && pvActive
-            ? {label: 'PV', description: 'modeSolarShort'}
+            ? {label: 'PV', description: 'modeSolarShort', icon: 'pv'}
             : inverterState === 5 && batteryDischarging
-              ? {label: t('battery'), description: 'modeBatteryInputShort'}
+              ? {label: t('battery'), description: 'modeBatteryInputShort', icon: 'battery'}
               : inverterState === 6 && generatorActive
-                ? {label: t('generator'), description: 'modeGeneratorInputShort'}
+                ? {label: t('generator'), description: 'modeGeneratorInputShort', icon: 'generator'}
                 : gridAvailable
-                  ? {label: t('grid'), description: 'modeGridInputShort'}
+                  ? {label: t('grid'), description: 'modeGridInputShort', icon: 'grid'}
                   : pvActive
-                    ? {label: 'PV', description: 'modeSolarShort'}
+                    ? {label: 'PV', description: 'modeSolarShort', icon: 'pv'}
                     : batteryDischarging
-                      ? {label: t('battery'), description: 'modeBatteryInputShort'}
+                      ? {label: t('battery'), description: 'modeBatteryInputShort', icon: 'battery'}
                       : {label: '—', description: ''};
       const inverterBatteryMode = modeDetails(inverterChargeModeSource, {
         0: {label: 'PNG', description: 'modePngShort'},

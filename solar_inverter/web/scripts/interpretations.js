@@ -238,7 +238,7 @@
           `SN word R${registerNumber}: 0x${hexadecimal} → “${characters}”; each word contains up to two ASCII characters`
         ));
       }
-      function versionComponent(label, component, raw, firstRegister, secondRegister) {
+      function versionComponent(label, component, raw, firstRegister, secondRegister, decodedVersion = '') {
         const names = {
           protocol: phrase('версії протоколу', 'версии протокола', 'protocol version'),
           controlSoftware: phrase('версії ПЗ плати керування', 'версии ПО платы управления', 'control-board software version')
@@ -246,10 +246,17 @@
         const componentNames = component === 'major'
           ? phrase('старша складова', 'старшая составляющая', 'major component')
           : phrase('молодша складова', 'младшая составляющая', 'minor component');
+        const decoded = decodedVersion
+          ? text(phrase(
+              `; відображувана версія ${decodedVersion}`,
+              `; отображаемая версия ${decodedVersion}`,
+              `; decoded display ${decodedVersion}`
+            ))
+          : '';
         return text(phrase(
-          `${text(names[label])}: ${text(componentNames)} = ${raw}; R${firstRegister} і R${secondRegister} разом утворюють V[R${firstRegister}].[R${secondRegister}]`,
-          `${text(names[label])}: ${text(componentNames)} = ${raw}; R${firstRegister} и R${secondRegister} вместе образуют V[R${firstRegister}].[R${secondRegister}]`,
-          `${text(names[label])}: ${text(componentNames)} = ${raw}; R${firstRegister} and R${secondRegister} together form V[R${firstRegister}].[R${secondRegister}]`
+          `${text(names[label])}: ${text(componentNames)} = ${raw}${decoded}`,
+          `${text(names[label])}: ${text(componentNames)} = ${raw}${decoded}`,
+          `${text(names[label])}: ${text(componentNames)} = ${raw}${decoded}`
         ));
       }
       function registerInterpretation(register) {
@@ -262,10 +269,10 @@
           return serialNumberWord(registerNumber, raw);
         }
         switch (registerNumber) {
-          case 17: return versionComponent('protocol', 'major', raw, 17, 18);
-          case 18: return versionComponent('protocol', 'minor', raw, 17, 18);
-          case 27: return versionComponent('controlSoftware', 'major', raw, 27, 28);
-          case 28: return versionComponent('controlSoftware', 'minor', raw, 27, 28);
+          case 17: return versionComponent('protocol', 'major', raw, 17, 18, register.versionDisplay);
+          case 18: return versionComponent('protocol', 'minor', raw, 17, 18, register.versionDisplay);
+          case 27: return versionComponent('controlSoftware', 'major', raw, 27, 28, register.versionDisplay);
+          case 28: return versionComponent('controlSoftware', 'minor', raw, 27, 28, register.versionDisplay);
           case 66: return enumMeaning(bmsConnection, raw);
           case 67:
           case 325: return enumMeaning(stateMachine, raw);
@@ -323,4 +330,22 @@
 
     function registerInterpretation(register) {
       return TTN_V131_INTERPRETATIONS.registerInterpretation(register);
+    }
+
+    function registerVersionDisplay(register, registers) {
+      const registerNumber = Number(register?.register);
+      const pair = registerNumber === 17 || registerNumber === 18
+        ? [17, 18]
+        : registerNumber === 27 || registerNumber === 28
+          ? [27, 28]
+          : null;
+      if (!pair) return String(register?.display ?? register?.raw ?? '');
+      const byNumber = new Map(registers.map(item => [Number(item.register), item]));
+      const major = Number(byNumber.get(pair[0])?.raw);
+      const encodedMinor = Number(byNumber.get(pair[1])?.raw);
+      if (!Number.isFinite(major) || !Number.isFinite(encodedMinor)) {
+        return String(register?.display ?? register?.raw ?? '');
+      }
+      const minor = encodedMinor >= 10 ? Math.trunc(encodedMinor / 10) : encodedMinor;
+      return `V${major}.${minor}`;
     }

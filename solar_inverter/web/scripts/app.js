@@ -106,7 +106,7 @@
     function renderRegisters(registers) {
       const query = document.querySelector('#search').value.trim().toLowerCase();
       const shown = registers.filter(item =>
-        `${item.register} ${localizeDataText(item.group)} ${localizeDataText(item.name)} ${localizeDataText(item.display)} ${registerInterpretation(item)} ${item.unit}`.toLowerCase().includes(query)
+        `${item.register} ${localizeDataText(item.group)} ${localizeDataText(item.name)} ${registerVersionDisplay(item, registers)} ${registerInterpretation(item)} ${item.unit}`.toLowerCase().includes(query)
       );
       const available = registers.filter(item => item.available).length;
       document.querySelector('#register-count').textContent =
@@ -118,10 +118,11 @@
       document.querySelector('#registers').innerHTML = shown.map(item => {
         const value = numericValue(item.display);
         const bmsFormula = item.register === 413 && item.available ? r413BmsFormula(value) : '';
-        const interpretation = registerInterpretation(item);
+        const displayValue = registerVersionDisplay(item, registers);
+        const interpretation = registerInterpretation({...item, versionDisplay: displayValue});
         return `<tr class="${item.available ? '' : 'unavailable'}">
           <td>R${item.register}</td><td>${localizeDataText(item.group)}</td><td>${localizeDataText(item.name)}</td>
-          <td>${localizeDataText(item.display)} ${item.unit}${bmsFormula ? `<br><small>${bmsFormula}</small>` : ''}${interpretation ? `<small class="register-interpretation">${interpretation}</small>` : ''}</td><td>${item.raw ?? '—'}</td></tr>`;
+          <td>${localizeDataText(displayValue)} ${item.unit}${bmsFormula ? `<br><small>${bmsFormula}</small>` : ''}${interpretation ? `<small class="register-interpretation">${interpretation}</small>` : ''}</td><td>${item.raw ?? '—'}</td></tr>`;
       }).join('');
     }
 
@@ -577,4 +578,3 @@
       }
       return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
-

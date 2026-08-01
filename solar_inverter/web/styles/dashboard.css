@@ -488,9 +488,12 @@
     }
     .flow-connector {
       position: relative; z-index: 1; align-self: stretch; justify-self: stretch;
-      min-width: 0; min-height: 0; overflow: hidden; color: var(--muted); opacity: .38;
+      min-width: 0; min-height: 0; overflow: visible; color: var(--muted); opacity: .38;
     }
-    .flow-lines { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: hidden }
+    .flow-lines {
+      position: absolute; inset: -8px; display: block;
+      width: calc(100% + 16px); height: calc(100% + 16px); overflow: visible;
+    }
     .flow-line {
       fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: butt;
       stroke-dasharray: 11 6; vector-effect: non-scaling-stroke;

@@ -11,6 +11,12 @@
         const register = firstRegister(numbers);
         return register ? localizeDataText(register.display) : t('noData');
       };
+      const versionValue = (majorRegister, minorRegister) => {
+        const register = byNumber.get(majorRegister) || byNumber.get(minorRegister);
+        return register
+          ? registerVersionDisplay(register, registers)
+          : t('noData');
+      };
       const reading = (value, unit, digits = 1) =>
         Number.isFinite(value) ? `${value.toFixed(digits)} ${unit}`.trim() : t('noData');
       const setText = (selector, value) => {
@@ -150,8 +156,8 @@
         },
         {
           code: 'P9', title: t('deviceInformation'),
-          label1: t('protocolVersion'), value1: textValue([17]),
-          label2: t('deviceConfiguration'), value2: textValue([18]), help: t('lcdP9Help')
+          label1: t('protocolVersion'), value1: versionValue(17, 18),
+          label2: t('deviceConfiguration'), value2: versionValue(27, 28), help: t('lcdP9Help')
         },
         {
           code: 'P10', title: localizeDataText('Загальна потужність PV'),
