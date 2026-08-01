@@ -1,0 +1,262 @@
+    function renderLcd(data, registers = data.registers || []) {
+      const byNumber = new Map(registers.map(register => [register.register, register]));
+      const firstRegister = numbers => numbers
+        .map(number => byNumber.get(number))
+        .find(register => register?.available);
+      const numberValue = numbers => {
+        const register = firstRegister(numbers);
+        return register ? numericValue(register.display) : null;
+      };
+      const textValue = numbers => {
+        const register = firstRegister(numbers);
+        return register ? localizeDataText(register.display) : t('noData');
+      };
+      const reading = (value, unit, digits = 1) =>
+        Number.isFinite(value) ? `${value.toFixed(digits)} ${unit}`.trim() : t('noData');
+      const setText = (selector, value) => {
+        const element = document.querySelector(selector);
+        if (element) element.textContent = value;
+      };
+
+      const gridVoltage = numberValue([81, 433]);
+      const gridCurrent = numberValue([82, 434]);
+      const measuredGridPower = numberValue([84, 437, 436]);
+      const frequency = numberValue([83, 435]);
+      const outputCurrent = numberValue([90, 539]);
+      const inverterLoad = numberValue([94]);
+      const inverterFanSpeedReading = numberValue([801]);
+      const inverterFanSpeed = Number.isFinite(inverterFanSpeedReading)
+        ? Math.max(0, Math.min(100, inverterFanSpeedReading))
+        : null;
+      const gridLowVoltageThreshold = numberValue([16655]);
+      const loadPower = numberValue([92]);
+      const apparentLoadPower = numberValue([93]);
+      const batteryVoltage = numberValue([129, 137, 404, 342]);
+      const batteryCurrent = numberValue([130]);
+      const batterySoc = numberValue([133, 139, 407, 339]);
+      const batteryPowerReading = numberValue([134]);
+      const batteryTemperature = numberValue([140, 406]);
+      const inverterTemperature = numberValue([818]);
+      const maximumChargeVoltage = numberValue([141, 411, 16651, 376, 377]);
+      const currentLimit = numberValue([413]);
+      const lowSocThreshold = numberValue([415]);
+      const statusRegister = firstRegister([325, 67]);
+      const statusText = statusRegister
+        ? registerInterpretation(statusRegister) || localizeDataText(statusRegister.display)
+        : t('noData');
+      const calculatedBatteryPower = Number.isFinite(batteryVoltage) && Number.isFinite(batteryCurrent)
+        ? batteryVoltage * batteryCurrent
+        : null;
+      const batteryPower = Number.isFinite(batteryPowerReading)
+        ? Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3
+          ? Math.sign(batteryCurrent) * Math.abs(batteryPowerReading)
+          : batteryPowerReading
+        : calculatedBatteryPower;
+      const batteryDirectionFromCurrent = Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3;
+      const batteryActiveValue = batteryDirectionFromCurrent
+        ? batteryCurrent
+        : batteryPower;
+      const batteryActivityThreshold = batteryDirectionFromCurrent ? .3 : 20;
+      const batteryState = !Number.isFinite(batteryActiveValue) || Math.abs(batteryActiveValue) < batteryActivityThreshold
+        ? t('batteryIdle')
+        : batteryActiveValue > 0 ? t('charging') : t('discharging');
+      const batteryCharging = Number.isFinite(batteryActiveValue) && batteryActiveValue > batteryActivityThreshold;
+      const lcdGridVoltagePresent = Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .5;
+      const gridConnected = lcdGridVoltagePresent;
+      const displayedGridVoltage = gridConnected && Number.isFinite(gridVoltage) ? gridVoltage : 0;
+      const displayedGridCurrent = gridConnected && Number.isFinite(gridCurrent) ? gridCurrent : 0;
+      const displayedGridFrequency = gridConnected && Number.isFinite(frequency) ? frequency : 0;
+      const gridPower = !gridConnected
+        ? 0
+        : batteryCharging && Number.isFinite(loadPower)
+          ? loadPower + Math.abs(batteryPower || 0)
+          : measuredGridPower;
+
+      setText('#lcd-mode', chartDemoRunning ? t('demoMode') : data.online ? t('online') : t('offline'));
+      setText('#lcd-grid', reading(gridPower, 'W', 0));
+      setText('#lcd-grid-voltage', reading(displayedGridVoltage, 'V'));
+      setText('#lcd-grid-current', reading(displayedGridCurrent, 'A', 2));
+      setText('#lcd-grid-power', reading(gridPower, 'W', 0));
+      setText('#lcd-frequency', reading(displayedGridFrequency, 'Hz', 2));
+      setText('#lcd-ac-output-current', reading(outputCurrent, 'A', 2));
+      setText('#lcd-inverter-load', reading(inverterLoad, '%', 1));
+      setText('#lcd-inverter-fan-speed', reading(inverterFanSpeed, '%', 1));
+      setText('#lcd-load-power', reading(loadPower, 'W', 0));
+      setText('#lcd-apparent-load-power', reading(apparentLoadPower, 'VA', 0));
+      setText('#lcd-grid-low-voltage-threshold', reading(gridLowVoltageThreshold, 'V', 0));
+      setText('#lcd-battery-voltage', reading(batteryVoltage, 'V'));
+      setText('#lcd-battery-current', reading(batteryCurrent, 'A'));
+      setText('#lcd-battery-power', reading(batteryPower, 'W', 0));
+      setText('#lcd-soc', reading(batterySoc, '%', 0));
+      setText('#lcd-temperature', reading(inverterTemperature, '°C'));
+      setText('#lcd-charge-voltage', reading(maximumChargeVoltage, 'V'));
+      setText('#lcd-current-limit', Number.isFinite(currentLimit)
+        ? `${reading(currentLimit, 'A')} · ${r413BmsFormula(currentLimit)}`
+        : t('noData'));
+      setText('#lcd-low-soc-threshold', reading(lowSocThreshold, '%', 0));
+      setText('#lcd-load', reading(loadPower, 'W', 0));
+      setText('#lcd-power', reading(apparentLoadPower, 'VA', 0));
+      setText('#lcd-battery-state', batteryState);
+      setText('#lcd-system-status', statusText);
+      setText('#lcd-status-line', `${data.identifier || t('unknownDevice')} · ${t('updated', {time: data.updated_at})}`);
+
+      const pages = [
+        {
+          code: 'LCD', title: t('mainDisplay'),
+          label1: t('batteryVoltage'), value1: reading(batteryVoltage, 'V'),
+          label2: t('acOutputCurrent'), value2: reading(outputCurrent, 'A', 2), help: t('lcdMainPageHelp')
+        },
+        {
+          code: 'P1', title: t('dailyPvEnergy'),
+          label1: t('dailyPvEnergy'), value1: reading(numberValue([157]), 'kWh'),
+          label2: '', value2: '', help: t('lcdP1Help')
+        },
+        {
+          code: 'P2', title: t('totalPvEnergy'),
+          label1: t('totalPvEnergy'), value1: reading(numberValue([158]), 'kWh'),
+          label2: '', value2: '', help: t('lcdP2Help')
+        },
+        {
+          code: 'P3', title: t('batteryState'),
+          label1: t('batteryVoltage'), value1: reading(batteryVoltage, 'V'),
+          label2: t('batteryCurrent'), value2: reading(batteryCurrent, 'A'), help: t('lcdP3Help')
+        },
+        {
+          code: 'P4', title: t('batteryState'),
+          label1: t('batteryTemperature'), value1: reading(batteryTemperature, '°C'),
+          label2: t('batterySoc'), value2: reading(batterySoc, '%', 0), help: t('lcdP4Help')
+        },
+        {
+          code: 'P5', title: t('availableCapacity'),
+          label1: t('availableCapacity'), value1: reading(numberValue([409]), 'Ah'),
+          label2: t('possibleBatteryHealth'), value2: reading(numberValue([408]), '%', 0), help: t('lcdP5Help')
+        },
+        {
+          code: 'P6', title: t('maxChargeVoltage'),
+          label1: t('maxChargeVoltage'), value1: reading(maximumChargeVoltage, 'V'),
+          label2: t('lowerBmsVoltageLimit'), value2: reading(numberValue([346, 349]), 'V'), help: t('lcdP6Help')
+        },
+        {
+          code: 'P7', title: t('currentLimit'),
+          label1: t('currentLimit'), value1: Number.isFinite(currentLimit)
+            ? `${reading(currentLimit, 'A')} · ${r413BmsFormula(currentLimit)}`
+            : t('noData'),
+          label2: t('lowSocThreshold'), value2: reading(lowSocThreshold, '%', 0), help: t('lcdP7Help')
+        },
+        {
+          code: 'P8', title: t('alarmFault'),
+          label1: t('bmsConnection'), value1: textValue([402]),
+          label2: t('alarmFlags'), value2: textValue([418, 419]), help: t('lcdP8Help')
+        },
+        {
+          code: 'P9', title: t('deviceInformation'),
+          label1: t('protocolVersion'), value1: textValue([17]),
+          label2: t('deviceConfiguration'), value2: textValue([18]), help: t('lcdP9Help')
+        },
+        {
+          code: 'P10', title: localizeDataText('Загальна потужність PV'),
+          label1: localizeDataText('Загальна потужність PV'), value1: reading(numberValue([161]), 'W', 0),
+          label2: localizeDataText('Навантаження мережі, фаза A'), value2: reading(numberValue([95]), 'W', 0), help: t('lcdV131Help')
+        },
+        {
+          code: 'P11', title: 'PV1 / PV2',
+          label1: localizeDataText('Струм заряджання від PV1'), value1: reading(numberValue([159]), 'A'),
+          label2: localizeDataText('Струм заряджання від PV2'), value2: reading(numberValue([160]), 'A'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P12', title: localizeDataText('Енергія PV за місяць'),
+          label1: localizeDataText('Енергія PV за місяць'), value1: reading(numberValue([162]), 'kWh'),
+          label2: localizeDataText('Енергія PV за рік'), value2: reading(numberValue([163]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P13', title: t('generator'),
+          label1: localizeDataText('Напруга генератора, фаза A'), value1: reading(numberValue([85]), 'V'),
+          label2: localizeDataText('Потужність генератора, фаза A'), value2: reading(numberValue([88]), 'W', 0), help: t('lcdV131Help')
+        },
+        {
+          code: 'P14', title: t('generator'),
+          label1: localizeDataText('Струм генератора, фаза A'), value1: reading(numberValue([86]), 'A', 2),
+          label2: localizeDataText('Частота генератора, фаза A'), value2: reading(numberValue([87]), 'Hz', 2), help: t('lcdV131Help')
+        },
+        {
+          code: 'P15', title: localizeDataText('Загальна енергія заряджання'),
+          label1: localizeDataText('Енергія заряджання за день'), value1: reading(numberValue([164]), 'kWh'),
+          label2: localizeDataText('Загальна енергія заряджання'), value2: reading(numberValue([167]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P16', title: localizeDataText('Загальна енергія розряджання'),
+          label1: localizeDataText('Енергія розряджання за день'), value1: reading(numberValue([168]), 'kWh'),
+          label2: localizeDataText('Загальна енергія розряджання'), value2: reading(numberValue([171]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P17', title: localizeDataText('Загальна енергія навантаження'),
+          label1: localizeDataText('Енергія навантаження за день'), value1: reading(numberValue([176]), 'kWh'),
+          label2: localizeDataText('Загальна енергія навантаження'), value2: reading(numberValue([179]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P18', title: localizeDataText('Загальна енергія віддачі в мережу'),
+          label1: localizeDataText('Енергія віддачі в мережу за день'), value1: reading(numberValue([180]), 'kWh'),
+          label2: localizeDataText('Загальна енергія віддачі в мережу'), value2: reading(numberValue([183]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P19', title: localizeDataText('Загальна енергія споживання з мережі'),
+          label1: localizeDataText('Енергія споживання з мережі за день'), value1: reading(numberValue([184]), 'kWh'),
+          label2: localizeDataText('Загальна енергія споживання з мережі'), value2: reading(numberValue([187]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P20', title: localizeDataText('Енергія заряджання за місяць'),
+          label1: localizeDataText('Енергія заряджання за місяць'), value1: reading(numberValue([165]), 'kWh'),
+          label2: localizeDataText('Енергія заряджання за рік'), value2: reading(numberValue([166]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P21', title: localizeDataText('Енергія розряджання за місяць'),
+          label1: localizeDataText('Енергія розряджання за місяць'), value1: reading(numberValue([169]), 'kWh'),
+          label2: localizeDataText('Енергія розряджання за рік'), value2: reading(numberValue([170]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P22', title: localizeDataText('Енергія навантаження за місяць'),
+          label1: localizeDataText('Енергія навантаження за місяць'), value1: reading(numberValue([177]), 'kWh'),
+          label2: localizeDataText('Енергія навантаження за рік'), value2: reading(numberValue([178]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P23', title: localizeDataText('Енергія віддачі в мережу за місяць'),
+          label1: localizeDataText('Енергія віддачі в мережу за місяць'), value1: reading(numberValue([181]), 'kWh'),
+          label2: localizeDataText('Енергія віддачі в мережу за рік'), value2: reading(numberValue([182]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P24', title: localizeDataText('Енергія споживання з мережі за місяць'),
+          label1: localizeDataText('Енергія споживання з мережі за місяць'), value1: reading(numberValue([185]), 'kWh'),
+          label2: localizeDataText('Енергія споживання з мережі за рік'), value2: reading(numberValue([186]), 'kWh'), help: t('lcdV131Help')
+        },
+        {
+          code: 'P25', title: localizeDataText('Потужність навантаження на виході, фаза A'),
+          label1: localizeDataText('Потужність навантаження на виході, фаза A'), value1: reading(numberValue([188]), 'W', 0),
+          label2: localizeDataText('Потужність навантаження на виході, фаза B'), value2: reading(numberValue([189]), 'W', 0), help: t('lcdV131Help')
+        },
+        {
+          code: 'P26', title: localizeDataText('Температура PV2'),
+          label1: localizeDataText('Потужність навантаження на виході, фаза C'), value1: reading(numberValue([190]), 'W', 0),
+          label2: localizeDataText('Температура PV2'), value2: reading(numberValue([823]), '°C'), help: t('lcdV131Help')
+        }
+      ];
+      const page = pages[lcdPageIndex] || pages[0];
+      setText('#lcd-page-code', page.code);
+      setText('#lcd-page-title', page.title);
+      setText('#lcd-page-label-1', page.label1);
+      setText('#lcd-page-value-1', page.value1);
+      setText('#lcd-page-label-2', page.label2);
+      setText('#lcd-page-value-2', page.value2);
+      setText('#lcd-page-description', lcdEnterNotice ? t('settingsReadOnly') : page.help);
+      document.querySelector('#lcd-page-reading-2').hidden = !page.label2;
+
+      const active = (selector, enabled) =>
+        document.querySelector(selector)?.classList.toggle('active', Boolean(enabled));
+      active('#lcd-grid-node', gridConnected);
+      active('#lcd-grid-arrow', gridConnected && Number.isFinite(gridPower) && Math.abs(gridPower) > 20);
+      active('#lcd-inverter-node', chartDemoRunning || data.online);
+      active('#lcd-load-node', Number.isFinite(loadPower) && loadPower > 20);
+      active('#lcd-load-arrow', Number.isFinite(loadPower) && loadPower > 20);
+      active('#lcd-ac-output-card', Number.isFinite(outputCurrent) && outputCurrent > .05);
+      active('#lcd-battery-card', Number.isFinite(batteryVoltage) && batteryVoltage > 20);
+      active('#lcd-soc-card', Number.isFinite(batterySoc));
+    }

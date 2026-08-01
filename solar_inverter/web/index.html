@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="uk" class="booting">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <link rel="icon" type="image/png" sizes="any" href="/favicon.png?v=__ASSET_VERSION__">
+  <title data-i18n="appTitle">Solar Inverter Web</title>
+  <style>/*__DASHBOARD_CSS__*/</style>
+  <script defer src="/static/scripts/translations.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/interpretations.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/renderers.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/charts.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/chart-rendering.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/gauges.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/energy-flow.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/lcd.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/app.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/app-events.js?v=__ASSET_VERSION__"></script>
+</head>
+<body>
+  <script>
+    // Fail-safe: never leave the interface hidden if later startup code fails.
+    window.setTimeout(() => document.documentElement.classList.remove('booting'), 2000);
+  </script>
+  <main class="shell">
+    <header>
+      <div class="brand">
+        <div class="logo">☀</div>
+        <div><h1 data-i18n="appTitle">Solar Inverter Web</h1><div class="subtitle" id="identifier" data-i18n="waitingInverter">Очікування даних інвертора…</div></div>
+      </div>
+      <div class="header-actions">
+        <label class="theme-switch">
+          <input id="theme-toggle" type="checkbox" role="switch" aria-label="Увімкнути світлу тему" data-i18n-aria="themeAria">
+          <span class="theme-slider" aria-hidden="true"></span>
+          <span id="theme-name">Темна</span>
+        </label>
+        <div class="language-switch" role="group" aria-label="Мова інтерфейсу" data-i18n-aria="languageAria">
+          <button class="language-option active" type="button" data-language="uk" aria-pressed="true">УКР</button>
+          <button class="language-option" type="button" data-language="ru" aria-pressed="false">РУС</button>
+          <button class="language-option" type="button" data-language="en" aria-pressed="false">ENG</button>
+        </div>
+        <button id="register-map-upload-button" type="button" data-i18n="uploadRegisterMap" data-i18n-title="registerMapHelp">↑ Завантажити карту CSV</button>
+        <input id="register-map-file" type="file" accept=".csv,text/csv" aria-label="Завантажити карту регістрів CSV" data-i18n-aria="uploadRegisterMap" hidden>
+        <button id="app-toggle" type="button">Зупинити моніторинг</button>
+        <div class="view-tabs" role="tablist" aria-label="Розділи" data-i18n-aria="viewTabsAria">
+          <button class="view-tab active" id="dashboard-tab" type="button" role="tab" data-view="dashboard" aria-controls="dashboard-view" aria-selected="true" tabindex="0" data-i18n="dashboardTab">Панель</button>
+          <button class="view-tab" id="charts-tab" type="button" role="tab" data-view="charts" aria-controls="charts-view" aria-selected="false" tabindex="-1" data-i18n="chartsTab">Графіки</button>
+          <button class="view-tab" id="lcd-tab" type="button" role="tab" data-view="lcd" aria-controls="lcd-view" aria-selected="false" tabindex="-1" data-i18n="lcdTab">LCD</button>
+        </div>
+        <div class="status" id="status"><span class="dot"></span><span class="status-label">НЕМАЄ ЗВ’ЯЗКУ</span></div>
+      </div>
+    </header>
+
+    <section id="dashboard-view" role="tabpanel" aria-labelledby="dashboard-tab" tabindex="0">
+    <div class="toolbar">
+      <label class="chip"><span data-i18n="requestEvery">Запит кожні</span>&nbsp;
+        <select id="poll-rate" aria-label="Інтервал опитування" data-i18n-aria="pollAria">
+          <option value="0" data-i18n="interval05">0.5 с</option><option value="1" data-i18n="interval1">1 с</option>
+          <option value="2" data-i18n="interval2">2 с</option><option value="3" data-i18n="interval5">5 с</option><option value="4" data-i18n="interval10">10 с</option>
+        </select>
+      </label>
+      <label class="chip"><span data-i18n="readMode">Режим читання</span>&nbsp;
+        <select id="read-mode" aria-label="Режим читання" data-i18n-aria="readModeAria">
+          <option value="fast" data-i18n="fast">Швидкий</option><option value="compatible" data-i18n="compatible">Сумісний</option>
+        </select>
+      </label>
+      <button id="demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
+      <button id="manage-values-button" type="button" data-i18n="addValues">＋ Додати індикатори</button>
+      <span class="chip" id="cycle">Цикл —</span>
+      <span class="chip" id="site-visits">Відвідувачі — · —</span>
+      <span class="chip updated" id="updated">Ще не оновлено</span>
+    </div>
+
+    <div class="panel error" id="error"></div>
+    <article class="energy-flow-card" id="energy-flow-card" aria-label="Потік енергії" data-i18n-aria="energyFlowAria">
+      <div class="energy-flow-head">
+        <h2 data-i18n="energyFlowTitle">Потік енергії</h2>
+        <span class="energy-flow-status" id="energy-flow-status" aria-live="polite">—</span>
+      </div>
+      <div class="energy-flow-scroll" tabindex="0" aria-label="Схема потоків енергії" data-i18n-aria="energyFlowAria">
+      <div class="energy-flow-diagram">
+        <div class="energy-node energy-solar" id="energy-solar-node">
+          <span class="energy-node-icon" aria-hidden="true">&#9728;</span>
+          <span class="energy-node-register" id="energy-solar-registers">—</span>
+          <span class="energy-node-label" data-i18n="solarPanels">Сонячні панелі</span>
+          <span class="energy-node-value energy-solar-values">
+            <span id="energy-solar-voltage">— V</span>
+            <span id="energy-solar-power">— W</span>
+            <span id="energy-solar-current">— A</span>
+          </span>
+          <span class="flow-direction" id="energy-solar-direction"></span>
+        </div>
+        <div class="flow-connector flow-pv" id="energy-pv-flow" aria-hidden="true">
+          <svg class="flow-lines" viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
+            <line class="flow-line flow-line-desktop" x1="0" y1="50" x2="100" y2="50"/>
+            <line class="flow-line flow-line-mobile" x1="50" y1="0" x2="50" y2="100"/>
+          </svg>
+        </div>
+        <div class="energy-node energy-inverter" id="energy-inverter-node">
+          <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
+          <span class="energy-node-register" id="energy-inverter-registers">—</span>
+          <span class="energy-node-label" data-i18n="inverter">Інвертор</span>
+          <span class="energy-inverter-load" id="energy-inverter-load">— %</span>
+          <span class="energy-inverter-fan-row" id="energy-inverter-fan-row">
+              <svg class="energy-inverter-fan-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".7"/>
+                <g class="energy-inverter-fan-rotor">
+                <path fill="currentColor" d="M11.1 9.8C8.9 7.1 9.2 3.4 11.7 2.7c2.1-.5 3.5 2.8 1.5 6.9-.5 1-1.4 1.1-2.1.2Zm3.1 1.3c2.7-2.2 6.4-1.9 7.1.6.5 2.1-2.8 3.5-6.9 1.5-1-.5-1.1-1.4-.2-2.1Zm-1.3 3.1c2.2 2.7 1.9 6.4-.6 7.1-2.1.5-3.5-2.8-1.5-6.9.5-1 1.4-1.1 2.1-.2Zm-3.1-1.3c-2.7 2.2-6.4 1.9-7.1-.6-.5-2.1 2.8-3.5 6.9-1.5 1 .5 1.1 1.4.2 2.1Z"/>
+                <circle cx="12" cy="12" r="2.1" fill="var(--card-start)" stroke="currentColor" stroke-width="1.2"/>
+                </g>
+              </svg>
+              <span data-i18n="inverterFanSpeed">Швидкість вентилятора</span>
+              <strong class="energy-inverter-fan-value" id="energy-inverter-fan-speed">— %</strong>
+          </span>
+          <span class="energy-node-value energy-inverter-values">
+            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="outputMode">Режим AC</span><span class="energy-mode-value"><strong class="energy-mode-code" id="energy-inverter-ac-mode">—</strong><small class="energy-mode-definition" id="energy-inverter-ac-definition"></small></span></span>
+            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="inputMode">Джерело входу</span><span class="energy-mode-value"><strong class="energy-mode-code" id="energy-inverter-input-mode">—</strong><small class="energy-mode-definition" id="energy-inverter-input-definition"></small></span></span>
+            <span class="energy-mode-row"><span class="energy-mode-label" data-i18n="chargeMode">Режим батареї</span><span class="energy-mode-value"><strong class="energy-mode-code" id="energy-inverter-charge-mode">—</strong><small class="energy-mode-definition" id="energy-inverter-charge-definition"></small></span></span>
+          </span>
+          <span class="flow-direction" aria-hidden="true"></span>
+        </div>
+        <div class="flow-connector flow-home" id="energy-home-flow" aria-hidden="true">
+          <svg class="flow-lines" viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
+            <line class="flow-line flow-line-desktop" x1="0" y1="50" x2="100" y2="50"/>
+            <line class="flow-line flow-line-mobile" x1="0" y1="100" x2="100" y2="0"/>
+          </svg>
+        </div>
+        <div class="flow-connector flow-generator" id="energy-generator-flow" aria-hidden="true">
+          <svg class="flow-lines" viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
+            <line class="flow-line flow-line-desktop" x1="0" y1="0" x2="100" y2="100"/>
+            <line class="flow-line flow-line-mobile" x1="0" y1="0" x2="100" y2="100"/>
+          </svg>
+        </div>
+        <div class="energy-node energy-generator" id="energy-generator-node">
+          <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
+          <span class="energy-node-register" id="energy-generator-registers">—</span>
+          <span class="energy-node-label" data-i18n="generator">Генератор</span>
+          <span class="energy-node-value energy-generator-values" hidden>
+            <span id="energy-generator-power">— W</span>
+            <span id="energy-generator-current">— A</span>
+            <span id="energy-generator-voltage">— V</span>
+          </span>
+          <span class="flow-direction" id="energy-generator-direction"></span>
+        </div>
+        <div class="energy-node energy-home" id="energy-home-node">
+          <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
+          <span class="energy-node-register" id="energy-home-registers">—</span>
+          <span class="energy-node-label" data-i18n="home">Дім</span>
+          <span class="energy-node-value energy-home-values">
+            <span id="energy-home-current">— A</span>
+            <span id="energy-home-power">— W</span>
+            <span id="energy-home-voltage">— V</span>
+          </span>
+          <span class="flow-direction" id="energy-home-direction"></span>
+        </div>
+        <div class="energy-node energy-grid" id="energy-grid-node">
+          <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
+          <span class="energy-node-register" id="energy-grid-registers">—</span>
+          <span class="energy-node-label" data-i18n="grid">Мережа</span>
+          <span class="energy-node-value energy-grid-values">
+            <span id="energy-grid-power">— W</span>
+            <span id="energy-grid-current">— A</span>
+            <span id="energy-grid-voltage">— V</span>
+          </span>
+          <span class="flow-direction" id="energy-grid-direction"></span>
+        </div>
+        <div class="flow-connector flow-grid" id="energy-grid-flow" aria-hidden="true">
+          <svg class="flow-lines" viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
+            <line class="flow-line flow-line-desktop" x1="50" y1="0" x2="50" y2="100"/>
+            <line class="flow-line flow-line-mobile" x1="50" y1="0" x2="50" y2="100"/>
+          </svg>
+        </div>
+        <div class="flow-connector flow-battery" id="energy-battery-flow" aria-hidden="true">
+          <svg class="flow-lines" viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
+            <line class="flow-line flow-line-desktop" x1="0" y1="100" x2="100" y2="0"/>
+            <line class="flow-line flow-line-mobile" x1="100" y1="50" x2="0" y2="50"/>
+          </svg>
+        </div>
+        <div class="energy-node energy-battery" id="energy-battery-node">
+          <span class="energy-node-icon energy-battery-icon" id="energy-battery-icon" role="img">
+            <span class="energy-battery-fill" aria-hidden="true"></span>
+            <span class="energy-battery-percent" id="energy-battery-percent" aria-hidden="true">—</span>
+          </span>
+          <span class="energy-node-register" id="energy-battery-registers">—</span>
+          <span class="energy-node-label" data-i18n="battery">Батарея</span>
+          <span class="energy-node-value energy-battery-values">
+            <span id="energy-battery-current">— A</span>
+            <span id="energy-battery-power">— W</span>
+            <span id="energy-battery-voltage">— V</span>
+          </span>
+          <span class="flow-direction" id="energy-battery-direction"></span>
+        </div>
+      </div>
+      </div>
+    </article>
+    <section class="panel solar-energy-panel" aria-label="Вироблена сонячна енергія" data-i18n-aria="solarEnergyAria">
+      <div class="solar-energy-head">
+        <h2 data-i18n="solarEnergyTitle">Вироблена сонячна енергія</h2>
+        <span class="solar-energy-note" data-i18n="solarEnergyEstimate">Підтверджено: R153 + R156</span>
+      </div>
+      <div class="solar-energy-grid">
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="today">Сьогодні</span><span class="solar-energy-value" id="solar-energy-today">—</span></article>
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisWeek">Цього тижня</span><span class="solar-energy-value" id="solar-energy-week">—</span></article>
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisMonth">Цього місяця</span><span class="solar-energy-value" id="solar-energy-month">—</span></article>
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisYear">Цього року</span><span class="solar-energy-value" id="solar-energy-year">—</span></article>
+      </div>
+      <div class="solar-energy-error" id="solar-energy-error" hidden></div>
+    </section>
+    <div class="dashboard-gauge-toolbar" id="dashboard-gauge-toolbar" hidden>
+      <div class="dashboard-pagination-host" id="dashboard-pagination-host"></div>
+      <button id="dashboard-clear-gauges" class="clear-selection" type="button" data-i18n="clearDashboard" data-disabled-reason="clearUnavailable">Очистити панель</button>
+    </div>
+    <section class="gauges" id="gauges" aria-label="Індикатори інвертора" data-i18n-aria="gaugesAria"></section>
+
+    <section class="panel register-logger">
+      <div class="logger-layout">
+        <div class="logger-copy">
+          <h2 data-i18n="registerLogger">Журнал змін регістрів</h2>
+          <div class="muted" data-i18n="registerLoggerHelp">Після запуску фіксує зміни регістрів від фізичних кнопок у CSV: швидке опитування 0,5 с та час Мадрида.</div>
+          <div class="logger-status" id="register-log-status" aria-live="polite">Запис не запущено</div>
+        </div>
+        <div class="logger-actions">
+          <input class="logger-note" id="register-log-note" type="text" maxlength="500" placeholder="Напр. панелі вимкнено" data-i18n-placeholder="registerLogNotePlaceholder" disabled>
+          <button id="register-log-mark" type="button" data-i18n="markRegisterLog" data-disabled-reason="startLoggingFirst" disabled>＋ Додати позначку</button>
+          <button id="register-log-start" type="button" data-i18n="startRegisterLog" data-disabled-reason="stopLoggingFirst">● Почати запис</button>
+          <button id="register-log-stop" type="button" data-i18n="stopRegisterLog" data-disabled-reason="startLoggingFirst" disabled>■ Зупинити</button>
+          <a class="logger-download" id="register-log-download" href="/api/register-log/download" data-i18n="downloadRegisterLog" hidden>↓ Завантажити CSV</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2 data-i18n="liveRegisters">Поточні регістри</h2><span class="muted" id="register-count" aria-live="polite"></span></div>
+        <input id="search" type="search" placeholder="Пошук регістрів…" aria-label="Пошук регістрів" data-i18n-placeholder="searchRegisters" data-i18n-aria="searchRegisters">
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th data-i18n="register">Регістр</th><th data-i18n="group">Група</th><th data-i18n="name">Назва</th><th data-i18n="value">Значення</th><th data-i18n="raw">Сире</th></tr></thead>
+          <tbody id="registers"></tbody>
+        </table>
+      </div>
+    </section>
+    </section>
+
+    <section id="lcd-view" role="tabpanel" aria-labelledby="lcd-tab" tabindex="0" hidden>
+      <div class="panel lcd-panel">
+        <div class="lcd-screen">
+          <div class="lcd-head">
+            <div><h2 data-i18n="lcdTitle">LCD ІНВЕРТОРА</h2><div class="lcd-subtitle" data-i18n="lcdSubtitle">Поточні показники з Modbus</div></div>
+            <span class="lcd-mode" id="lcd-mode">—</span>
+          </div>
+          <div class="lcd-flow">
+            <div class="lcd-node" id="lcd-grid-node"><span class="lcd-node-icon">∿</span><span class="lcd-node-label" data-i18n="grid">Мережа</span><span class="lcd-node-value" id="lcd-grid">—</span></div>
+            <div class="lcd-arrow" id="lcd-grid-arrow">→</div>
+            <div class="lcd-node" id="lcd-inverter-node"><span class="lcd-node-icon">▣</span><span class="lcd-node-label" data-i18n="inverter">Інвертор</span><span class="lcd-node-value" id="lcd-power">—</span></div>
+            <div class="lcd-arrow" id="lcd-load-arrow">→</div>
+            <div class="lcd-node" id="lcd-load-node"><span class="lcd-node-icon">⌂</span><span class="lcd-node-label" data-i18n="load">Навантаження</span><span class="lcd-node-value" id="lcd-load">—</span></div>
+          </div>
+          <div class="lcd-main">
+            <div class="lcd-primary" id="lcd-ac-output-card"><span class="lcd-primary-label" data-i18n="acOutputCurrent">Вихідний струм AC</span><span class="lcd-primary-value" id="lcd-ac-output-current">—</span></div>
+            <div class="lcd-primary" id="lcd-battery-card"><span class="lcd-primary-label" data-i18n="batteryVoltage">Напруга батареї</span><span class="lcd-primary-value" id="lcd-battery-voltage">—</span></div>
+            <div class="lcd-primary" id="lcd-soc-card"><span class="lcd-primary-label" data-i18n="batterySoc">Заряд батареї</span><span class="lcd-primary-value" id="lcd-soc">—</span></div>
+          </div>
+          <div class="lcd-readouts">
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridVoltage">Напруга мережі</span><span class="lcd-readout-value" id="lcd-grid-voltage">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="frequency">Частота</span><span class="lcd-readout-value" id="lcd-frequency">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridCurrent">Струм мережі</span><span class="lcd-readout-value" id="lcd-grid-current">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridPower">Потужність мережі</span><span class="lcd-readout-value" id="lcd-grid-power">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="inverterLoad">Завантаження інвертора</span><span class="lcd-readout-value" id="lcd-inverter-load">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="inverterFanSpeed">Швидкість вентилятора</span><span class="lcd-readout-value" id="lcd-inverter-fan-speed">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="loadPower">Активна потужність навантаження</span><span class="lcd-readout-value" id="lcd-load-power">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="apparentLoadPower">Повна потужність навантаження</span><span class="lcd-readout-value" id="lcd-apparent-load-power">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridLowVoltageThreshold">Нижній поріг напруги мережі</span><span class="lcd-readout-value" id="lcd-grid-low-voltage-threshold">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryCurrent">Струм батареї</span><span class="lcd-readout-value" id="lcd-battery-current">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryPower">Потужність батареї</span><span class="lcd-readout-value" id="lcd-battery-power">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="inverterTemperature">Температура інвертора</span><span class="lcd-readout-value" id="lcd-temperature">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="maxChargeVoltage">Макс. напруга заряду</span><span class="lcd-readout-value" id="lcd-charge-voltage">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="currentLimit">Дозволений тривалий струм розряду</span><span class="lcd-readout-value" id="lcd-current-limit">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="lowSocThreshold">Нижній поріг SOC</span><span class="lcd-readout-value" id="lcd-low-soc-threshold">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryState">Стан батареї</span><span class="lcd-readout-value" id="lcd-battery-state">—</span></div>
+            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="systemStatus">Стан системи</span><span class="lcd-readout-value" id="lcd-system-status">—</span></div>
+          </div>
+          <div class="lcd-status-line" id="lcd-status-line">—</div>
+          <div class="lcd-page-panel" aria-live="polite">
+            <div class="lcd-page-head"><span class="lcd-page-code" id="lcd-page-code">LCD</span><span class="lcd-page-title" id="lcd-page-title">—</span></div>
+            <div class="lcd-page-values">
+              <div class="lcd-page-reading" id="lcd-page-reading-1"><span class="lcd-readout-label" id="lcd-page-label-1">—</span><span class="lcd-readout-value" id="lcd-page-value-1">—</span></div>
+              <div class="lcd-page-reading" id="lcd-page-reading-2"><span class="lcd-readout-label" id="lcd-page-label-2">—</span><span class="lcd-readout-value" id="lcd-page-value-2">—</span></div>
+            </div>
+            <div class="lcd-page-description" id="lcd-page-description">—</div>
+          </div>
+          <div class="lcd-controls-wrap">
+            <div class="lcd-controls-title" data-i18n="lcdControls">Керування LCD</div>
+            <div class="lcd-controls" role="group" aria-label="Керування LCD" data-i18n-aria="lcdControls">
+              <button class="lcd-key" type="button" data-lcd-key="escape" data-i18n="lcdEscapeKey" data-i18n-aria="lcdEscapeAria">ESC</button>
+              <button class="lcd-key" type="button" data-lcd-key="up" data-i18n="lcdUpKey" data-i18n-aria="lcdUpAria">▲ ВГОРУ</button>
+              <button class="lcd-key" type="button" data-lcd-key="down" data-i18n="lcdDownKey" data-i18n-aria="lcdDownAria">▼ ВНИЗ</button>
+              <button class="lcd-key" type="button" data-lcd-key="enter" data-i18n="lcdEnterKey" data-i18n-aria="lcdEnterAria">ENTER</button>
+            </div>
+            <div class="lcd-controls-note" data-i18n="lcdControlsLocalOnly">Віртуальні клавіші керують лише сторінками застосунку. У демо активний CSV-журнал фіксує кожне натискання. Налаштування інвертора не змінюються.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="charts-view" role="tabpanel" aria-labelledby="charts-tab" tabindex="0" hidden>
+      <div class="charts-layout">
+        <aside class="panel chart-selector">
+          <h2 data-i18n="availableValues">Доступні значення</h2>
+          <div class="muted" data-i18n="selectionHelp">Кожен вибраний показник додається на панель і до графіків у реальному часі.</div>
+          <input id="chart-search" type="search" placeholder="Пошук значень…" aria-label="Пошук значень графіка" data-i18n-placeholder="searchValues" data-i18n-aria="searchChartValues">
+          <div class="chart-selector-actions">
+            <button id="chart-select-all" type="button" data-i18n="selectAllGauges" data-disabled-reason="selectUnavailable" disabled>Вибрати всі</button>
+            <button id="chart-clear-all" class="clear-selection" type="button" data-i18n="clearAllGauges" data-disabled-reason="clearUnavailable" disabled>Очистити всі</button>
+          </div>
+          <div class="value-list" id="chart-value-list"></div>
+        </aside>
+        <div class="charts-main">
+          <div class="panel-head charts-head">
+            <div>
+              <h2 data-i18n="liveCharts">Графіки в реальному часі</h2>
+              <span class="muted" id="chart-selection-count" aria-live="polite">Значення не вибрано</span>
+            </div>
+            <button id="chart-demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
+          </div>
+          <div class="chart-grid" id="chart-grid">
+            <div class="chart-empty">Виберіть значення зі списку, щоб запустити графіки в реальному часі.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <dialog class="gauge-picker" id="gauge-picker">
+      <div class="gauge-picker-head">
+        <div>
+          <h2 data-i18n="chooseGauges">Choose gauges</h2>
+          <div class="muted" data-i18n="gaugePickerHelp">Вибрані індикатори з’являться на панелі та у графіках.</div>
+        </div>
+        <button class="gauge-picker-close" type="button" data-close-gauge-picker aria-label="Закрити" data-i18n-aria="close">×</button>
+      </div>
+      <input class="gauge-picker-search" id="gauge-picker-search" type="search" placeholder="Пошук значень…" data-i18n-placeholder="searchValues" aria-label="Пошук значень" data-i18n-aria="searchValues">
+      <div class="gauge-picker-actions">
+        <button id="select-all-gauges" type="button" data-i18n="selectAllGauges" data-disabled-reason="selectUnavailable" disabled>Вибрати всі</button>
+        <button id="clear-all-gauges" class="clear-selection" type="button" data-i18n="clearDashboard" data-disabled-reason="clearUnavailable" disabled>Очистити панель</button>
+      </div>
+      <div class="gauge-picker-list" id="gauge-picker-list"></div>
+    </dialog>
+  </main>
+  <script>window.__INITIAL_STATE__ = /*__INITIAL_STATE__*/null;</script>
+</body>
+</html>

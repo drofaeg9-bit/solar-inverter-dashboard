@@ -1,0 +1,413 @@
+    @media (min-width: 641px) {
+      .energy-solar,
+      .energy-grid,
+      .energy-generator { padding-inline: 8px }
+      .energy-solar .energy-node-icon,
+      .energy-grid .energy-node-image-icon,
+      .energy-generator .energy-node-image-icon {
+        inset: 0; z-index: 0; display: grid; place-items: center;
+        width: 57%; height: 100%; margin-inline: auto; opacity: .18; filter: none;
+        -webkit-mask-position: center;
+        mask-position: center;
+        -webkit-mask-size: 100% 100%;
+        mask-size: 100% 100%;
+      }
+      .energy-solar .energy-node-icon { font-size: 112px }
+      .energy-solar .energy-node-register,
+      .energy-grid .energy-node-register,
+      .energy-generator .energy-node-register {
+        left: 8px; right: 8px; text-align: center;
+      }
+      .energy-solar .energy-node-value,
+      .energy-grid .energy-node-value,
+      .energy-generator .energy-node-value {
+        z-index: 1; left: 50%; width: calc(100% - 16px);
+        font-size: 16px; text-align: center;
+        text-shadow: 0 1px 3px var(--card-start), 0 0 5px var(--card-start);
+        transform: translate(-50%,-50%);
+      }
+      .energy-solar .flow-direction,
+      .energy-grid .flow-direction,
+      .energy-generator .flow-direction {
+        z-index: 1; left: 8px; right: 8px; text-align: center;
+        text-shadow: 0 1px 3px var(--card-start), 0 0 5px var(--card-start);
+      }
+    }
+    @media (max-width: 1120px) {
+      .gauges, .custom-value-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) }
+      .charts-layout { grid-template-columns: 250px minmax(0, 1fr) }
+      .chart-grid { grid-template-columns: 1fr }
+    }
+    @media (max-width: 900px) {
+      .shell { width: min(calc(100% - 24px), 1440px); padding-top: max(12px, env(safe-area-inset-top)) }
+      header { align-items: flex-start; flex-direction: column; padding: 16px 18px }
+      .brand, .header-actions { width: 100% }
+      .header-actions { justify-content: flex-start }
+      .status { margin-left: auto }
+      .gauges, .custom-value-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+      .logger-layout { align-items: stretch; flex-direction: column }
+      .logger-actions > * { flex: 1 1 140px }
+      .charts-layout { grid-template-columns: 1fr }
+      .chart-selector { position: static; max-height: none }
+      .value-list { max-height: min(42vh, 360px) }
+    }
+    @media (max-width: 640px) {
+      .shell { width: min(calc(100% - 16px), 1440px); padding-top: max(8px, env(safe-area-inset-top)) }
+      .shell, .shell > *, header, .panel, #dashboard-view, #charts-view, #lcd-view {
+        min-width: 0; max-width: 100%;
+      }
+      .error, .logger-status, .lcd-page-description { overflow-wrap: anywhere }
+      .shell:has(#dashboard-view:not([hidden])) {
+        display: flex; flex-direction: column;
+      }
+      .shell:has(#dashboard-view:not([hidden])) > header { order: 2 }
+      #dashboard-view:not([hidden]) { display: contents }
+      #dashboard-view > * { order: 4 }
+      #dashboard-view > .error { order: 0 }
+      #dashboard-view > .energy-flow-card { order: 1 }
+      #dashboard-view > .toolbar { order: 3 }
+      header { gap: 14px; padding: 14px; border-radius: 16px; margin-bottom: 12px }
+      .logo { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; font-size: 21px }
+      .header-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: center;
+        gap: 8px;
+      }
+      .header-actions button { width: 100%; min-width: 0; padding-inline: 8px }
+      .view-tabs { grid-column: 1 / -1; width: 100% }
+      .view-tab { flex: 1 1 0 }
+      .theme-switch { min-height: 44px }
+      .status { justify-self: end; margin-left: 0; min-height: 44px }
+      .toolbar {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .toolbar > * { width: 100%; min-width: 0; margin: 0 }
+      .toolbar .chip { justify-content: space-between; padding-inline: 10px }
+      .toolbar select { width: auto; min-width: 0; min-height: 36px; padding-inline: 7px }
+      #demo-button, #manage-values-button, #updated { grid-column: 1 / -1 }
+      .updated { margin-left: 0 }
+      .gauges { gap: 8px; margin-bottom: 12px }
+      .energy-flow-card {
+        position: relative; top: auto; width: 100%; max-width: 100%;
+        margin-bottom: 12px; padding: 12px 8px 14px; border-radius: 16px;
+      }
+      .energy-flow-head { min-width: 0; margin-bottom: 11px; padding-inline: 3px }
+      .energy-flow-head h2 { flex: 0 1 auto; min-width: 0; font-size: 14px }
+      .energy-flow-status {
+        flex: 0 1 auto; max-width: 66%; padding: 5px 9px; overflow: hidden;
+        font-size: 9px; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .energy-flow-diagram {
+        grid-template-columns: minmax(0,1fr) clamp(24px,8vw,36px) minmax(0,1.08fr) clamp(24px,8vw,36px) minmax(0,1fr);
+        grid-template-rows: 136px 46px 136px;
+      }
+      .solar-energy-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px }
+      .solar-energy-head { align-items: flex-start; flex-direction: column; gap: 4px }
+      .solar-energy-note { text-align: left }
+      .energy-node { height: 136px; padding: 29px 4px 22px; border-radius: 12px }
+      .energy-node-icon { left: 6px; top: 7px; font-size: 21px }
+      .energy-node-register {
+        left: 5px; top: 7px; right: 5px; max-width: none;
+        max-height: 25px; overflow: hidden; font-size: 6.5px; line-height: 8px;
+        text-align: center; white-space: normal;
+        -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+      }
+      .energy-node-value {
+        left: 50%; top: 55%; width: calc(100% - 8px); max-width: none;
+        overflow: visible; font-size: 11.5px;
+      }
+      .energy-inverter-values, .energy-home-values { font-size: 10.5px; line-height: 1.12 }
+      .energy-inverter .energy-node-value { width: calc(100% - 6px); font-size: 10.5px }
+      .energy-inverter-load { font-size: 21px }
+      .energy-inverter-fan-row { gap: 3px; font-size: 6px }
+      .energy-inverter-fan-value { font-size: 15px }
+      .energy-mode-row { gap: 3px }
+      .energy-mode-label { font-size: 6.5px; letter-spacing: 0 }
+      .energy-solar-values { gap: 3px; line-height: 1.12 }
+      .energy-battery { padding-left: 39px }
+      .energy-generator { padding-left: 43px }
+      .energy-generator .energy-node-image-icon { left: 5px; top: 7px; bottom: 7px; height: auto }
+      .energy-battery-icon {
+        font-size: 7px;
+      }
+      .energy-battery-percent { padding-inline: 1px; overflow: hidden; font-size: 24px }
+      .energy-battery-values {
+        max-width: none; gap: 3px;
+        overflow: visible; font-size: 11.5px; line-height: 1.1;
+      }
+      .energy-battery .flow-direction { left: 3px; right: 3px; bottom: 7px; text-align: center }
+      .energy-node:not(.energy-battery) .flow-direction { bottom: 7px }
+      .flow-direction { left: 3px; right: 3px; font-size: 7px }
+      .gauge-card { padding: 11px 8px 10px; border-radius: 15px }
+      .gauge-heading { gap: 5px; padding-right: 56px }
+      .gauge-title { font-size: 12px }
+      .gauge-number { padding-inline: 5px; font-size: 8px }
+      .value { font-size: clamp(21px, 7vw, 26px) }
+      .source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+      .panel { padding: 14px; border-radius: 16px }
+      .panel-head { align-items: stretch; flex-direction: column }
+      .panel-head input { width: 100% }
+      .charts-head button { width: 100% }
+      .chart-card { padding: 12px }
+      .chart-card canvas { height: 190px }
+      .gauge-picker { width: calc(100% - 16px); max-height: calc(100dvh - 16px) }
+      .gauge-picker-head { padding: 14px 14px 10px }
+      .gauge-picker-search { width: calc(100% - 28px); margin: 0 14px 10px }
+      .gauge-picker-actions { flex-wrap: wrap; padding: 0 14px 10px }
+      .gauge-picker-actions button { flex: 1 1 130px }
+      .gauge-picker-list { max-height: calc(100dvh - 185px); padding: 0 14px 14px }
+      .lcd-screen { padding: 12px; border-width: 5px; border-radius: 15px }
+      .lcd-head { gap: 8px; padding-bottom: 10px }
+      .lcd-head h2 { font-size: 17px }
+      .lcd-subtitle { font-size: 10px }
+      .lcd-mode { flex: 0 0 auto; padding: 3px 6px; font-size: 11px }
+      .lcd-flow { grid-template-columns: minmax(0,1fr) 14px minmax(0,1fr) 14px minmax(0,1fr); gap: 3px; margin: 14px 0 }
+      .lcd-node { padding: 8px 2px }
+      .lcd-node-icon { font-size: 20px }
+      .lcd-node-label { font-size: 8px }
+      .lcd-node-value { font-size: 12px }
+      .lcd-arrow { font-size: 16px }
+      .lcd-main { gap: 6px; margin-bottom: 10px }
+      .lcd-primary { padding: 9px 4px }
+      .lcd-primary-label { font-size: 8px; letter-spacing: .03em }
+      .lcd-primary-value { font-size: clamp(19px,7vw,28px) }
+      .lcd-readouts { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px }
+      .lcd-readout { padding: 8px 5px }
+      .lcd-readout-label { font-size: 8px; letter-spacing: .03em }
+      .lcd-readout-value { font-size: 14px }
+      .lcd-page-panel { margin-top: 12px; padding: 10px }
+      .lcd-page-head { align-items: flex-start }
+      .lcd-page-title { font-size: 11px }
+      .lcd-page-values { gap: 6px }
+      .lcd-controls { gap: 6px }
+      .custom-values { margin-bottom: 12px }
+      .custom-value-grid { gap: 8px }
+      .custom-value-card { padding: 12px; border-radius: 14px }
+      .custom-value-reading { font-size: 21px }
+      .charts-head #chart-demo-button { width: 100% }
+      .chart-grid { gap: 10px }
+      .chart-card { padding: 12px 10px; border-radius: 15px }
+      .chart-card-head { align-items: flex-start }
+      .chart-latest { font-size: 17px }
+      .chart-card canvas { height: 190px }
+      .chart-empty { min-height: 220px }
+      .lcd-screen { border-width: 5px; border-radius: 16px }
+      .lcd-flow { gap: 5px }
+      .lcd-node { padding: 9px 4px }
+      .lcd-node-icon { font-size: 20px }
+      .lcd-arrow { font-size: 18px }
+      .lcd-main { grid-template-columns: 1fr }
+      .lcd-readouts { grid-template-columns: repeat(2,minmax(0,1fr)) }
+      .lcd-controls { grid-template-columns: repeat(2,minmax(0,1fr)) }
+      .table-wrap { max-height: none; overflow: visible }
+      table, tbody { display: block; width: 100% }
+      thead { display: none }
+      tbody { display: grid; gap: 8px }
+      tbody tr {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 4px 12px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--control);
+      }
+      tbody td { display: block; min-width: 0; padding: 0; border: 0 }
+      tbody td:nth-child(1) { grid-column: 1; grid-row: 1; color: var(--muted); font-size: 11px }
+      tbody td:nth-child(2), tbody td:nth-child(5) { display: none }
+      tbody td:nth-child(3) {
+        grid-column: 1 / -1; grid-row: 2;
+        overflow-wrap: anywhere;
+      }
+      tbody td:nth-child(4) {
+        grid-column: 2; grid-row: 1;
+        justify-self: end; text-align: right; font-weight: 750;
+      }
+      input, select, button, .chip { min-height: 44px }
+    }
+    @media (max-width: 390px) {
+      .header-actions { grid-template-columns: 1fr }
+      .theme-switch, .status { justify-self: stretch }
+      .status { justify-content: flex-start }
+      .toolbar { grid-template-columns: 1fr }
+      .toolbar > *, #demo-button, #manage-values-button, #cycle, #updated { grid-column: 1 }
+      .gauges, .custom-value-grid { grid-template-columns: 1fr }
+      .gauge-card svg { max-height: 135px }
+      .energy-flow-card { padding-inline: 6px }
+      .energy-flow-head h2 { font-size: 13px }
+      .energy-flow-status { max-width: 62%; padding-inline: 7px; font-size: 8px }
+      .energy-flow-diagram {
+        grid-template-columns: minmax(0,1fr) 22px minmax(0,1.06fr) 22px minmax(0,1fr);
+        grid-template-rows: 140px 42px 140px;
+      }
+      .energy-node { height: 140px; padding: 29px 3px 22px }
+      .energy-node-icon { left: 5px; font-size: 19px }
+      .energy-node-register { left: 3px; right: 3px; max-width: none; font-size: 6px }
+      .energy-node-value { width: calc(100% - 6px); font-size: 10.5px }
+      .energy-inverter-values, .energy-home-values { font-size: 9.5px }
+      .energy-mode-label { font-size: 5.8px }
+      .energy-battery { padding-inline: 0 }
+      .energy-generator { padding-left: 38px }
+      .energy-generator .energy-node-image-icon { left: 4px; top: 6px; bottom: 6px;  height: auto }
+      .energy-battery-values { font-size: 10.5px }
+      .energy-battery .flow-direction { left: 3px; right: 3px }
+      .chart-card-head { flex-direction: column; gap: 3px }
+    }
+    @media (max-width: 640px) {
+      .energy-solar .energy-node-icon,
+      .energy-inverter .energy-node-icon,
+      .energy-home .energy-node-icon,
+      .energy-grid .energy-node-image-icon,
+      .energy-generator .energy-node-image-icon {
+        inset: 0; z-index: 0; width: 68%; height: 100%; margin-inline: auto; opacity: .18;
+        filter: none;
+        -webkit-mask-position: center;
+        mask-position: center;
+        -webkit-mask-size: 100% 100%;
+        mask-size: 100% 100%;
+      }
+      .energy-solar .energy-node-icon,
+      .energy-inverter .energy-node-icon,
+      .energy-home .energy-node-icon { font-size: clamp(64px, 20vw, 86px) }
+      .energy-home .energy-node-icon { font-size: clamp(112px, 34vw, 138px) }
+      .energy-solar .energy-node-register,
+      .energy-solar .energy-node-value,
+      .energy-solar .flow-direction,
+      .energy-inverter .energy-node-register,
+      .energy-inverter .energy-node-value,
+      .energy-inverter .flow-direction,
+      .energy-home .energy-node-register,
+      .energy-home .energy-node-value,
+      .energy-home .flow-direction,
+      .energy-grid .energy-node-register,
+      .energy-grid .energy-node-value,
+      .energy-grid .flow-direction,
+      .energy-generator .energy-node-register,
+      .energy-generator .energy-node-value,
+      .energy-generator .flow-direction {
+        z-index: 1;
+        text-shadow: 0 1px 3px var(--card-start), 0 0 5px var(--card-start);
+      }
+      .energy-flow-scroll {
+        margin-inline: 0; padding: 2px; overflow: visible;
+        overscroll-behavior: auto; scrollbar-width: none; touch-action: pan-y;
+      }
+      .energy-flow-scroll:focus-visible {
+        outline: 2px solid rgba(56,189,248,.45); outline-offset: 2px; border-radius: 10px;
+      }
+      .energy-flow-scroll::-webkit-scrollbar { display: none }
+      .energy-flow-diagram {
+        --mobile-inverter-height: clamp(180px, 52vw, 204px);
+        width: 100%; min-width: 0; max-width: none;
+        grid-template-columns: minmax(0,1fr) 18px minmax(0,1fr);
+        grid-template-rows: 126px 24px var(--mobile-inverter-height) 24px 126px;
+      }
+      .energy-solar { grid-column: 1; grid-row: 1 }
+      .energy-home { grid-column: 3; grid-row: 1 }
+      .energy-inverter { grid-column: 1; grid-row: 3 }
+      .energy-battery { grid-column: 3; grid-row: 3 }
+      .energy-grid { grid-column: 1; grid-row: 5 }
+      .energy-generator { grid-column: 3; grid-row: 5 }
+      .flow-pv { grid-column: 1; grid-row: 2 }
+      .flow-home { grid-column: 2; grid-row: 2 }
+      .flow-battery { grid-column: 2; grid-row: 3 }
+      .flow-grid { grid-column: 1; grid-row: 4 }
+      .flow-generator { grid-column: 2; grid-row: 4 }
+      .flow-line-desktop { display: none }
+      .flow-line-mobile { display: block }
+      .flow-home .flow-line-mobile,
+      .flow-generator .flow-line-mobile { stroke-linecap: round }
+      .energy-node {
+        height: 126px; padding: 27px 2px 21px; border-radius: 12px;
+      }
+      .energy-inverter { height: var(--mobile-inverter-height); overflow: hidden }
+      .energy-node-register {
+        left: 6px; right: 6px; top: 7px; max-height: 20px;
+        font-size: 7px; line-height: 9px;
+      }
+      .energy-node-value,
+      .energy-inverter .energy-node-value {
+        left: 50%; top: 54%; width: calc(100% - 12px);
+        font-size: 11px; line-height: 1.12;
+      }
+      .energy-inverter .energy-node-value { top: 76% }
+      .energy-home .energy-node-value { top: 49% }
+      .energy-inverter-values { min-width: 0; overflow: visible; font-size: 10px; line-height: 1.1 }
+      .energy-home-values { font-size: 11px; line-height: 1.12 }
+      .energy-inverter-load { top: 30px; font-size: clamp(14px,4vw,18px) }
+      .energy-inverter-load-definition { max-width: 100%; overflow-wrap: anywhere; font-size: 6px }
+      .energy-inverter-fan-row {
+        left: 2px; top: 58%; bottom: auto; flex-direction: column; width: 60px; max-width: 60px; gap: 0; overflow-wrap: normal;
+        font-size: 5.8px; line-height: 1.08; white-space: nowrap !important;
+      }
+      .energy-inverter-fan-icon { flex-basis: 48px; width: 60px; height: 48px }
+      .energy-inverter-fan-value { margin-top: -2px; font-size: 14px }
+      .energy-mode-row {
+        display: flex; align-items: center; justify-content: center; gap: 3px; text-align: center;
+      }
+      .energy-mode-label,
+      .energy-mode-value,
+      .energy-mode-code,
+      .energy-mode-definition { min-width: 0; max-width: 100%; overflow-wrap: anywhere }
+      .energy-mode-label { font-size: clamp(5.4px,1.6vw,6.2px); letter-spacing: 0 }
+      .energy-mode-value { justify-items: center; overflow: hidden }
+      .energy-mode-code {
+        font-size: clamp(14px,4vw,17px); font-weight: 950; line-height: 1; text-align: center; white-space: normal;
+      }
+      .energy-mode-definition { font-size: clamp(5.2px,1.5vw,5.8px) }
+      .energy-battery, .energy-grid, .energy-generator { padding-inline: 2px }
+      .energy-battery-icon {
+        left: auto; right: 4%; top: 8px; bottom: 8px; width: 44%; height: auto;
+      }
+      .energy-battery .energy-node-register { left: 4px; right: 52%; text-align: left }
+      .energy-battery-values {
+        left: 4%; right: auto; width: 44%; font-size: 11px; text-align: center;
+      }
+      .energy-battery .flow-direction {
+        left: 4%; right: auto; width: 44%; text-align: left;
+      }
+      .energy-node.energy-solar .energy-solar-values,
+      .energy-node.energy-inverter .energy-inverter-values,
+      .energy-node.energy-home .energy-home-values,
+      .energy-node.energy-grid .energy-grid-values,
+      .energy-node.energy-generator .energy-generator-values {
+        left: 50%; right: auto; width: calc(100% - 12px);
+        color: var(--text); font-size: 19px; font-weight: 950; line-height: 1;
+        text-align: center; text-shadow: 0 1px 2px var(--card-start), 0 0 3px var(--card-start);
+        transform: translate(-50%,-50%);
+      }
+      .energy-node.energy-battery .energy-battery-values {
+        left: 4%; right: auto; width: 44%;
+        color: var(--text); font-size: 19px; font-weight: 950; line-height: 1;
+        justify-items: center; text-align: center; text-shadow: 0 1px 2px var(--card-start), 0 0 3px var(--card-start);
+        transform: translateY(-50%);
+      }
+      .energy-node.energy-inverter .energy-inverter-values {
+        left: 50%; right: auto; top: 64%; width: 48%;
+        row-gap: 10px; text-align: center; transform: translate(-50%,-50%);
+      }
+      .energy-node.energy-inverter .energy-mode-code {
+        color: #fff; font-size: clamp(18px,5.2vw,22px); line-height: 1.05;
+        text-shadow: 0 1px 3px rgba(0,0,0,.8), 0 0 6px var(--node-colour);
+      }
+      .flow-direction { left: 3px; right: 3px; bottom: 6px; font-size: 7px }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      html.demo-energy-flow .flow-connector.active .flow-line {
+        animation-duration: var(--flow-duration,1.4s) !important;
+        animation-iteration-count: infinite !important;
+        animation-play-state: running !important;
+      }
+      html.demo-energy-flow .flow-connector.active .flow-line { animation-name: energy-track !important }
+    }

@@ -79,8 +79,9 @@ def draw(stdscr: curses.window, scroll: int) -> int:
         stdscr,
         2,
         0,
-        f"Цикл: {snapshot['cycle_id']}  Читання: {snapshot['cycle_seconds']:.2f} с  "
-        f"Інтервал: {POLL_RATES[snapshot['poll_rate_index']]:g} с  "
+        f"Цикл: {snapshot['cycle_id']}  Факт: {snapshot['cycle_seconds']:.2f} с  "
+        f"Modbus: {snapshot['read_seconds']:.2f} с  "
+        f"Задано: {POLL_RATES[snapshot['poll_rate_index']]:g} с  "
         f"Режим: {snapshot['read_mode']}  Запити: {snapshot['requests']}  "
         f"Зчитано: {snapshot['successful']} успішно / {snapshot['ошибок']} помилок",
     )

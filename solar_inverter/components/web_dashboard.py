@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import json
 import os
 import sys
@@ -12,13 +13,19 @@ from typing import Any
 
 from ..services import inverter_service
 from ..services.inverter_service import *
-from .dashboard_template import WEB_DASHBOARD
+from .dashboard_template import WEB_DASHBOARD, WEB_ROOT
 
 DASHBOARD_IMAGE_PATHS = {
-    "/assets/generator.png": PROJECT_ROOT / "0ecd531c-3081-48cd-9fe7-2ad66dcc8425.png",
+    "/assets/generator-mask.png": PROJECT_ROOT / "generator-mask.png",
     "/assets/grid.png": PROJECT_ROOT / "1258380.png",
     "/assets/inverter.svg": PROJECT_ROOT / "inverter.svg",
     "/assets/home.svg": PROJECT_ROOT / "home.svg",
+}
+
+DASHBOARD_STATIC_PATHS = {
+    f"/static/{path.relative_to(WEB_ROOT).as_posix()}": path
+    for path in WEB_ROOT.rglob("*")
+    if path.is_file() and path.name != "index.html"
 }
 
 
@@ -90,6 +97,7 @@ def web_state() -> dict[str, Any]:
         "online": bool(snapshot["online"]),
         "updated_at": snapshot["updated_at"],
         "cycle_seconds": snapshot["cycle_seconds"],
+        "read_seconds": snapshot["read_seconds"],
         "cycle_id": snapshot["cycle_id"],
         "poll_rate_index": snapshot["poll_rate_index"],
         "read_mode": snapshot["read_mode"],
@@ -158,13 +166,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
         content_type: str,
         status: HTTPStatus = HTTPStatus.OK,
         extra_headers: dict[str, str] | None = None,
+        *,
+        cache_control: str = "no-store",
+        etag: str | None = None,
+        compress: bool = False,
     ) -> None:
         try:
+            if etag and self.headers.get("If-None-Match") == etag:
+                self.send_response(HTTPStatus.NOT_MODIFIED)
+                self.send_header("Cache-Control", cache_control)
+                self.send_header("ETag", etag)
+                self.end_headers()
+                return
+            response_headers = dict(extra_headers or {})
+            if (
+                compress
+                and len(body) >= 1024
+                and "gzip" in self.headers.get("Accept-Encoding", "").lower()
+            ):
+                body = gzip.compress(body, compresslevel=5, mtime=0)
+                response_headers["Content-Encoding"] = "gzip"
+                response_headers["Vary"] = "Accept-Encoding"
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            for name, value in (extra_headers or {}).items():
+            self.send_header("Cache-Control", cache_control)
+            if etag:
+                self.send_header("ETag", etag)
+            for name, value in response_headers.items():
                 self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body)
@@ -174,22 +203,53 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         request_path = self.path.split("?", 1)[0]
+        if request_path in DASHBOARD_STATIC_PATHS:
+            path = DASHBOARD_STATIC_PATHS[request_path]
+            content_type = (
+                "text/css; charset=utf-8"
+                if path.suffix.lower() == ".css"
+                else "text/javascript; charset=utf-8"
+            )
+            try:
+                metadata = path.stat()
+                self.send_content(
+                    path.read_bytes(),
+                    content_type,
+                    cache_control="public, max-age=31536000, immutable",
+                    etag=f'W/"{metadata.st_mtime_ns:x}-{metadata.st_size:x}"',
+                    compress=True,
+                )
+            except OSError:
+                self.send_content(b"", content_type, HTTPStatus.NOT_FOUND)
+            return
         if request_path in DASHBOARD_IMAGE_PATHS:
             try:
+                image_path = DASHBOARD_IMAGE_PATHS[request_path]
+                metadata = image_path.stat()
                 content_type = (
                     "image/svg+xml"
-                    if DASHBOARD_IMAGE_PATHS[request_path].suffix.lower() == ".svg"
+                    if image_path.suffix.lower() == ".svg"
                     else "image/png"
                 )
                 self.send_content(
-                    DASHBOARD_IMAGE_PATHS[request_path].read_bytes(), content_type
+                    image_path.read_bytes(),
+                    content_type,
+                    cache_control="public, max-age=31536000, immutable",
+                    etag=f'W/"{metadata.st_mtime_ns:x}-{metadata.st_size:x}"',
+                    compress=image_path.suffix.lower() == ".svg",
                 )
             except OSError:
                 self.send_content(b"", content_type, HTTPStatus.NOT_FOUND)
             return
         if request_path in {"/favicon.png", "/favicon.ico"}:
             try:
-                self.send_content(FAVICON_PATH.read_bytes(), "image/png")
+                metadata = FAVICON_PATH.stat()
+                self.send_content(
+                    FAVICON_PATH.read_bytes(),
+                    "image/png",
+                    cache_control="public, max-age=31536000, immutable",
+                    etag=f'W/"{metadata.st_mtime_ns:x}-{metadata.st_size:x}"',
+                )
             except OSError:
                 self.send_content(b"", "image/png", HTTPStatus.NOT_FOUND)
             return
@@ -223,11 +283,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 page.encode("utf-8"),
                 "text/html; charset=utf-8",
                 extra_headers=response_headers,
+                cache_control="private, max-age=0, must-revalidate",
+                compress=True,
             )
             return
         if request_path == "/api/state":
             body = json.dumps(web_state(), ensure_ascii=False).encode("utf-8")
-            self.send_content(body, "application/json; charset=utf-8")
+            self.send_content(body, "application/json; charset=utf-8", compress=True)
             return
         if request_path == "/api/register-log/download":
             with inverter_service.register_log_lock:

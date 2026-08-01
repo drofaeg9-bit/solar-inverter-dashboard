@@ -27,7 +27,7 @@ HEALTH_URL = "http://127.0.0.1:8080/api/state"
 PAYLOAD_FILES = (
     "solar_invertor_web.py",
     "favicon.png",
-    "0ecd531c-3081-48cd-9fe7-2ad66dcc8425.png",
+    "generator-mask.png",
     "1258380.png",
     "inverter.svg",
     "home.svg",
@@ -35,8 +35,23 @@ PAYLOAD_FILES = (
     "solar_inverter/components/__init__.py",
     "solar_inverter/components/web_dashboard.py",
     "solar_inverter/components/dashboard_template.py",
+    "solar_inverter/web/index.html",
+    "solar_inverter/web/styles/dashboard.css",
+    "solar_inverter/web/styles/dashboard-responsive.css",
+    "solar_inverter/web/scripts/translations.js",
+    "solar_inverter/web/scripts/interpretations.js",
+    "solar_inverter/web/scripts/renderers.js",
+    "solar_inverter/web/scripts/charts.js",
+    "solar_inverter/web/scripts/chart-rendering.js",
+    "solar_inverter/web/scripts/gauges.js",
+    "solar_inverter/web/scripts/energy-flow.js",
+    "solar_inverter/web/scripts/lcd.js",
+    "solar_inverter/web/scripts/app.js",
+    "solar_inverter/web/scripts/app-events.js",
     "solar_inverter/services/__init__.py",
     "solar_inverter/services/inverter_service.py",
+    "solar_inverter/services/inverter_service_core.py",
+    "solar_inverter/services/inverter_service_runtime.py",
 )
 SERVICE_PAYLOAD = "deploy/solar-inverter-dashboard.service"
 
