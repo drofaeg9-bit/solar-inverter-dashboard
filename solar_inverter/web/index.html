@@ -46,6 +46,10 @@
           <button class="view-tab active" id="dashboard-tab" type="button" role="tab" data-view="dashboard" aria-controls="dashboard-view" aria-selected="true" tabindex="0" data-i18n="dashboardTab">Панель</button>
           <button class="view-tab" id="charts-tab" type="button" role="tab" data-view="charts" aria-controls="charts-view" aria-selected="false" tabindex="-1" data-i18n="chartsTab">Графіки</button>
           <button class="view-tab" id="lcd-tab" type="button" role="tab" data-view="lcd" aria-controls="lcd-view" aria-selected="false" tabindex="-1" data-i18n="lcdTab">LCD</button>
+          <button id="settings-button" type="button" data-i18n-title="settingsAria" aria-label="Налаштування">⚙</button>
+          <button id="logs-button" type="button" data-i18n-title="logsAria" aria-label="Логи сервера">📋</button>
+          <button id="modbus-debug-button" type="button" data-i18n-title="modbusDebugAria" aria-label="Modbus налагодження">🔧</button>
+          <button id="git-commits-button" type="button" data-i18n-title="gitCommitsAria" aria-label="Історія комітів Git">📜</button>
         </div>
         <div class="status" id="status"><span class="dot"></span><span class="status-label">НЕМАЄ ЗВ’ЯЗКУ</span></div>
       </div>
@@ -53,17 +57,6 @@
 
     <section id="dashboard-view" role="tabpanel" aria-labelledby="dashboard-tab" tabindex="0">
     <div class="toolbar">
-      <label class="chip"><span data-i18n="requestEvery">Запит кожні</span>&nbsp;
-        <select id="poll-rate" aria-label="Інтервал опитування" data-i18n-aria="pollAria">
-          <option value="0" data-i18n="interval05">0.5 с</option><option value="1" data-i18n="interval1">1 с</option>
-          <option value="2" data-i18n="interval2">2 с</option><option value="3" data-i18n="interval5">5 с</option><option value="4" data-i18n="interval10">10 с</option>
-        </select>
-      </label>
-      <label class="chip"><span data-i18n="readMode">Режим читання</span>&nbsp;
-        <select id="read-mode" aria-label="Режим читання" data-i18n-aria="readModeAria">
-          <option value="fast" data-i18n="fast">Швидкий</option><option value="compatible" data-i18n="compatible">Сумісний</option>
-        </select>
-      </label>
       <button id="demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
       <button id="manage-values-button" type="button" data-i18n="addValues">＋ Додати індикатори</button>
       <span class="chip" id="cycle">Цикл —</span>
@@ -322,7 +315,17 @@
               <h2 data-i18n="liveCharts">Графіки в реальному часі</h2>
               <span class="muted" id="chart-selection-count" aria-live="polite">Значення не вибрано</span>
             </div>
-            <button id="chart-demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <select id="chart-period-select" style="padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);">
+                <option value="realtime" data-i18n="periodRealtime">Реальний час (2 хв)</option>
+                <option value="1h" data-i18n="period1h">Остання година</option>
+                <option value="6h" data-i18n="period6h">Останні 6 годин</option>
+                <option value="24h" data-i18n="period24h">Останні 24 години</option>
+                <option value="7d" data-i18n="period7d">Останні 7 днів</option>
+                <option value="30d" data-i18n="period30d">Останні 30 днів</option>
+              </select>
+              <button id="chart-demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
+            </div>
           </div>
           <div class="chart-grid" id="chart-grid">
             <div class="chart-empty">Виберіть значення зі списку, щоб запустити графіки в реальному часі.</div>
@@ -335,7 +338,7 @@
       <div class="gauge-picker-head">
         <div>
           <h2 data-i18n="chooseGauges">Choose gauges</h2>
-          <div class="muted" data-i18n="gaugePickerHelp">Вибрані індикатори з’являться на панелі та у графіках.</div>
+          <div class="muted" data-i18n="gaugePickerHelp">Вибрані індикатори з'являться на панелі та у графіках.</div>
         </div>
         <button class="gauge-picker-close" type="button" data-close-gauge-picker aria-label="Закрити" data-i18n-aria="close">×</button>
       </div>
@@ -345,6 +348,155 @@
         <button id="clear-all-gauges" class="clear-selection" type="button" data-i18n="clearDashboard" data-disabled-reason="clearUnavailable" disabled>Очистити панель</button>
       </div>
       <div class="gauge-picker-list" id="gauge-picker-list"></div>
+    </dialog>
+
+    <dialog class="gauge-picker" id="settings-picker">
+      <div class="gauge-picker-head">
+        <div>
+          <h2 data-i18n="settings">Налаштування</h2>
+          <div class="muted" data-i18n="settingsHelp">Налаштування відображення пристрою</div>
+        </div>
+        <button class="gauge-picker-close" type="button" data-close-settings-picker aria-label="Закрити" data-i18n-aria="close">×</button>
+      </div>
+      <div class="gauge-picker-list" style="padding: 18px;">
+        <label style="display: block; margin-bottom: 15px;">
+          <span data-i18n="customDeviceName">Назва пристрою</span>
+          <input type="text" id="custom-device-name" style="width: 100%; margin-top: 5px; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" placeholder="Залиште порожнім для автоматичного визначення" data-i18n-placeholder="customDeviceNamePlaceholder">
+        </label>
+        <label style="display: block; margin-bottom: 15px;">
+          <span data-i18n="connectionMode">Режим з'єднання</span>
+          <select id="connection-mode" style="width: 100%; margin-top: 5px; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);">
+            <option value="rtu" data-i18n="rtuMode">RTU (Serial)</option>
+            <option value="tcp" data-i18n="tcpMode">TCP (Network)</option>
+          </select>
+        </label>
+        <button id="save-settings" type="button" style="padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" data-i18n="save">Зберегти</button>
+      </div>
+    </dialog>
+
+    <dialog class="gauge-picker" id="logs-picker">
+      <div class="gauge-picker-head">
+        <div>
+          <h2 data-i18n="serverLogs">Логи сервера</h2>
+          <div class="muted" data-i18n="serverLogsHelp">Останні 500 рядків логів</div>
+        </div>
+        <button class="gauge-picker-close" type="button" data-close-logs-picker aria-label="Закрити" data-i18n-aria="close">×</button>
+      </div>
+      <div class="gauge-picker-list" style="padding: 18px;">
+        <pre id="logs-content" style="width: 100%; height: 400px; overflow: auto; padding: 10px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text); font-size: 12px; font-family: monospace;"></pre>
+        <button id="refresh-logs" type="button" style="margin-top: 10px; padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" data-i18n="refresh">Оновити</button>
+      </div>
+    </dialog>
+
+    <dialog class="gauge-picker" id="git-commits-picker">
+      <div class="gauge-picker-head">
+        <div>
+          <h2 data-i18n="gitCommitsTitle">Історія комітів Git</h2>
+          <div class="muted" data-i18n="gitCommitsHelp">Виберіть коміт для створення оновлення</div>
+        </div>
+        <button class="gauge-picker-close" type="button" data-close-git-commits-picker aria-label="Закрити" data-i18n-aria="close">×</button>
+      </div>
+      <div class="gauge-picker-list" style="padding: 18px;">
+        <div style="margin-bottom: 15px; padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600;" data-i18n="githubRepoUrl">GitHub Repository URL</label>
+          <input type="text" id="github-repo-url" style="width: 100%; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" value="https://github.com/santaes/solar-inverter-dashboard.git" placeholder="https://github.com/owner/repo" data-i18n-placeholder="githubRepoUrlPlaceholder">
+          <div style="font-size: 11px; color: var(--muted); margin-top: 5px;" data-i18n="githubRepoUrlHelp">Enter the GitHub repository URL to download updates from</div>
+        </div>
+        <div style="margin-bottom: 15px; padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600;" data-i18n="githubToken">GitHub Token (optional)</label>
+          <input type="password" id="github-token" style="width: 100%; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" placeholder="ghp_..." data-i18n-placeholder="githubTokenPlaceholder">
+          <div style="font-size: 11px; color: var(--muted); margin-top: 5px;" data-i18n="githubTokenHelp">Required to download from private repositories or increase rate limits</div>
+        </div>
+        <div id="git-commits-loading" style="text-align: center; padding: 20px;">Завантаження...</div>
+        <div id="git-commits-list" style="max-height: 400px; overflow-y: auto;"></div>
+        <div id="git-commits-actions" style="margin-top: 15px; display: none;">
+          <button id="generate-update-from-commit" type="button" style="padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" data-i18n="generateUpdate">Створити оновлення</button>
+          <button id="download-from-github" type="button" style="padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text); margin-left: 8px;" data-i18n="downloadFromGitHub">Завантажити з GitHub</button>
+          <span id="selected-commit-info" style="margin-left: 10px; color: var(--muted);"></span>
+        </div>
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--ui-border);">
+          <h3 style="font-size: 14px; margin-bottom: 10px;" data-i18n="updaterHistoryTitle">Історія оновлень</h3>
+          <div id="updater-history-loading" style="text-align: center; padding: 10px; font-size: 12px; color: var(--muted);">Завантаження...</div>
+          <div id="updater-history-list" style="max-height: 200px; overflow-y: auto;"></div>
+          <div id="updater-history-actions" style="margin-top: 10px; display: none;">
+            <button id="download-selected-updater" type="button" style="padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" data-i18n="downloadUpdater">Завантажити оновлення</button>
+            <span id="selected-updater-info" style="margin-left: 10px; color: var(--muted);"></span>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="gauge-picker" id="modbus-debug-picker">
+      <div class="gauge-picker-head">
+        <div>
+          <h2 data-i18n="modbusDebugTitle">Modbus налагодження</h2>
+          <div class="muted" data-i18n="modbusDebugHelp">Статистика зв'язку Modbus у реальному часі</div>
+        </div>
+        <button class="gauge-picker-close" type="button" data-close-modbus-debug-picker aria-label="Закрити" data-i18n-aria="close">×</button>
+      </div>
+      <div class="gauge-picker-list" style="padding: 18px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+          <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+            <div style="font-size: 12px; color: var(--muted); margin-bottom: 5px;" data-i18n="modbusRequests">Запити</div>
+            <div id="modbus-requests" style="font-size: 24px; font-weight: bold; color: var(--text);">—</div>
+          </div>
+          <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+            <div style="font-size: 12px; color: var(--muted); margin-bottom: 5px;" data-i18n="modbusSuccessful">Успішні</div>
+            <div id="modbus-successful" style="font-size: 24px; font-weight: bold; color: var(--success);">—</div>
+          </div>
+          <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+            <div style="font-size: 12px; color: var(--muted); margin-bottom: 5px;" data-i18n="modbusFailed">Помилки</div>
+            <div id="modbus-failed" style="font-size: 24px; font-weight: bold; color: var(--error);">—</div>
+          </div>
+          <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+            <div style="font-size: 12px; color: var(--muted); margin-bottom: 5px;" data-i18n="modbusCycleSeconds">Час циклу (с)</div>
+            <div id="modbus-cycle-seconds" style="font-size: 24px; font-weight: bold; color: var(--text);">—</div>
+          </div>
+          <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+            <div style="font-size: 12px; color: var(--muted); margin-bottom: 5px;" data-i18n="modbusReadSeconds">Час читання (с)</div>
+            <div id="modbus-read-seconds" style="font-size: 24px; font-weight: bold; color: var(--text);">—</div>
+          </div>
+          <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+            <div style="font-size: 12px; color: var(--muted); margin-bottom: 5px;" data-i18n="modbusCycleId">ID циклу</div>
+            <div id="modbus-cycle-id" style="font-size: 24px; font-weight: bold; color: var(--text);">—</div>
+          </div>
+        </div>
+        <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); margin-bottom: 15px;">
+          <div style="font-size: 12px; color: var(--muted); margin-bottom: 5px;" data-i18n="modbusLastError">Остання помилка</div>
+          <div id="modbus-error" style="font-size: 14px; color: var(--error); word-break: break-word;">—</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+          <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+            <label style="display: block; margin-bottom: 8px;">
+              <span data-i18n="requestEvery">Запит кожні</span>
+              <select id="modbus-poll-rate" style="width: 100%; margin-top: 5px; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);">
+                <option value="0" data-i18n="interval2">2 с</option>
+                <option value="1" data-i18n="interval5">5 с</option>
+                <option value="2" data-i18n="interval10">10 с</option>
+              </select>
+            </label>
+          </div>
+          <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
+            <label style="display: block; margin-bottom: 8px;">
+              <span data-i18n="readMode">Режим читання</span>
+              <select id="modbus-read-mode" style="width: 100%; margin-top: 5px; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);">
+                <option value="fast" data-i18n="fast">Швидкий</option>
+                <option value="compatible" data-i18n="compatible">Сумісний</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div style="padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 8px;">
+            <span data-i18n="connectionMode">Режим з'єднання</span>
+            <select id="modbus-connection-mode-select" aria-label="Режим з'єднання Modbus" data-i18n-aria="connectionModeAria" style="width: 100%; margin-top: 5px; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);">
+              <option value="rtu" data-i18n="rtuMode">RTU (Serial)</option>
+              <option value="tcp" data-i18n="tcpMode">TCP (Network)</option>
+            </select>
+          </label>
+        </div>
+        <button id="refresh-modbus-debug" type="button" style="margin-top: 15px; padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" data-i18n="refresh">Оновити</button>
+      </div>
     </dialog>
   </main>
   <script>window.__INITIAL_STATE__ = /*__INITIAL_STATE__*/null;</script>

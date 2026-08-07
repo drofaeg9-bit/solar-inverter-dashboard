@@ -584,6 +584,71 @@
       const oldestAllowed = currentTime - chartWindowMilliseconds;
       while (history.length && history[0].time < oldestAllowed) history.shift();
     }
+
+    function getPeriodWindowSeconds(period) {
+      const periodMap = {
+        'realtime': 120,
+        '1h': 3600,
+        '6h': 21600,
+        '24h': 86400,
+        '7d': 604800,
+        '30d': 2592000
+      };
+      return periodMap[period] || 120;
+    }
+
+    function refreshChartsWithPeriod(period) {
+      const newWindowSeconds = getPeriodWindowSeconds(period);
+      window.chartWindowSeconds = newWindowSeconds;
+      window.chartWindowMilliseconds = newWindowSeconds * 1000;
+
+      // Trim existing history to new window
+      const now = Date.now();
+      chartHistory.forEach((history, key) => {
+        trimChartHistory(history, now);
+      });
+
+      // If demo is running, regenerate data for new period
+      if (chartDemoRunning) {
+        chartHistory.forEach((history, key) => {
+          history.length = 0;
+        });
+        const initialScenario = realisticDemoScenario(0);
+        applyDemoEnergyFrame(initialScenario);
+        synchronizeDemoDefinitions(initialScenario);
+      } else {
+        // For real data, fetch historical data from backend
+        fetchHistoricalData(period);
+      }
+
+      drawAllCharts();
+    }
+
+    async function fetchHistoricalData(period) {
+      try {
+        const response = await fetch(`/api/historical?period=${period}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        // Process historical data and populate chartHistory
+        if (data.points && Array.isArray(data.points)) {
+          const now = Date.now();
+          chartSelections.forEach(key => {
+            const item = chartDefinitions.get(key);
+            if (!item) return;
+            const register = item.register;
+            const history = [];
+            data.points.forEach(point => {
+              if (point[register] !== undefined) {
+                history.push({time: point.time, value: point[register]});
+              }
+            });
+            chartHistory.set(key, history);
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch historical data:', error);
+      }
+    }
     function formatChartTime(timestamp) {
       const locale = currentLanguage === 'uk' ? 'uk-UA' : currentLanguage === 'ru' ? 'ru-RU' : 'en-GB';
       return new Date(timestamp).toLocaleTimeString(locale, {
@@ -657,20 +722,26 @@
 
       try {
         const demoStartedAt = Date.now();
-        while (Date.now() - demoStartedAt < chartWindowMilliseconds) {
+        const period = window.chartPeriod || 'realtime';
+        const periodSeconds = getPeriodWindowSeconds(period);
+        const demoDuration = period === 'realtime' ? chartWindowMilliseconds : Math.min(chartWindowMilliseconds, 60000); // Limit non-realtime demos to 60s for UX
+
+        while (Date.now() - demoStartedAt < demoDuration) {
           const elapsedBeforeWait = Math.floor((Date.now() - demoStartedAt) / 1000);
+          const displaySeconds = period === 'realtime' ? chartWindowSeconds : periodSeconds;
           setButtonState(t('stopDemo', {
             elapsed: elapsedBeforeWait,
-            seconds: chartWindowSeconds,
+            seconds: Math.floor(demoDuration / 1000),
             count: registerKeys.length
           }));
-          const selectedIndex = Number(document.querySelector('#poll-rate').value);
+          const pollRateSelect = document.querySelector('#modbus-poll-rate');
+          const selectedIndex = pollRateSelect ? Number(pollRateSelect.value) : 0;
           await wait(requestIntervals[selectedIndex] ?? 2000);
           if (chartDemoCancelRequested) break;
 
           const now = Date.now();
           const elapsedSeconds = Math.min(
-            chartWindowSeconds - .001,
+            displaySeconds - .001,
             (now - demoStartedAt) / 1000
           );
           const scenario = realisticDemoScenario(elapsedSeconds);
@@ -693,12 +764,12 @@
             chartHistory.set(key, history);
           });
           const elapsed = Math.min(
-            chartWindowSeconds,
+            displaySeconds,
             Math.floor((now - demoStartedAt) / 1000)
           );
           setButtonState(t('stopDemo', {
             elapsed,
-            seconds: chartWindowSeconds,
+            seconds: Math.floor(demoDuration / 1000),
             count: registerKeys.length
           }));
           if (!document.querySelector('#dashboard-view').hidden) {

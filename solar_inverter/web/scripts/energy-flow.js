@@ -136,7 +136,7 @@
           lastConfirmedAt: 0
         };
         const confirmedActive = Boolean(enabled);
-        const selectedRate = Number(document.querySelector('#poll-rate')?.value);
+        const selectedRate = Number(document.querySelector('#modbus-poll-rate')?.value) ?? 0;
         const holdMilliseconds = Math.max(750, (requestIntervals[selectedRate] ?? 2000) * 1.25);
         const temporarilyMissing = !confirmedActive && !Number.isFinite(watts);
         const active = confirmedActive || (

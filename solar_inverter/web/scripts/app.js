@@ -21,7 +21,7 @@
     let refreshController = null;
     let pageIsActive = true;
     let lastLoggedSiteVisits = null;
-    const requestIntervals = [500, 1000, 2000, 5000, 10000];
+    const requestIntervals = [2000, 5000, 10000];
     const hiddenRefreshInterval = 30000;
     const flowAnimationStates = new Map();
     let chartDefinitions = new Map();
@@ -191,8 +191,7 @@
       document.querySelector('#register-log-note').disabled = !active;
       document.querySelector('#register-log-mark').disabled = !active;
       document.querySelector('#register-log-download').hidden = !log.available;
-      document.querySelector('#poll-rate').disabled = active;
-      document.querySelector('#read-mode').disabled = active;
+      // Poll rate and read mode are now in the modbus debug modal
     }
 
     async function updateRegisterLog(action, note = '') {
@@ -241,7 +240,7 @@
     }
     function render(data) {
       lastData = data;
-      document.querySelector('#identifier').textContent = data.identifier || t('unknownDevice');
+      document.querySelector('#identifier').textContent = getDisplayIdentifier(data.identifier);
       const status = document.querySelector('#status');
       status.classList.toggle('online', chartDemoRunning || (data.online && !data.paused));
       status.classList.toggle('paused', !chartDemoRunning && data.paused);
@@ -274,8 +273,7 @@
         console.log(t('visitConsole'), visitDetails);
         lastLoggedSiteVisits = totalVisitors;
       }
-      document.querySelector('#poll-rate').value = data.poll_rate_index;
-      document.querySelector('#read-mode').value = data.read_mode;
+      // Poll rate and read mode are now in the modbus debug modal
       const error = document.querySelector('#error');
       const connectionError = chartDemoRunning ? '' : data.error;
       error.textContent = connectionError
@@ -327,8 +325,10 @@
       if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       refreshTimer = null;
       if (!pageIsActive) return;
-      const selectedIndex = Number(document.querySelector('#poll-rate').value);
-      const selectedInterval = requestIntervals[selectedIndex] ?? 1000;
+      // Poll rate is now in the modbus debug modal, use default if not accessible
+      const pollRateSelect = document.querySelector('#modbus-poll-rate');
+      const selectedIndex = pollRateSelect ? Number(pollRateSelect.value) : 0;
+      const selectedInterval = requestIntervals[selectedIndex] ?? 2000;
       const milliseconds = delay ?? (document.hidden
         ? Math.max(hiddenRefreshInterval, selectedInterval)
         : selectedInterval);
@@ -578,3 +578,79 @@
       }
       return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
+
+    function getCustomDeviceName() {
+      try {
+        return window.localStorage.getItem('custom-device-name') || '';
+      } catch {
+        return '';
+      }
+    }
+
+    function saveCustomDeviceName(name) {
+      try {
+        if (name && name.trim()) {
+          window.localStorage.setItem('custom-device-name', name.trim());
+        } else {
+          window.localStorage.removeItem('custom-device-name');
+        }
+      } catch {
+        // Settings still work when browser storage is unavailable.
+      }
+    }
+
+    function getDisplayIdentifier(dataIdentifier) {
+      const customName = getCustomDeviceName();
+      if (customName && customName.trim()) return customName.trim();
+      return dataIdentifier || t('unknownDevice');
+    }
+
+    // Make functions globally available for app-events.js
+    window.getCustomDeviceName = getCustomDeviceName;
+    window.saveCustomDeviceName = saveCustomDeviceName;
+    window.getDisplayIdentifier = getDisplayIdentifier;
+
+    async function loadLogs() {
+      try {
+        const response = await fetch('/api/logs');
+        const data = await response.json();
+        document.querySelector('#logs-content').textContent = data.logs || 'No logs available';
+      } catch (error) {
+        document.querySelector('#logs-content').textContent = 'Failed to load logs: ' + error;
+      }
+    }
+    window.loadLogs = loadLogs;
+    window.renderCycleStatus = renderCycleStatus;
+
+    async function loadModbusDebug() {
+      try {
+        const response = await fetch('/api/state');
+        const data = await response.json();
+        const modbusRequests = document.querySelector('#modbus-requests');
+        const modbusSuccessful = document.querySelector('#modbus-successful');
+        const modbusFailed = document.querySelector('#modbus-failed');
+        const modbusCycleSeconds = document.querySelector('#modbus-cycle-seconds');
+        const modbusReadSeconds = document.querySelector('#modbus-read-seconds');
+        const modbusCycleId = document.querySelector('#modbus-cycle-id');
+        const modbusError = document.querySelector('#modbus-error');
+        const modbusConnectionMode = document.querySelector('#modbus-connection-mode');
+
+        if (modbusRequests) modbusRequests.textContent = data.requests || '—';
+        if (modbusSuccessful) modbusSuccessful.textContent = data.successful || '—';
+        if (modbusFailed) modbusFailed.textContent = data.failed || '—';
+        if (modbusCycleSeconds) modbusCycleSeconds.textContent = data.cycle_seconds ? data.cycle_seconds.toFixed(2) : '—';
+        if (modbusReadSeconds) modbusReadSeconds.textContent = data.read_seconds ? data.read_seconds.toFixed(2) : '—';
+        if (modbusCycleId) modbusCycleId.textContent = data.cycle_id || '—';
+        if (modbusError) modbusError.textContent = data.error || '—';
+        try {
+          const connectionMode = window.localStorage.getItem('connection-mode') || 'rtu';
+          if (modbusConnectionMode) modbusConnectionMode.textContent = connectionMode === 'rtu' ? 'RTU (Serial)' : 'TCP (Network)';
+        } catch {
+          if (modbusConnectionMode) modbusConnectionMode.textContent = '—';
+        }
+      } catch (error) {
+        const modbusError = document.querySelector('#modbus-error');
+        if (modbusError) modbusError.textContent = 'Failed to load modbus debug: ' + error;
+      }
+    }
+    window.loadModbusDebug = loadModbusDebug;

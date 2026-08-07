@@ -10,16 +10,7 @@
     applyTheme(initialTheme(), false);
     applyLanguage(initialLanguage(), false);
 
-    document.querySelector('#poll-rate').addEventListener('change', event => {
-      const pollRateIndex = Number(event.target.value);
-      if (lastData) {
-        lastData.poll_rate_index = pollRateIndex;
-        renderCycleStatus(lastData);
-      }
-      updateSetting('poll_rate_index', pollRateIndex);
-    });
-    document.querySelector('#read-mode').addEventListener('change', event =>
-      updateSetting('read_mode', event.target.value));
+    // Poll rate and read mode are now in the modbus debug modal
     document.querySelector('#demo-button').addEventListener('click', fillChartExampleData);
     document.querySelector('#chart-demo-button').addEventListener('click', fillChartExampleData);
     document.querySelector('#manage-values-button').addEventListener('click', openGaugePicker);
@@ -138,6 +129,399 @@
       document.querySelector('#gauge-picker').close());
     document.querySelector('#gauge-picker').addEventListener('click', event => {
       if (event.target === event.currentTarget) event.currentTarget.close();
+    });
+    document.querySelector('#chart-period-select').addEventListener('change', event => {
+      const period = event.target.value;
+      window.chartPeriod = period;
+      // Trigger chart refresh with new period
+      if (typeof refreshChartsWithPeriod === 'function') {
+        refreshChartsWithPeriod(period);
+      }
+    });
+    document.querySelector('#settings-button').addEventListener('click', () => {
+      const picker = document.querySelector('#settings-picker');
+      document.querySelector('#custom-device-name').value = getCustomDeviceName();
+      try {
+        const savedMode = window.localStorage.getItem('connection-mode') || 'rtu';
+        document.querySelector('#connection-mode').value = savedMode;
+      } catch {
+        document.querySelector('#connection-mode').value = 'rtu';
+      }
+      if (typeof picker.showModal === 'function') picker.showModal();
+      else picker.setAttribute('open', '');
+    });
+    document.querySelector('[data-close-settings-picker]').addEventListener('click', () =>
+      document.querySelector('#settings-picker').close());
+    document.querySelector('#settings-picker').addEventListener('click', event => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
+    });
+    document.querySelector('#logs-button').addEventListener('click', () => {
+      const picker = document.querySelector('#logs-picker');
+      loadLogs();
+      if (typeof picker.showModal === 'function') picker.showModal();
+      else picker.setAttribute('open', '');
+    });
+    document.querySelector('[data-close-logs-picker]').addEventListener('click', () =>
+      document.querySelector('#logs-picker').close());
+    document.querySelector('#logs-picker').addEventListener('click', event => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
+    });
+    document.querySelector('#refresh-logs').addEventListener('click', loadLogs);
+
+    // Git commits modal
+    let selectedGitCommit = null;
+    let selectedUpdaterId = null;
+    document.querySelector('#git-commits-button').addEventListener('click', async () => {
+      const picker = document.querySelector('#git-commits-picker');
+      const loadingDiv = document.querySelector('#git-commits-loading');
+      const listDiv = document.querySelector('#git-commits-list');
+      const actionsDiv = document.querySelector('#git-commits-actions');
+      const historyLoadingDiv = document.querySelector('#updater-history-loading');
+      const historyListDiv = document.querySelector('#updater-history-list');
+
+      loadingDiv.style.display = 'block';
+      listDiv.innerHTML = '';
+      actionsDiv.style.display = 'none';
+      selectedGitCommit = null;
+
+      // Load updater history
+      historyLoadingDiv.style.display = 'block';
+      historyListDiv.innerHTML = '';
+      selectedUpdaterId = null;
+      document.querySelector('#updater-history-actions').style.display = 'none';
+      loadUpdaterHistory();
+
+      if (typeof picker.showModal === 'function') picker.showModal();
+      else picker.setAttribute('open', '');
+
+      // Check git availability first
+      try {
+        const checkResponse = await fetch('/api/git/check');
+        const checkData = await checkResponse.json();
+
+        if (!checkData.available) {
+          loadingDiv.style.display = 'none';
+          listDiv.innerHTML = `
+            <div style="padding: 20px; text-align: center;">
+              <div style="color: var(--red); margin-bottom: 15px;">${t('gitNotInstalled')}</div>
+              <div style="margin-bottom: 10px; font-size: 12px; color: var(--muted);">${checkData.error}</div>
+              <button id="install-git-button" type="button" style="padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);">${t('gitInstallButton')}</button>
+            </div>
+          `;
+          document.querySelector('#install-git-button').addEventListener('click', async () => {
+            const button = document.querySelector('#install-git-button');
+            button.disabled = true;
+            button.textContent = t('gitInstalling');
+            try {
+              const installResponse = await fetch('/api/git/install', {method: 'POST'});
+              const installData = await installResponse.json();
+              if (installData.success) {
+                alert(t('gitInstallSuccess'));
+                // Reload commits after successful installation
+                loadingDiv.style.display = 'block';
+                listDiv.innerHTML = '';
+                loadCommits();
+              } else {
+                alert(`${t('gitInstallFailed')}: ${installData.message}`);
+                button.disabled = false;
+                button.textContent = t('gitInstallButton');
+              }
+            } catch (error) {
+              alert(`${t('gitInstallFailed')}: ${error}`);
+              button.disabled = false;
+              button.textContent = t('gitInstallButton');
+            }
+          });
+          return;
+        }
+
+        // Git is available, load commits
+        loadCommits();
+      } catch (error) {
+        loadingDiv.style.display = 'none';
+        listDiv.innerHTML = `<div style="color: var(--red); padding: 20px;">Failed to check git: ${error}</div>`;
+      }
+    });
+
+    async function loadCommits() {
+      const loadingDiv = document.querySelector('#git-commits-loading');
+      const listDiv = document.querySelector('#git-commits-list');
+      const actionsDiv = document.querySelector('#git-commits-actions');
+
+      try {
+        const response = await fetch('/api/git/commits');
+        const data = await response.json();
+
+        loadingDiv.style.display = 'none';
+
+        if (data.error) {
+          listDiv.innerHTML = `<div style="color: var(--red); padding: 20px;">${data.error}</div>`;
+          return;
+        }
+
+        if (!data.commits || data.commits.length === 0) {
+          listDiv.innerHTML = '<div style="padding: 20px;">No commits found</div>';
+          return;
+        }
+
+        listDiv.innerHTML = data.commits.map(commit => `
+          <div class="commit-item" data-commit-hash="${commit.hash}" style="
+            padding: 12px;
+            border: 1px solid var(--ui-border);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            background: var(--panel);
+          ">
+            <div style="font-weight: 700; font-size: 12px; color: var(--accent);">${commit.hash.substring(0, 7)}</div>
+            <div style="font-size: 11px; color: var(--muted); margin: 4px 0;">${commit.date}</div>
+            <div style="font-size: 13px;">${commit.message}</div>
+          </div>
+        `).join('');
+
+        listDiv.querySelectorAll('.commit-item').forEach(item => {
+          item.addEventListener('click', () => {
+            listDiv.querySelectorAll('.commit-item').forEach(i => i.style.borderColor = 'var(--ui-border)');
+            item.style.borderColor = 'var(--cyan)';
+            selectedGitCommit = item.dataset.commitHash;
+            actionsDiv.style.display = 'block';
+            document.querySelector('#selected-commit-info').textContent = t('selectedCommit', {hash: selectedGitCommit.substring(0, 7)});
+          });
+        });
+      } catch (error) {
+        loadingDiv.style.display = 'none';
+        listDiv.innerHTML = `<div style="color: var(--red); padding: 20px;">Failed to load commits: ${error}</div>`;
+      }
+    }
+
+    document.querySelector('[data-close-git-commits-picker]').addEventListener('click', () =>
+      document.querySelector('#git-commits-picker').close());
+    document.querySelector('#git-commits-picker').addEventListener('click', event => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
+    });
+
+    document.querySelector('#generate-update-from-commit').addEventListener('click', async () => {
+      if (!selectedGitCommit) return;
+
+      const button = document.querySelector('#generate-update-from-commit');
+      button.disabled = true;
+      button.textContent = 'Generating...';
+
+      try {
+        const response = await fetch('/api/git/checkout-and-build', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({commit: selectedGitCommit})
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          alert(`Error: ${data.error}`);
+        } else if (data.success) {
+          alert(`Update bundle generated: ${data.bundlePath}`);
+          // Trigger download
+          window.location.href = data.downloadUrl;
+        }
+      } catch (error) {
+        alert(`Failed to generate update: ${error}`);
+      } finally {
+        button.disabled = false;
+        button.textContent = t('generateUpdate');
+      }
+    });
+
+    document.querySelector('#download-from-github').addEventListener('click', async () => {
+      if (!selectedGitCommit) return;
+
+      const button = document.querySelector('#download-from-github');
+      const tokenInput = document.querySelector('#github-token');
+      const repoUrlInput = document.querySelector('#github-repo-url');
+      const token = tokenInput.value.trim();
+      const repoUrl = repoUrlInput.value.trim();
+
+      button.disabled = true;
+      button.textContent = 'Downloading...';
+
+      try {
+        const response = await fetch('/api/git/download-from-github', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({commit: selectedGitCommit, token: token || null, repo_url: repoUrl || null})
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          alert(`Error: ${data.error}`);
+        } else if (data.success) {
+          alert(`Downloaded from GitHub: ${data.fileName}`);
+          // Trigger download
+          window.location.href = data.downloadUrl;
+        }
+      } catch (error) {
+        alert(`Failed to download from GitHub: ${error}`);
+      } finally {
+        button.disabled = false;
+        button.textContent = t('downloadFromGitHub');
+      }
+    });
+
+    async function loadUpdaterHistory() {
+      const historyLoadingDiv = document.querySelector('#updater-history-loading');
+      const historyListDiv = document.querySelector('#updater-history-list');
+
+      try {
+        const response = await fetch('/api/git/updater-history');
+        const data = await response.json();
+
+        historyLoadingDiv.style.display = 'none';
+
+        if (data.error) {
+          historyListDiv.innerHTML = `<div style="color: var(--red); padding: 10px; font-size: 12px;">${data.error}</div>`;
+          return;
+        }
+
+        if (!data.history || data.history.length === 0) {
+          historyListDiv.innerHTML = '<div style="padding: 10px; font-size: 12px; color: var(--muted);">No updater history</div>';
+          return;
+        }
+
+        historyListDiv.innerHTML = data.history.map(item => `
+          <div class="updater-history-item" data-updater-id="${item.id}" data-bundle-path="${item.bundle_path}" style="
+            padding: 8px;
+            border: 1px solid var(--ui-border);
+            border-radius: 6px;
+            margin-bottom: 6px;
+            background: var(--panel);
+            font-size: 11px;
+            cursor: pointer;
+          ">
+            <div style="font-weight: 600; color: var(--accent);">${item.commit_hash.substring(0, 7)}</div>
+            <div style="color: var(--muted); margin: 2px 0;">${item.created_at}</div>
+            <div style="color: var(--text); margin-bottom: 2px;">${item.commit_message || 'No message'}</div>
+            <div style="font-family: monospace; font-size: 10px; color: var(--muted); white-space: pre-wrap; word-break: break-all;">${item.build_output || ''}</div>
+          </div>
+        `).join('');
+
+        // Add click handlers for history items
+        historyListDiv.querySelectorAll('.updater-history-item').forEach(item => {
+          item.addEventListener('click', () => {
+            // Remove previous selection
+            historyListDiv.querySelectorAll('.updater-history-item').forEach(i => {
+              i.style.borderColor = 'var(--ui-border)';
+              i.style.background = 'var(--panel)';
+            });
+            // Select this item
+            item.style.borderColor = 'var(--accent)';
+            item.style.background = 'rgba(var(--accent-rgb), 0.1)';
+            selectedUpdaterId = item.dataset.updaterId;
+            const bundlePath = item.dataset.bundlePath;
+            const commitHash = item.querySelector('div').textContent;
+            document.querySelector('#updater-history-actions').style.display = 'block';
+            document.querySelector('#selected-updater-info').textContent = t('selectedUpdater', {hash: commitHash});
+          });
+        });
+      } catch (error) {
+        historyLoadingDiv.style.display = 'none';
+        historyListDiv.innerHTML = `<div style="color: var(--red); padding: 10px; font-size: 12px;">Failed to load history: ${error}</div>`;
+      }
+    }
+
+    document.querySelector('#download-selected-updater').addEventListener('click', () => {
+      if (!selectedUpdaterId) return;
+      const selectedItem = document.querySelector(`.updater-history-item[data-updater-id="${selectedUpdaterId}"]`);
+      if (!selectedItem) return;
+      const bundlePath = selectedItem.dataset.bundle_path;
+      if (!bundlePath) {
+        alert('Bundle path not available');
+        return;
+      }
+      // Extract filename from path
+      const filename = bundlePath.split('\\').pop().split('/').pop();
+      // Trigger download
+      window.location.href = `/api/git/download-bundle?filename=${filename}`;
+    });
+
+    document.querySelector('#modbus-debug-button').addEventListener('click', () => {
+      const picker = document.querySelector('#modbus-debug-picker');
+      if (typeof picker.showModal === 'function') picker.showModal();
+      else picker.setAttribute('open', '');
+      loadModbusDebug();
+      // Sync the debug modal controls with current settings
+      const pollRateSelect = document.querySelector('#modbus-poll-rate');
+      const readModeSelect = document.querySelector('#modbus-read-mode');
+      const connectionModeSelect = document.querySelector('#modbus-connection-mode-select');
+      if (lastData) {
+        if (pollRateSelect) pollRateSelect.value = lastData.poll_rate_index ?? 0;
+        if (readModeSelect) readModeSelect.value = lastData.read_mode ?? 'fast';
+      } else {
+        if (pollRateSelect) pollRateSelect.value = 0;
+        if (readModeSelect) readModeSelect.value = 'fast';
+      }
+      try {
+        const connectionMode = window.localStorage.getItem('connection-mode') || 'rtu';
+        if (connectionModeSelect) connectionModeSelect.value = connectionMode;
+      } catch {
+        if (connectionModeSelect) connectionModeSelect.value = 'rtu';
+      }
+    });
+    document.querySelector('[data-close-modbus-debug-picker]').addEventListener('click', () =>
+      document.querySelector('#modbus-debug-picker').close());
+    document.querySelector('#modbus-debug-picker').addEventListener('click', event => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
+    });
+    document.querySelector('#refresh-modbus-debug').addEventListener('click', loadModbusDebug);
+    document.querySelector('#modbus-poll-rate').addEventListener('change', event => {
+      const pollRateIndex = Number(event.target.value);
+      if (lastData) {
+        lastData.poll_rate_index = pollRateIndex;
+        renderCycleStatus(lastData);
+      }
+      updateSetting('poll_rate_index', pollRateIndex);
+    });
+    document.querySelector('#modbus-read-mode').addEventListener('change', event => {
+      const readMode = event.target.value;
+      if (lastData) {
+        lastData.read_mode = readMode;
+      }
+      updateSetting('read_mode', readMode);
+    });
+    document.querySelector('#modbus-connection-mode-select').addEventListener('change', event => {
+      const connectionMode = event.target.value;
+      try {
+        window.localStorage.setItem('connection-mode', connectionMode);
+      } catch {
+      }
+      fetch('/api/connection-mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'set', mode: connectionMode})
+      }).catch(() => {
+      });
+      loadModbusDebug();
+    });
+    document.querySelector('#save-settings').addEventListener('click', () => {
+      const customName = document.querySelector('#custom-device-name').value;
+      const connectionMode = document.querySelector('#connection-mode').value;
+      saveCustomDeviceName(customName);
+      
+      try {
+        window.localStorage.setItem('connection-mode', connectionMode);
+      } catch {
+      }
+      
+      fetch('/api/connection-mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'set', mode: connectionMode})
+      }).catch(() => {
+      });
+      
+      document.querySelector('#settings-picker').close();
+      if (lastData) {
+        document.querySelector('#identifier').textContent = getDisplayIdentifier(lastData.identifier);
+      }
     });
     const gaugeHost = document.querySelector('#gauges');
     const dashboardGaugeToolbar = document.querySelector('#dashboard-gauge-toolbar');

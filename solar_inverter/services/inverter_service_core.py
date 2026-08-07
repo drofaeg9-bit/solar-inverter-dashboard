@@ -24,6 +24,9 @@ from zoneinfo import ZoneInfo
 DEVICE = "/dev/ttyUSB0"
 SLAVE_ID = 1
 BAUD_RATE = 9600
+TCP_IP = "192.168.1.100"
+TCP_PORT = 502
+CONNECTION_MODE = "rtu"  # "rtu" or "tcp"
 COMMAND_TIMEOUT_SECONDS = 3.0
 MADRID_TIME_ZONE = ZoneInfo("Europe/Madrid")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -212,16 +215,16 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     81: ("Напруга мережі, фаза A", 0.1, "V", True, "AC"),
     82: ("Струм мережі, фаза A", 0.01, "A", True, "AC"),
     83: ("Частота мережі, фаза A", 0.01, "Hz", True, "AC"),
-    84: ("Потужність мережі, фаза A", 1.0, "W", True, "Потужність"),
+    84: ("Потужність мережі, фаза A", 10.0, "W", True, "Потужність"),
     85: ("Напруга генератора, фаза A", 0.1, "V", False, "Генератор"),
     86: ("Струм генератора, фаза A", 0.01, "A", False, "Генератор"),
     87: ("Частота генератора, фаза A", 0.01, "Hz", False, "Генератор"),
-    88: ("Потужність генератора, фаза A", 1.0, "W", False, "Генератор"),
+    88: ("Потужність генератора, фаза A", 10.0, "W", False, "Генератор"),
     89: ("Вихідна напруга навантаження, фаза A", 0.1, "V", True, "AC"),
     90: ("Вихідний струм AC", 0.01, "A", False, "AC"),
     91: ("Вихідна частота AC", 0.01, "Hz", True, "AC"),
-    92: ("Активна потужність навантаження", 1.0, "W", True, "Потужність"),
-    93: ("Повна потужність навантаження", 1.0, "VA", True, "Потужність"),
+    92: ("Активна потужність навантаження", 10.0, "W", True, "Потужність"),
+    93: ("Повна потужність навантаження", 10.0, "VA", True, "Потужність"),
     94: ("Завантаження інвертора", 0.1, "%", False, "AC"),
     95: ("Навантаження мережі, фаза A", 1.0, "W", True, "Потужність"),
 
@@ -229,7 +232,7 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     130: ("Струм акумулятора", 0.1, "A", True, "Батарея"),
     131: ("Напруга від’ємної клеми батареї", 0.1, "V", True, "Батарея"),
     132: ("Струм від’ємної клеми батареї", 0.1, "A", True, "Батарея"),
-    133: ("SOC акумулятора", 0.1, "%", True, "Батарея"),
+    133: ("SOC акумулятора", 1.0, "%", True, "Батарея"),
     134: ("Потужність акумулятора", 1.0, "W", True, "Потужність"),
     135: ("Резерв", 1.0, "", False, "Батарея"),
     136: ("Резерв", 1.0, "", False, "Батарея"),
@@ -312,26 +315,26 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     379: ("Струм підтримувального заряджання", 0.1, "A", True, "Заряджання"),
     383: ("Напруга вирівнювального заряджання", 0.1, "V", True, "Заряджання"),
     384: ("Час вирівнювального заряджання", 1.0, "h", False, "Заряджання"),
-    385: ("Затримка вирівнювального заряджання", 1.0, "h", False, "Заряджання"),
+    385: ("Затримка вирівнювального заряджання", 1.0, "min", False, "Заряджання"),
     386: ("Інтервал вирівнювального заряджання", 1.0, "d", False, "Заряджання"),
 
     401: ("Протокол зв’язку BMS (резерв)", 1.0, "", False, "BMS"),
-    402: ("Стан зв’язку BMS", 1.0, "", False, "BMS"),
-    403: ("ID пакета BMS", 1.0, "", False, "BMS"),
+    402: ("ID пакета BMS", 1.0, "", False, "BMS"),
+    403: ("Стан зв’язку BMS", 1.0, "", False, "BMS"),
     404: ("Напруга батареї", 0.1, "V", False, "BMS"),
     405: ("Струм батареї", 0.1, "A", True, "BMS"),
-    406: ("Температура батареї", 1.0, "°C", True, "Температура"),
+    406: ("Температура батареї", 0.1, "°C", True, "Температура"),
     407: ("SOC батареї", 1.0, "%", False, "BMS"),
     408: ("SOH батареї", 1.0, "%", False, "BMS"),
     409: ("Поточна ємність батареї", 0.01, "Ah", False, "BMS"),
     410: ("Повна зарядна ємність батареї", 0.01, "Ah", False, "BMS"),
     411: ("Точка постійної напруги BMS", 0.1, "V", True, "BMS"),
-    412: ("Максимальний струм заряджання BMS", 0.01, "A", True, "BMS"),
+    412: ("Максимальний струм заряджання BMS", 0.1, "A", True, "BMS"),
     413: ("Дозволений тривалий струм розряджання батареї", 0.1, "A", False, "BMS"),
     414: ("Поріг попередження низького SOC", 1.0, "%", True, "BMS"),
     415: ("Поріг вимкнення за низьким SOC", 1.0, "%", True, "BMS"),
-    416: ("Резервний поріг перемикання низького SOC", 0.1, "V", True, "BMS"),
-    417: ("Резервний поріг відсікання високого SOC", 0.1, "V", True, "BMS"),
+    416: ("Поріг переходу на мережу за низьким SOC", 1.0, "%", True, "BMS"),
+    417: ("Поріг повернення на батарею за високим SOC", 1.0, "%", True, "BMS"),
     418: ("Сигналізація BMS", 1.0, "", False, "BMS"),
     419: ("Помилка BMS", 1.0, "", False, "BMS"),
 
@@ -674,6 +677,14 @@ def signed16(raw: int) -> int:
 def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str]:
     name, scale, unit, use_signed, group = register_metadata(register)
 
+    # Check for special values before applying scale
+    if raw == 65535:  # 0xFFFF - No data
+        display = "—"
+        return name, display, unit, None, group
+    if raw == 65534:  # 0xFFFE - Not supported
+        display = "Не підтримується"
+        return name, display, unit, None, group
+
     base = signed16(raw) if use_signed else raw
     # This installed inverter reports R130 with the opposite direction to the
     # UI convention: charging is positive and discharging is negative.
@@ -708,6 +719,43 @@ def decode_identifier(values: dict[int, int]) -> str:
 
 
 def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:
+    global CONNECTION_MODE
+    
+    if CONNECTION_MODE == "tcp":
+        print(f"[Modbus TCP] Reading registers {start}-{start+count-1} from {TCP_IP}:{TCP_PORT} (slave {SLAVE_ID})")
+        try:
+            from pymodbus.client import ModbusTcpClient
+            from pymodbus.exceptions import ModbusException
+        except ImportError:
+            print("[Modbus TCP] ERROR: pymodbus not installed")
+            return {}, "pymodbus не встановлено"
+        
+        try:
+            client = ModbusTcpClient(TCP_IP, port=TCP_PORT, timeout=COMMAND_TIMEOUT_SECONDS)
+            if not client.connect():
+                print(f"[Modbus TCP] ERROR: Connection failed to {TCP_IP}:{TCP_PORT}")
+                return {}, "TCP з'єднання не вдалося"
+            
+            result = client.read_holding_registers(start - 1, count, slave=SLAVE_ID)
+            client.close()
+            
+            if result.isError():
+                print(f"[Modbus TCP] ERROR: {result}")
+                return {}, f"Modbus помилка: {result}"
+            
+            values = {start + i: int(result.registers[i]) for i in range(len(result.registers))}
+            print(f"[Modbus TCP] SUCCESS: Read {len(values)} registers")
+            return values, None
+            
+        except ModbusException as e:
+            print(f"[Modbus TCP] ERROR: {e}")
+            return {}, f"Modbus помилка: {e}"
+        except Exception as error:
+            print(f"[Modbus TCP] ERROR: {error}")
+            return {}, str(error)
+    
+    # RTU mode (original mbpoll implementation)
+    print(f"[Modbus RTU] Reading registers {start}-{start+count-1} from {DEVICE} (baud {BAUD_RATE}, slave {SLAVE_ID})")
     command = [
         "mbpoll",
         "-m", "rtu",
@@ -731,10 +779,13 @@ def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:
             check=False,
         )
     except subprocess.TimeoutExpired:
+        print(f"[Modbus RTU] ERROR: Timeout after {COMMAND_TIMEOUT_SECONDS}s")
         return {}, "перевищено час очікування"
     except FileNotFoundError:
+        print("[Modbus RTU] ERROR: mbpoll command not found")
         return {}, "mbpoll не знайдено"
     except Exception as error:
+        print(f"[Modbus RTU] ERROR: {error}")
         return {}, str(error)
 
     output = f"{result.stdout}\n{result.stderr}"
@@ -744,9 +795,11 @@ def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:
     }
 
     if values:
+        print(f"[Modbus RTU] SUCCESS: Read {len(values)} registers")
         return values, None
-
-    return {}, output.strip() or "помилка читання"
+    else:
+        print(f"[Modbus RTU] ERROR: No values read. Output: {output[:200]}")
+        return {}, output.strip() or "помилка читання"
 
 
 def read_fast() -> tuple[dict[int, int], int, int, str | None]:

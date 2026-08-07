@@ -1,6 +1,62 @@
 from __future__ import annotations
 
+import io
+import sys
+import threading
 from .inverter_service_core import *
+
+# Log buffer for UI display
+log_buffer = io.StringIO()
+log_buffer_lock = threading.Lock()
+
+class LogCapture:
+    """Capture print() output to a buffer for UI display."""
+    def __init__(self, original_stdout):
+        self.original_stdout = original_stdout
+    
+    def write(self, text):
+        self.original_stdout.write(text)
+        self.original_stdout.flush()
+        with log_buffer_lock:
+            log_buffer.write(text)
+            # Keep last 100KB of logs
+            if log_buffer.tell() > 100000:
+                log_buffer.seek(0)
+                content = log_buffer.read()
+                log_buffer.seek(0)
+                log_buffer.truncate()
+                log_buffer.write(content[-100000:])
+    
+    def flush(self):
+        self.original_stdout.flush()
+
+# Redirect stdout to capture logs
+sys.stdout = LogCapture(sys.stdout)
+
+def get_server_logs() -> dict[str, Any]:
+    """Get recent server logs for UI display."""
+    with log_buffer_lock:
+        log_buffer.seek(0)
+        content = log_buffer.read()
+        # Get last 500 lines
+        lines = content.split('\n')[-500:]
+        return {"logs": '\n'.join(lines), "lines": len(lines)}
+
+def set_connection_mode(mode: str) -> dict[str, Any]:
+    """Set the connection mode (rtu or tcp) and return status."""
+    global CONNECTION_MODE
+    if mode not in ("rtu", "tcp"):
+        return {"error": "Invalid mode, must be 'rtu' or 'tcp'"}
+    print(f"[Connection Mode] Changing from {CONNECTION_MODE} to {mode}")
+    CONNECTION_MODE = mode
+    print(f"[Connection Mode] Now using {mode.upper()}")
+    return {"mode": mode, "success": True}
+
+def get_connection_mode() -> dict[str, Any]:
+    """Get the current connection mode."""
+    print(f"[Connection Mode] Current mode: {CONNECTION_MODE}")
+    return {"mode": CONNECTION_MODE}
+
 
 def maintain_register_log_storage(force: bool = False) -> bool:
     """Delete oldest completed logs when disk space falls below the reserve."""
@@ -542,18 +598,22 @@ def solar_energy_summary() -> dict[str, Any]:
 def poll_worker() -> None:
     cached: dict[int, int] = {}
     previous_cycle_started: float | None = None
+    print("[Poll Worker] Starting poll worker")
 
     while True:
         with state_lock:
             if state["stop"]:
+                print("[Poll Worker] Stopping poll worker")
                 return
             paused = state["paused"]
             mode = state["read_mode"]
             poll_rate = POLL_RATES[state["poll_rate_index"]]
 
         if paused:
+            print("[Poll Worker] Polling paused, waiting...")
             poll_wake_event.wait()
             poll_wake_event.clear()
+            print("[Poll Worker] Polling resumed")
             continue
 
         started = time.monotonic()
@@ -563,14 +623,19 @@ def poll_worker() -> None:
             else 0.0
         )
         previous_cycle_started = started
+        
+        print(f"[Poll Worker] Cycle started - Mode: {mode}, Interval: {cycle_interval:.2f}s, Connection: {CONNECTION_MODE.upper()}")
 
         if mode == "compatible":
             fresh, failed, requests, error = read_compatible()
         else:
             fresh, failed, requests, error = read_fast()
 
+        print(f"[Poll Worker] Read complete - Success: {len(fresh)}, Failed: {failed}, Requests: {requests}, Error: {error or 'None'}")
+
         if fresh:
             cached.update(fresh)
+            print(f"[Poll Worker] Cached {len(fresh)} new register values")
 
         read_duration = round(time.monotonic() - started, 2)
         cycle_duration = round(cycle_interval or read_duration, 2)
@@ -589,6 +654,7 @@ def poll_worker() -> None:
             state["error"] = "" if fresh else (error or "помилка читання")
             state["identifier"] = decode_identifier(cached)
             state["values"] = dict(cached)
+            state["connection_mode"] = CONNECTION_MODE
             log_cycle_id = int(state["cycle_id"])
             log_values = dict(cached)
 
@@ -597,11 +663,15 @@ def poll_worker() -> None:
 
             poll_rate = POLL_RATES[state["poll_rate_index"]]
 
+        print(f"[Poll Worker] State updated - Cycle ID: {log_cycle_id}, Online: {bool(fresh)}, Identifier: {state['identifier']}")
         record_register_changes(log_values, log_cycle_id)
         if fresh:
             record_solar_energy(fresh)
+            print(f"[Poll Worker] Solar energy recorded")
         cycle_work_duration = time.monotonic() - started
-        poll_wake_event.wait(max(0.0, poll_rate - cycle_work_duration))
+        sleep_time = max(0.0, poll_rate - cycle_work_duration)
+        print(f"[Poll Worker] Cycle complete - Duration: {cycle_work_duration:.2f}s, Sleeping: {sleep_time:.2f}s")
+        poll_wake_event.wait(sleep_time)
         poll_wake_event.clear()
 
 
@@ -649,6 +719,20 @@ def initialise_statistics() -> None:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS updater_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    commit_hash TEXT NOT NULL,
+                    commit_message TEXT,
+                    commit_date TEXT,
+                    source TEXT NOT NULL,
+                    bundle_path TEXT,
+                    build_output TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
             site_visit_total = int(
                 connection.execute(
                     "SELECT value FROM site_counters WHERE name = 'page_views'"
@@ -681,6 +765,57 @@ def increment_site_visits() -> None:
         stats_error = ""
     except sqlite3.Error as error:
         stats_error = str(error)
+
+
+def record_updater_version(commit_hash: str, commit_message: str, commit_date: str, source: str, bundle_path: str, build_output: str = "") -> bool:
+    """Record an updater version in the database."""
+    global stats_error
+    try:
+        with stats_lock, closing(sqlite3.connect(STATS_DB_PATH)) as connection:
+            connection.execute(
+                """
+                INSERT INTO updater_versions (commit_hash, commit_message, commit_date, source, bundle_path, build_output)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (commit_hash, commit_message, commit_date, source, bundle_path, build_output)
+            )
+            connection.commit()
+        stats_error = ""
+        return True
+    except (OSError, sqlite3.Error) as error:
+        stats_error = str(error)
+        return False
+
+
+def get_updater_history() -> list:
+    """Get all updater versions from the database."""
+    global stats_error
+    try:
+        with stats_lock, closing(sqlite3.connect(STATS_DB_PATH)) as connection:
+            rows = connection.execute(
+                """
+                SELECT id, commit_hash, commit_message, commit_date, source, bundle_path, build_output, created_at
+                FROM updater_versions
+                ORDER BY created_at DESC
+                """
+            ).fetchall()
+        stats_error = ""
+        return [
+            {
+                "id": row[0],
+                "commit_hash": row[1],
+                "commit_message": row[2],
+                "commit_date": row[3],
+                "source": row[4],
+                "bundle_path": row[5],
+                "build_output": row[6],
+                "created_at": row[7]
+            }
+            for row in rows
+        ]
+    except (OSError, sqlite3.Error) as error:
+        stats_error = str(error)
+        return []
 
 
 def visitor_was_counted(cookie_header: str) -> bool:

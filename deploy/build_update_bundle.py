@@ -4,14 +4,18 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
+import sqlite3
 import tempfile
 import zipapp
 from pathlib import Path
+from contextlib import closing
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_MAIN = PROJECT_ROOT / "deploy" / "update_bundle_src" / "__main__.py"
 OUTPUT = PROJECT_ROOT / "deploy" / "solar-dashboard-update.pyz"
+STATS_DB_PATH = PROJECT_ROOT / "solar_invertor_web_stats.sqlite3"
 PAYLOAD_FILES = (
     "solar_invertor_web.py",
     "favicon.png",
@@ -44,6 +48,87 @@ PAYLOAD_FILES = (
 )
 
 
+def record_updater_version(commit_hash: str, commit_message: str, commit_date: str, source: str, bundle_path: str, build_output: str = "") -> bool:
+    """Record an updater version in the database."""
+    try:
+        STATS_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(STATS_DB_PATH)) as connection:
+            # Ensure table exists
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS updater_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    commit_hash TEXT NOT NULL,
+                    commit_message TEXT,
+                    commit_date TEXT,
+                    source TEXT NOT NULL,
+                    bundle_path TEXT,
+                    build_output TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            # Insert record
+            connection.execute(
+                """
+                INSERT INTO updater_versions (commit_hash, commit_message, commit_date, source, bundle_path, build_output)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (commit_hash, commit_message, commit_date, source, bundle_path, build_output)
+            )
+            connection.commit()
+        return True
+    except (OSError, sqlite3.Error) as error:
+        print(f"Warning: Failed to record updater version: {error}")
+        return False
+
+
+def get_current_commit_info() -> tuple[str, str, str]:
+    """Get current git commit hash, message, and date."""
+    try:
+        # Try to find git
+        import shutil
+        git_path = shutil.which("git")
+        if not git_path:
+            # Try common Windows path
+            if Path(r"C:\Program Files\Git\bin\git.exe").exists():
+                git_path = r"C:\Program Files\Git\bin\git.exe"
+            else:
+                return "unknown", "Manual build", ""
+        
+        # Get commit hash
+        result = subprocess.run(
+            [git_path, "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        commit_hash = result.stdout.strip() if result.returncode == 0 else "unknown"
+        
+        # Get commit message and date
+        result = subprocess.run(
+            [git_path, "log", "-1", "--pretty=format:%s|%ai"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            # Split on | to separate message and date
+            parts = result.stdout.strip().split("|", 1)
+            commit_message = parts[0] if len(parts) > 0 else "Manual build"
+            commit_date = parts[1] if len(parts) > 1 else ""
+        else:
+            commit_message = "Manual build"
+            commit_date = ""
+        
+        return commit_hash, commit_message, commit_date
+    except Exception as e:
+        print(f"Warning: Failed to get git info: {e}")
+        return "unknown", "Manual build", ""
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="solar-dashboard-bundle-") as temporary:
         bundle_root = Path(temporary)
@@ -62,6 +147,11 @@ def main() -> None:
             compressed=True,
         )
     print(f"Created {OUTPUT} ({OUTPUT.stat().st_size:,} bytes)")
+    
+    # Record to database
+    commit_hash, commit_message, commit_date = get_current_commit_info()
+    build_output = f"Created {OUTPUT} ({OUTPUT.stat().st_size:,} bytes)"
+    record_updater_version(commit_hash, commit_message, commit_date, "manual", str(OUTPUT), build_output)
 
 
 if __name__ == "__main__":

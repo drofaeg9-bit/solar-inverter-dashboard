@@ -4,16 +4,56 @@ import csv
 import gzip
 import json
 import os
+import subprocess
 import sys
 import threading
+import urllib.request
+import urllib.error
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from pathlib import Path
 
 from ..services import inverter_service
 from ..services.inverter_service import *
+from ..services.inverter_service_runtime import get_server_logs, record_updater_version, get_updater_history
 from .dashboard_template import WEB_DASHBOARD, WEB_ROOT
+
+# Git executable path for Windows
+GIT_PATH = r"C:\Program Files\Git\bin\git.exe"
+
+def check_git_available() -> tuple[bool, str]:
+    """Check if git is available. Returns (is_available, path_or_error)."""
+    import shutil
+    # Try the hardcoded path first
+    if Path(GIT_PATH).exists():
+        return True, GIT_PATH
+    # Try to find git in PATH
+    git_path = shutil.which("git")
+    if git_path:
+        return True, git_path
+    return False, "Git not found"
+
+def install_git() -> tuple[bool, str]:
+    """Attempt to install git using winget on Windows. Returns (success, message)."""
+    try:
+        result = subprocess.run(
+            ["winget", "install", "--id", "Git.Git", "-e", "--silent"],
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        if result.returncode == 0:
+            return True, "Git installed successfully"
+        else:
+            return False, f"Installation failed: {result.stderr}"
+    except FileNotFoundError:
+        return False, "winget not found. Please install Git manually from https://git-scm.com/download/win"
+    except subprocess.TimeoutExpired:
+        return False, "Installation timed out"
+    except Exception as e:
+        return False, f"Installation error: {str(e)}"
 
 DASHBOARD_IMAGE_PATHS = {
     "/assets/generator-mask.png": PROJECT_ROOT / "generator-mask.png",
@@ -151,7 +191,7 @@ def log_visit_to_console(
         "браузер": handler.headers.get("User-Agent", "невідомо")[:500],
     }
     message = (
-        "ВІДВІДУВАЧ "
+        "[Web Dashboard] VISITOR "
         + json.dumps(details, ensure_ascii=False, separators=(",", ":"))
     )
     safe_console_print(message)
@@ -255,6 +295,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
         if request_path == "/":
+            print(f"[Web Dashboard] GET / - Serving main page")
             new_visitor = not visitor_was_counted(
                 self.headers.get("Cookie", "")
             )
@@ -288,8 +329,109 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             return
         if request_path == "/api/state":
+            print(f"[Web Dashboard] API /api/state - Serving state snapshot")
             body = json.dumps(web_state(), ensure_ascii=False).encode("utf-8")
             self.send_content(body, "application/json; charset=utf-8", compress=True)
+            return
+        if request_path == "/api/logs":
+            print(f"[Web Dashboard] API /api/logs - Serving server logs")
+            body = json.dumps(get_server_logs(), ensure_ascii=False).encode("utf-8")
+            self.send_content(body, "application/json; charset=utf-8")
+            return
+        if request_path == "/api/historical":
+            from urllib.parse import parse_qs
+            query = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            period = query.get("period", ["realtime"])[0]
+            print(f"[Web Dashboard] API /api/historical - Period: {period}")
+            # TODO: Implement actual historical data storage and retrieval
+            # For now, return empty data structure
+            body = json.dumps({"points": [], "period": period}, ensure_ascii=False).encode("utf-8")
+            self.send_content(body, "application/json; charset=utf-8")
+            return
+        if request_path == "/api/git/commits":
+            print(f"[Web Dashboard] API /api/git/commits - Fetching git commit history")
+            try:
+                # Check git availability and get path
+                is_available, git_path = check_git_available()
+                if not is_available:
+                    body = json.dumps({"error": git_path}, ensure_ascii=False).encode("utf-8")
+                    self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+                    return
+
+                # Use %% to escape % on Windows PowerShell
+                result = subprocess.run(
+                    [git_path, "log", "--pretty=format:%H%%ai%%s", "--date=iso", "-20"],
+                    cwd=PROJECT_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                print(f"[Web Dashboard] Git log result: returncode={result.returncode}, stderr={result.stderr}")
+                if result.returncode != 0:
+                    body = json.dumps({"error": f"Failed to fetch git history: {result.stderr}"}, ensure_ascii=False).encode("utf-8")
+                    self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+                    return
+
+                commits = []
+                for line in result.stdout.strip().split("\n") if result.stdout.strip() else []:
+                    parts = line.split("|", 2)
+                    if len(parts) == 3:
+                        commits.append({
+                            "hash": parts[0],
+                            "date": parts[1],
+                            "message": parts[2]
+                        })
+
+                body = json.dumps({"commits": commits}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8")
+            except subprocess.TimeoutExpired:
+                body = json.dumps({"error": "Git command timed out"}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", HTTPStatus.REQUEST_TIMEOUT)
+            except Exception as e:
+                print(f"[Web Dashboard] Git commits error: {e}")
+                body = json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if request_path.startswith("/api/git/download-bundle"):
+            from urllib.parse import parse_qs
+            query = parse_qs(request_path.split("?", 1)[1] if "?" in request_path else "")
+            filename = query.get("filename", ["solar-dashboard-update.pyz"])[0]
+            bundle_path = PROJECT_ROOT / "deploy" / filename
+            print(f"[Web Dashboard] API /api/git/download-bundle - Serving: {bundle_path}")
+
+            if not bundle_path.exists():
+                body = json.dumps({"error": "Bundle file not found"}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", HTTPStatus.NOT_FOUND)
+                return
+
+            try:
+                self.send_content(
+                    bundle_path.read_bytes(),
+                    "application/octet-stream",
+                    extra_headers={
+                        "Content-Disposition": f'attachment; filename="{filename}"'
+                    },
+                )
+            except OSError as error:
+                body = json.dumps({"error": str(error)}).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if request_path == "/api/git/updater-history":
+            print(f"[Web Dashboard] API /api/git/updater-history - Fetching updater history")
+            try:
+                history = get_updater_history()
+                body = json.dumps({"history": history}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8")
+            except Exception as e:
+                print(f"[Web Dashboard] Updater history error: {e}")
+                body = json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        if request_path == "/api/git/check":
+            print(f"[Web Dashboard] API /api/git/check - Checking git availability")
+            is_available, path_or_error = check_git_available()
+            body = json.dumps({"available": is_available, "path": path_or_error if is_available else None, "error": path_or_error if not is_available else None}, ensure_ascii=False).encode("utf-8")
+            self.send_content(body, "application/json; charset=utf-8")
             return
         if request_path == "/api/register-log/download":
             with inverter_service.register_log_lock:
@@ -337,14 +479,240 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     raise ValueError("CSV file is empty")
                 if length > REGISTER_MAP_MAX_BYTES:
                     raise ValueError("CSV file is larger than 1 MiB")
+                print(f"[Web Dashboard] API /api/register-map - Uploading CSV, size: {length} bytes")
                 result = replace_register_map(self.rfile.read(length))
                 body = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                print(f"[Web Dashboard] API /api/register-map - Result: {result.get('error') or 'success'}")
                 self.send_content(body, "application/json; charset=utf-8")
             except (ValueError, OSError, csv.Error) as error:
+                print(f"[Web Dashboard] API /api/register-map - Error: {error}")
                 body = json.dumps({"error": str(error)}, ensure_ascii=False).encode("utf-8")
                 self.send_content(
                     body, "application/json; charset=utf-8", HTTPStatus.BAD_REQUEST
                 )
+            return
+
+        if self.path == "/api/git/checkout-and-build":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                commit = payload.get("commit")
+                print(f"[Web Dashboard] API /api/git/checkout-and-build - Commit: {commit}")
+
+                # Check git availability and get path
+                is_available, git_path = check_git_available()
+                if not is_available:
+                    body = json.dumps({"error": git_path}, ensure_ascii=False).encode("utf-8")
+                    self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+                    return
+
+                # Checkout the commit
+                checkout_result = subprocess.run(
+                    [git_path, "checkout", commit],
+                    cwd=PROJECT_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+
+                if checkout_result.returncode != 0:
+                    body = json.dumps({"error": f"Checkout failed: {checkout_result.stderr}"}, ensure_ascii=False).encode("utf-8")
+                    self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+                    return
+
+                # Build the update bundle
+                build_result = subprocess.run(
+                    ["py", "-3", "deploy/build_update_bundle.py"],
+                    cwd=PROJECT_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+
+                if build_result.returncode != 0:
+                    body = json.dumps({"error": f"Build failed: {build_result.stderr}"}, ensure_ascii=False).encode("utf-8")
+                    self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+                    return
+
+                # Find the generated bundle
+                bundle_path = PROJECT_ROOT / "deploy" / "solar-dashboard-update.pyz"
+                if not bundle_path.exists():
+                    body = json.dumps({"error": "Bundle file not found after build"}, ensure_ascii=False).encode("utf-8")
+                    self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+                    return
+
+                # Get commit info for database
+                log_result = subprocess.run(
+                    [git_path, "log", "-1", "--pretty=format:%s%%ai", commit],
+                    cwd=PROJECT_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                commit_message = ""
+                commit_date = ""
+                if log_result.returncode == 0:
+                    parts = log_result.stdout.split("|", 1)
+                    if len(parts) == 2:
+                        commit_message = parts[0]
+                        commit_date = parts[1]
+
+                # Capture build output for database
+                build_output = build_result.stdout.strip() if build_result.stdout else ""
+
+                # Record to database
+                record_updater_version(commit, commit_message, commit_date, "local", str(bundle_path), build_output)
+
+                body = json.dumps({
+                    "success": True,
+                    "bundlePath": str(bundle_path),
+                    "downloadUrl": f"/api/git/download-bundle?filename={bundle_path.name}"
+                }, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8")
+
+            except subprocess.TimeoutExpired:
+                body = json.dumps({"error": "Git operation timed out"}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", HTTPStatus.REQUEST_TIMEOUT)
+            except Exception as e:
+                body = json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/git/download-from-github":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                commit = payload.get("commit")
+                token = payload.get("token")
+                repo_url = payload.get("repo_url")
+                print(f"[Web Dashboard] API /api/git/download-from-github - Commit: {commit}, Repo: {repo_url}")
+
+                # Parse GitHub repo from provided URL or use git remote
+                if repo_url:
+                    # Parse repo from provided URL
+                    if repo_url.startswith("https://github.com/"):
+                        repo_path = repo_url.replace("https://github.com/", "").replace(".git", "")
+                    elif repo_url.startswith("git@github.com:"):
+                        repo_path = repo_url.replace("git@github.com:", "").replace(".git", "")
+                    else:
+                        body = json.dumps({"error": f"Invalid GitHub URL format: {repo_url}"}, ensure_ascii=False).encode("utf-8")
+                        self.send_content(body, "application/json; charset=utf-8", HTTPStatus.BAD_REQUEST)
+                        return
+                else:
+                    # Check git availability and get path
+                    is_available, git_path = check_git_available()
+                    if not is_available:
+                        body = json.dumps({"error": git_path}, ensure_ascii=False).encode("utf-8")
+                        self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+                        return
+
+                    # Get GitHub repo info from git remote
+                    remote_result = subprocess.run(
+                        [git_path, "remote", "get-url", "origin"],
+                        cwd=PROJECT_ROOT,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+
+                    if remote_result.returncode != 0:
+                        body = json.dumps({"error": "Failed to get git remote URL"}, ensure_ascii=False).encode("utf-8")
+                        self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+                        return
+
+                    remote_url = remote_result.stdout.strip()
+                    # Parse GitHub repo from URL (supports both https and git@ formats)
+                    if remote_url.startswith("https://github.com/"):
+                        repo_path = remote_url.replace("https://github.com/", "").replace(".git", "")
+                    elif remote_url.startswith("git@github.com:"):
+                        repo_path = remote_url.replace("git@github.com:", "").replace(".git", "")
+                    else:
+                        body = json.dumps({"error": f"Unsupported git remote: {remote_url}"}, ensure_ascii=False).encode("utf-8")
+                        self.send_content(body, "application/json; charset=utf-8", HTTPStatus.BAD_REQUEST)
+                        return
+
+                # Try to download from GitHub releases
+                # First, try to find a release tag matching the commit
+                api_url = f"https://api.github.com/repos/{repo_path}/releases"
+                headers = {}
+                if token:
+                    headers["Authorization"] = f"token {token}"
+
+                req = urllib.request.Request(api_url, headers=headers)
+                try:
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        releases = json.loads(response.read().decode())
+
+                    # Look for release with this commit
+                    for release in releases:
+                        if commit in release.get("target_commitish", ""):
+                            # Download the asset
+                            for asset in release.get("assets", []):
+                                if asset["name"] == "solar-dashboard-update.pyz":
+                                    download_url = asset["browser_download_url"]
+                                    bundle_path = PROJECT_ROOT / "deploy" / "solar-dashboard-update.pyz"
+
+                                    download_req = urllib.request.Request(download_url, headers=headers)
+                                    with urllib.request.urlopen(download_req, timeout=30) as dl_response:
+                                        bundle_path.write_bytes(dl_response.read())
+
+                                    # Get commit info for database
+                                    log_result = subprocess.run(
+                                        [git_path, "log", "-1", "--pretty=format:%s%%ai", commit],
+                                        cwd=PROJECT_ROOT,
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=10
+                                    )
+                                    commit_message = ""
+                                    commit_date = ""
+                                    if log_result.returncode == 0:
+                                        parts = log_result.stdout.split("|", 1)
+                                        if len(parts) == 2:
+                                            commit_message = parts[0]
+                                            commit_date = parts[1]
+
+                                    # Record to database
+                                    record_updater_version(commit, commit_message, commit_date, "github", str(bundle_path), f"Downloaded from GitHub: {asset['name']}")
+
+                                    body = json.dumps({
+                                        "success": True,
+                                        "fileName": asset["name"],
+                                        "downloadUrl": f"/api/git/download-bundle?filename={bundle_path.name}"
+                                    }, ensure_ascii=False).encode("utf-8")
+                                    self.send_content(body, "application/json; charset=utf-8")
+                                    return
+
+                    body = json.dumps({"error": "No release found for this commit"}, ensure_ascii=False).encode("utf-8")
+                    self.send_content(body, "application/json; charset=utf-8", HTTPStatus.NOT_FOUND)
+
+                except urllib.error.HTTPError as e:
+                    if e.code == 401:
+                        body = json.dumps({"error": "Invalid GitHub token"}, ensure_ascii=False).encode("utf-8")
+                    elif e.code == 404:
+                        body = json.dumps({"error": "Repository not found or no releases"}, ensure_ascii=False).encode("utf-8")
+                    else:
+                        body = json.dumps({"error": f"GitHub API error: {e.code}"}, ensure_ascii=False).encode("utf-8")
+                    self.send_content(body, "application/json; charset=utf-8", e.code)
+                except Exception as e:
+                    body = json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
+                    self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+
+            except subprocess.TimeoutExpired:
+                body = json.dumps({"error": "Git operation timed out"}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", HTTPStatus.REQUEST_TIMEOUT)
+            except Exception as e:
+                print(f"[Web Dashboard] GitHub download error: {e}")
+                body = json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/git/install":
+            print(f"[Web Dashboard] API /api/git/install - Installing git")
+            success, message = install_git()
+            body = json.dumps({"success": success, "message": message}, ensure_ascii=False).encode("utf-8")
+            status = HTTPStatus.OK if success else HTTPStatus.INTERNAL_SERVER_ERROR
+            self.send_content(body, "application/json; charset=utf-8", status)
             return
 
         if self.path == "/api/register-log":
@@ -352,6 +720,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 action = payload.get("action")
+                print(f"[Web Dashboard] API /api/register-log - Action: {action}")
                 if action == "start":
                     result = start_register_log(
                         str(payload.get("language", "uk")),
@@ -376,6 +745,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     )
                 else:
                     raise ValueError("action має бути start, stop, mark або lcd_key")
+                print(f"[Web Dashboard] API /api/register-log - Result: {result.get('error') or 'success'}")
                 status = (
                     HTTPStatus.INTERNAL_SERVER_ERROR
                     if result.get("error")
@@ -384,6 +754,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 body = json.dumps(result, ensure_ascii=False).encode("utf-8")
                 self.send_content(body, "application/json; charset=utf-8", status)
             except (ValueError, TypeError, json.JSONDecodeError) as error:
+                print(f"[Web Dashboard] API /api/register-log - Error: {error}")
+                body = json.dumps({"error": str(error)}).encode("utf-8")
+                self.send_content(
+                    body, "application/json; charset=utf-8", HTTPStatus.BAD_REQUEST
+                )
+            return
+
+        if self.path == "/api/connection-mode":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                action = payload.get("action")
+                print(f"[Web Dashboard] API /api/connection-mode - Action: {action}, Mode: {payload.get('mode')}")
+                if action == "set":
+                    result = set_connection_mode(str(payload.get("mode", "rtu")))
+                elif action == "get":
+                    result = get_connection_mode()
+                else:
+                    raise ValueError("action має бути set або get")
+                print(f"[Web Dashboard] API /api/connection-mode - Result: {result}")
+                status = (
+                    HTTPStatus.BAD_REQUEST if result.get("error") else HTTPStatus.OK
+                )
+                body = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8", status)
+            except (ValueError, OSError, json.JSONDecodeError) as error:
+                print(f"[Web Dashboard] API /api/connection-mode - Error: {error}")
                 body = json.dumps({"error": str(error)}).encode("utf-8")
                 self.send_content(
                     body, "application/json; charset=utf-8", HTTPStatus.BAD_REQUEST
@@ -401,6 +798,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length) or b"{}")
+            print(f"[Web Dashboard] API /api/settings - Payload: {payload}")
             with state_lock:
                 if "poll_rate_index" in payload:
                     index = int(payload["poll_rate_index"])
@@ -417,9 +815,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     if not isinstance(paused, bool):
                         raise ValueError("paused має бути true або false")
                     state["paused"] = paused
+            print(f"[Web Dashboard] API /api/settings - Applied changes")
             poll_wake_event.set()
             self.send_content(b'{"ok":true}', "application/json")
         except (ValueError, TypeError, json.JSONDecodeError) as error:
+            print(f"[Web Dashboard] API /api/settings - Error: {error}")
             body = json.dumps({"error": str(error)}).encode("utf-8")
             self.send_content(body, "application/json", HTTPStatus.BAD_REQUEST)
 
