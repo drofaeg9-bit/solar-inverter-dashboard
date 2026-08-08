@@ -434,7 +434,7 @@
       const host = document.querySelector('#chart-modal-host');
       if (!item || !host || typeof uPlot !== 'function') return;
       const history = chartHistory.get(modalChartKey) || [];
-      const colour = resolvedChartColour(dashboardGaugeColour(item) || colours[0]) || colours[0];
+      const colour = resolvedChartColour(chartColour(item)) || colours[0];
       const data = chartSeriesData(history);
       const height = Math.max(320, Math.floor(host.clientHeight || window.innerHeight * .62));
       const width = Math.max(220, Math.floor(host.clientWidth || window.innerWidth * .75));

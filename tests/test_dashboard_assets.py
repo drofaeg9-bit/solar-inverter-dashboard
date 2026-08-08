@@ -173,7 +173,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("dashboardGaugeToolbar.addEventListener('click', handleDashboardPaginationClick)", app)
         self.assertIn("var(--flow-solar-colour)", gauges)
         self.assertIn("var(--flow-grid-colour)", gauges)
-        self.assertIn("const colour = dashboardGaugeColour(item)", charts)
+        self.assertIn("const colour = chartColour(item, index)", charts)
         self.assertIn("styles.getPropertyValue(property).trim()", charts)
         self.assertIn("--flow-generator-colour: #fb923c", css)
         self.assertIn("--flow-generator-colour: #985a2e", css)
@@ -263,7 +263,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertNotIn("if (value === null && !timelineCapable) return", charts)
         self.assertIn("const matchingItems = timelineDefinitions().filter", charts)
         self.assertIn("const items = matchingItems;", charts)
-        self.assertIn("if (isTimelineValue(item))", charts)
+        self.assertIn("timelineDefinitions().forEach(item =>", charts)
         self.assertIn("const chartValue = value === null", charts)
         self.assertIn("cursor: {drag: {x: false, y: false, setScale: false}", charts)
         self.assertIn("addEventListener('wheel'", charts)
@@ -284,6 +284,31 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("function continuousDemoChartValue(item, history)", charts)
         self.assertIn("previous + scale * .01", charts)
         self.assertIn("chart-point-tooltip", charts)
+
+    def test_chart_and_dashboard_gauge_selections_are_independent(self) -> None:
+        charts = (WEB_ROOT / "scripts" / "charts.js").read_text(encoding="utf-8")
+        events = (WEB_ROOT / "scripts" / "app-events.js").read_text(encoding="utf-8")
+        translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
+
+        select_gauges = charts[charts.index("function selectAllGaugeSelections"):
+                               charts.index("function selectAllChartSelections")]
+        select_charts = charts[charts.index("function selectAllChartSelections"):
+                               charts.index("function clearDashboardSelections")]
+        chart_handler = events[events.index("#chart-value-list"):
+                               events.index("#gauge-picker-search")]
+        gauge_handler = events[events.index("#gauge-picker-list"):
+                               events.index("[data-close-gauge-picker]")]
+        remove_handler = events[events.index("button[data-remove-dashboard]"):
+                                events.index("window.addEventListener('resize'")]
+
+        self.assertNotIn("chartSelections", select_gauges)
+        self.assertNotIn("dashboardSelections", select_charts)
+        self.assertNotIn("dashboardSelections", chart_handler)
+        self.assertNotIn("chartSelections", gauge_handler)
+        self.assertNotIn("chartSelections", remove_handler)
+        self.assertIn("chartSelection: 'Графік'", translations)
+        self.assertIn("chartSelection: 'График'", translations)
+        self.assertIn("chartSelection: 'Chart'", translations)
 
     def test_energy_flow_uses_physical_live_grid_and_generator_registers(self) -> None:
         flow = (WEB_ROOT / "scripts" / "energy-flow.js").read_text(encoding="utf-8")

@@ -57,6 +57,9 @@
       saveMap('inverter-dashboard-gauge-colours-v2', dashboardGaugeColours);
       return colour;
     }
+    function chartColour(item, index = 0) {
+      return diagramGaugeColour(item) || colours[index % colours.length];
+    }
     function dashboardGaugeItems() {
       return [...dashboardSelections]
         .filter(key => chartDefinitions.has(key))

@@ -143,9 +143,8 @@
     function updateGaugeSelectionActions() {
       const timelineItems = timelineDefinitions();
       const allChartsSelected = timelineItems.length > 0 && timelineItems.every(item =>
-        dashboardSelections.has(item.key) && chartSelections.has(item.key)
+        chartSelections.has(item.key)
       );
-      const noSelection = dashboardSelections.size === 0 && chartSelections.size === 0;
       const allGaugesSelected = chartDefinitions.size > 0 && [...chartDefinitions.keys()].every(key =>
         dashboardSelections.has(key)
       );
@@ -155,8 +154,8 @@
       };
       setDisabled('#select-all-gauges', chartDefinitions.size === 0 || allGaugesSelected);
       setDisabled('#chart-select-all', timelineItems.length === 0 || allChartsSelected);
-      setDisabled('#clear-all-gauges', noSelection);
-      setDisabled('#chart-clear-all', noSelection);
+      setDisabled('#clear-all-gauges', dashboardSelections.size === 0);
+      setDisabled('#chart-clear-all', chartSelections.size === 0);
     }
     function renderChartValueList() {
       if (document.querySelector('#charts-view').hidden) return;
@@ -168,7 +167,7 @@
       const items = matchingItems.slice(0, VALUE_LIST_RENDER_LIMIT);
       const hiddenCount = matchingItems.length - items.length;
       const signature = `${currentLanguage}|${query}|${items.map(item =>
-        `${item.key}:${item.label}:${item.detail}:${item.interpretation || ''}:${item.unit}:${chartSelections.has(item.key)}:${dashboardSelections.has(item.key)}`).join('|')}`;
+        `${item.key}:${item.label}:${item.detail}:${item.interpretation || ''}:${item.unit}:${chartSelections.has(item.key)}`).join('|')}`;
       if (host.dataset.signature === signature) {
         updateGaugeSelectionActions();
         return;
@@ -177,7 +176,7 @@
       host.innerHTML = items.map(item => `<div class="value-option">
         <div class="value-name">${item.label}<small>${item.detail}${item.interpretation ? `<br>${item.interpretation}` : ''}</small></div>
         <div class="value-targets">
-          <label><input type="checkbox" data-value-key="${item.key}" ${chartSelections.has(item.key) && dashboardSelections.has(item.key) ? 'checked' : ''}> ${t('dashboardChart')}</label>
+          <label><input type="checkbox" data-value-key="${item.key}" ${chartSelections.has(item.key) ? 'checked' : ''}> ${t('chartSelection')}</label>
         </div>
       </div>`).join('') + (hiddenCount > 0
         ? `<div class="value-list-limit">${t('moreValuesAvailable', {count: hiddenCount})}</div>`
@@ -226,25 +225,21 @@
       }, 0));
     }
     function selectAllGaugeSelections() {
-      chartDefinitions.forEach((item, key) => {
-        dashboardSelections.add(key);
-        if (isTimelineValue(item)) {
-          if (!chartSelections.has(key)) chartHistory.set(key, []);
-          chartSelections.add(key);
-        }
-      });
+      chartDefinitions.forEach((_item, key) => dashboardSelections.add(key));
       renderGaugeSelectionChanges();
     }
     function selectAllChartSelections() {
       timelineDefinitions().forEach(item => {
         if (!chartSelections.has(item.key)) chartHistory.set(item.key, []);
-        dashboardSelections.add(item.key);
         chartSelections.add(item.key);
       });
       renderGaugeSelectionChanges();
     }
-    function clearGaugeSelections() {
+    function clearDashboardSelections() {
       dashboardSelections.clear();
+      renderGaugeSelectionChanges();
+    }
+    function clearChartSelections() {
       chartSelections.clear();
       chartHistory.clear();
       renderGaugeSelectionChanges();
@@ -317,7 +312,7 @@
       grid.innerHTML = pagination + pageItems.map((key, pageIndex) => {
         const item = chartDefinitions.get(key);
         const index = pageStart + pageIndex;
-        const colour = dashboardGaugeColour(item) || colours[index % colours.length];
+        const colour = chartColour(item, index);
         const period = chartPeriodLabel(chartPeriodForItem(item));
         return `<article class="chart-card" style="--accent:${colour}" data-open-chart="${key}" role="button" tabindex="0" aria-label="${t('chartAria', {label: item.label, period})}">
           <div class="chart-card-head">

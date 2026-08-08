@@ -78,7 +78,7 @@
     });
     document.querySelector('#chart-search').addEventListener('input', renderChartValueList);
     document.querySelector('#chart-select-all').addEventListener('click', selectAllChartSelections);
-    document.querySelector('#chart-clear-all').addEventListener('click', clearGaugeSelections);
+    document.querySelector('#chart-clear-all').addEventListener('click', clearChartSelections);
     document.querySelector('#chart-grid').addEventListener('click', event => {
       const pageButton = event.target.closest('button[data-chart-page]');
       if (pageButton && !pageButton.disabled) {
@@ -105,52 +105,38 @@
       modalChartPlot = null;
       modalChartKey = '';
     });
-    document.querySelector('#dashboard-clear-gauges').addEventListener('click', clearGaugeSelections);
+    document.querySelector('#dashboard-clear-gauges').addEventListener('click', clearDashboardSelections);
     document.querySelector('#chart-value-list').addEventListener('change', event => {
       const checkbox = event.target.closest('input[data-value-key]');
       if (!checkbox) return;
       const key = checkbox.dataset.valueKey;
       if (checkbox.checked) {
-        dashboardSelections.add(key);
         chartSelections.add(key);
         chartHistory.set(key, []);
       } else {
-        dashboardSelections.delete(key);
         chartSelections.delete(key);
         chartHistory.delete(key);
       }
-      saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
       saveSelections('inverter-chart-values-v2', chartSelections);
       synchronizeChartPeriodWithSelection();
-      renderDashboardValues();
       renderChartCards();
-      renderGaugePickerList();
+      updateGaugeSelectionActions();
     });
     document.querySelector('#gauge-picker-search').addEventListener('input', renderGaugePickerList);
     document.querySelector('#select-all-gauges').addEventListener('click', selectAllGaugeSelections);
-    document.querySelector('#clear-all-gauges').addEventListener('click', clearGaugeSelections);
+    document.querySelector('#clear-all-gauges').addEventListener('click', clearDashboardSelections);
     document.querySelector('#gauge-picker-list').addEventListener('change', event => {
       const checkbox = event.target.closest('input[data-picker-value-key]');
       if (!checkbox) return;
       const key = checkbox.dataset.pickerValueKey;
-      const item = chartDefinitions.get(key);
       if (checkbox.checked) {
         dashboardSelections.add(key);
-        if (isTimelineValue(item)) {
-          chartSelections.add(key);
-          chartHistory.set(key, []);
-        }
       } else {
         dashboardSelections.delete(key);
-        chartSelections.delete(key);
-        chartHistory.delete(key);
       }
       saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
-      saveSelections('inverter-chart-values-v2', chartSelections);
-      synchronizeChartPeriodWithSelection();
       renderDashboardValues();
-      renderChartCards();
-      renderChartValueList();
+      updateGaugeSelectionActions();
     });
     document.querySelector('[data-close-gauge-picker]').addEventListener('click', () =>
       document.querySelector('#gauge-picker').close());
@@ -743,13 +729,8 @@
       if (!button) return;
       const key = button.dataset.removeDashboard;
       dashboardSelections.delete(key);
-      chartSelections.delete(key);
-      chartHistory.delete(key);
       saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
-      saveSelections('inverter-chart-values-v2', chartSelections);
       renderDashboardValues();
-      renderChartCards();
-      renderChartValueList();
       renderGaugePickerList();
     });
     window.addEventListener('resize', scheduleVisibleChartDraw);
