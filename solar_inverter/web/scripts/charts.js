@@ -2,6 +2,10 @@
     const CHARTS_PER_PAGE = 12;
     let chartPage = 0;
     let chartsViewRenderPending = false;
+    const ENERGY_CONSUMPTION_REGISTERS = new Set([
+      176, 177, 178, 179,
+      184, 185, 186, 187
+    ]);
     const chartCanvasLayouts = new WeakMap();
     const visibleChartCanvases = new Set();
     const chartResizeObserver = typeof ResizeObserver === 'function'
@@ -29,12 +33,24 @@
       chartResizeObserver?.disconnect();
       chartVisibilityObserver?.disconnect();
       visibleChartCanvases.clear();
-      document.querySelectorAll('canvas[data-chart-key]').forEach(canvas => {
-        if (chartResizeObserver) chartResizeObserver.observe(canvas);
-        else chartCanvasLayouts.set(canvas, {width: 300, height: 220});
-        if (chartVisibilityObserver) chartVisibilityObserver.observe(canvas);
-        else visibleChartCanvases.add(canvas);
+      document.querySelectorAll('.chart-host[data-chart-key]').forEach(host => {
+        if (chartResizeObserver) chartResizeObserver.observe(host);
+        else chartCanvasLayouts.set(host, {width: 300, height: 220});
+        if (chartVisibilityObserver) chartVisibilityObserver.observe(host);
+        else visibleChartCanvases.add(host);
       });
+    }
+
+    function isTimelineValue(item) {
+      const unit = String(item?.unit || '').trim();
+      const register = Number(item?.register);
+      return Number.isFinite(register)
+        && ENERGY_CONSUMPTION_REGISTERS.has(register)
+        && /^(?:k?wh)$/i.test(unit);
+    }
+
+    function timelineDefinitions() {
+      return [...chartDefinitions.values()].filter(isTimelineValue);
     }
 
     function collectChartDefinitions(data) {
@@ -48,7 +64,7 @@
         definitions.set(`meter-${meter.register}`, {
           key: `meter-${meter.register}`,
           register: meter.register,
-          label: localizeDataText(meter.label),
+          label: localizeApiField(meter, 'label'),
           detail: `${t('gaugeDetail', {
             unit: meter.unit || t('unitValue'),
             register: meter.register
@@ -59,22 +75,27 @@
           maximum: meter.maximum,
           available: meter.available ?? !String(meter.source || '').toLowerCase().includes('mbpoll'),
           category: registerCategories.get(meter.register) || '',
-          source: bmsFormula ? `R413 · ${bmsFormula}` : localizeDataText(meter.source)
+          source: bmsFormula ? `R413 · ${bmsFormula}` : localizeApiField(meter, 'source')
         });
       });
       data.registers.forEach(register => {
         const value = numericValue(register.display);
-        if (value === null) return;
+        const timelineCapable = ENERGY_CONSUMPTION_REGISTERS.has(Number(register.register))
+          && /^(?:k?wh)$/i.test(String(register.unit || '').trim());
+        if (value === null && !timelineCapable) return;
         const bmsFormula = register.register === 413 && register.available ? r413BmsFormula(value) : '';
         const displayValue = registerVersionDisplay(register, data.registers);
-        const interpretation = registerInterpretation({...register, versionDisplay: displayValue});
+        const decodedMeaning = registerInterpretation({...register, versionDisplay: displayValue});
+        const interpretation = [...new Set([register.description, decodedMeaning].filter(Boolean))].join(' · ');
         const isPercentage = register.unit === '%';
-        const chartValue = isPercentage ? Math.max(0, Math.min(100, value)) : value;
+        const chartValue = value === null
+          ? null
+          : isPercentage ? Math.max(0, Math.min(100, value)) : value;
         definitions.set(`register-${register.register}`, {
           key: `register-${register.register}`,
           register: register.register,
-          label: localizeDataText(register.name),
-          detail: `R${register.register} · ${localizeDataText(register.group)}${bmsFormula ? ` · ${bmsFormula}` : ''}`,
+          label: localizeApiField(register, 'name'),
+          detail: `R${register.register} · ${localizeApiField(register, 'group')}${bmsFormula ? ` · ${bmsFormula}` : ''}`,
           unit: register.unit,
           scale: Number(register.scale) || 1,
           signed: Boolean(register.signed),
@@ -93,17 +114,20 @@
       return definitions;
     }
     function updateGaugeSelectionActions() {
-      const allSelected = chartDefinitions.size > 0 && [...chartDefinitions.keys()].every(key =>
-        dashboardSelections.has(key) && chartSelections.has(key)
+      const timelineItems = timelineDefinitions();
+      const allChartsSelected = timelineItems.length > 0 && timelineItems.every(item =>
+        dashboardSelections.has(item.key) && chartSelections.has(item.key)
       );
       const noSelection = dashboardSelections.size === 0 && chartSelections.size === 0;
-      const selectAllDisabled = chartDefinitions.size === 0 || allSelected;
+      const allGaugesSelected = chartDefinitions.size > 0 && [...chartDefinitions.keys()].every(key =>
+        dashboardSelections.has(key) && chartSelections.has(key)
+      );
       const setDisabled = (selector, disabled) => {
         const button = document.querySelector(selector);
         if (button.disabled !== disabled) button.disabled = disabled;
       };
-      setDisabled('#select-all-gauges', selectAllDisabled);
-      setDisabled('#chart-select-all', selectAllDisabled);
+      setDisabled('#select-all-gauges', chartDefinitions.size === 0 || allGaugesSelected);
+      setDisabled('#chart-select-all', timelineItems.length === 0 || allChartsSelected);
       setDisabled('#clear-all-gauges', noSelection);
       setDisabled('#chart-clear-all', noSelection);
     }
@@ -111,7 +135,7 @@
       if (document.querySelector('#charts-view').hidden) return;
       const host = document.querySelector('#chart-value-list');
       const query = document.querySelector('#chart-search').value.trim().toLowerCase();
-      const matchingItems = [...chartDefinitions.values()].filter(item =>
+      const matchingItems = timelineDefinitions().filter(item =>
         `${item.label} ${item.detail} ${item.interpretation || ''} ${item.unit}`.toLowerCase().includes(query)
       );
       const items = matchingItems.slice(0, VALUE_LIST_RENDER_LIMIT);
@@ -182,6 +206,14 @@
       });
       renderGaugeSelectionChanges();
     }
+    function selectAllChartSelections() {
+      timelineDefinitions().forEach(item => {
+        if (!chartSelections.has(item.key)) chartHistory.set(item.key, []);
+        dashboardSelections.add(item.key);
+        chartSelections.add(item.key);
+      });
+      renderGaugeSelectionChanges();
+    }
     function clearGaugeSelections() {
       dashboardSelections.clear();
       chartSelections.clear();
@@ -218,7 +250,7 @@
     function renderChartCards() {
       if (document.querySelector('#charts-view').hidden) return;
       const grid = document.querySelector('#chart-grid');
-      const selected = [...chartSelections].filter(key => chartDefinitions.has(key));
+      const selected = [...chartSelections].filter(key => isTimelineValue(chartDefinitions.get(key)));
       document.querySelector('#chart-demo-button').disabled = false;
       document.querySelector('#chart-selection-count').textContent =
         selected.length ? t('selectedSummary', {count: selected.length}) : t('noValuesSelected');
@@ -253,14 +285,14 @@
         const item = chartDefinitions.get(key);
         const index = pageStart + pageIndex;
         const colour = dashboardGaugeColour(item) || colours[index % colours.length];
-        return `<article class="chart-card" style="--accent:${colour}">
+        return `<article class="chart-card" style="--accent:${colour}" data-open-chart="${key}" role="button" tabindex="0" aria-label="${t('chartAria', {label: item.label})}">
           <div class="chart-card-head">
             <h3 title="${item.label}">${item.label}</h3>
             <div class="chart-latest" id="latest-${key}">—</div>
           </div>
           <div class="muted">${item.detail}</div>
           ${item.interpretation ? `<div class="chart-interpretation">${item.interpretation}</div>` : ''}
-          <canvas id="chart-${key}" data-chart-key="${key}" data-chart-colour="${colour}" aria-label="${t('chartAria', {label: item.label})}"></canvas>
+          <div class="chart-host" id="chart-${key}" data-chart-key="${key}" data-chart-colour="${colour}" aria-hidden="true"></div>
         </article>`;
       }).join('');
       observeRenderedCharts();
@@ -300,7 +332,7 @@
       return start + (end - start) * Math.max(0, Math.min(1, ratio));
     }
     function realisticDemoScenario(elapsedSeconds) {
-      const second = elapsedSeconds % chartWindowSeconds;
+      const second = elapsedSeconds % 120;
       const ripple = Math.sin(second * .37);
       let gridAvailable = true;
       let pvVoltage;
@@ -394,7 +426,7 @@
       const batteryTemperature = 29.5 + Math.abs(batteryCurrent) * .055 + Math.sin(second * .08) * .3;
       const batteryPower = batteryVoltage * batteryCurrent;
       const fanSpeed = Math.min(100, Math.max(0,
-        second / chartWindowSeconds * 100
+        second / 120 * 100
       ));
       const powerFactor = .86;
       const apparentLoadPower = loadPower / powerFactor;
@@ -405,7 +437,7 @@
       const generatorVoltage = generatorPower > 20 ? 230 : 0;
       const generatorCurrent = generatorVoltage > 0 ? generatorPower / generatorVoltage : 0;
       const pvChargingCurrent = pvPower > loadPower ? Math.max(0, batteryCurrent) : 0;
-      const energyProgress = second / chartWindowSeconds;
+      const energyProgress = second / 120;
       return {
         elapsedSeconds: second,
         statusCode,
@@ -490,7 +522,7 @@
     }
     function demoSolarEnergySummary(elapsedSeconds) {
       // The 120-second demo represents a compressed 12-hour operating window.
-      const boundedSeconds = Math.max(0, Math.min(chartWindowSeconds, elapsedSeconds));
+      const boundedSeconds = Math.max(0, Math.min(120, elapsedSeconds));
       const simulatedSecondsPerDemoSecond = 360;
       const integrationStep = .25;
       let generatedKwh = 0;
@@ -519,6 +551,14 @@
       if (scale === .1) return value.toFixed(1);
       if (scale === 1) return Math.round(value).toString();
       return Number(value.toFixed(3)).toString();
+    }
+    function continuousDemoChartValue(item, history) {
+      const value = Number(item?.value);
+      const previous = history.at(-1)?.value;
+      if (!Number.isFinite(value) || !Number.isFinite(previous)) return value;
+      if (!/^(?:k?wh)$/i.test(String(item.unit || ''))) return value;
+      const scale = Math.max(.001, Number(item.scale) || .1);
+      return Math.max(value, previous + scale * .01);
     }
     function demoFallbackValue(register, elapsedSeconds) {
       const registerNumber = Number(register.register) || 0;
@@ -588,8 +628,10 @@
     function getPeriodWindowSeconds(period) {
       const periodMap = {
         'realtime': 120,
-        '1h': 3600,
-        '6h': 21600,
+        'day': 86400,
+        'week': 604800,
+        'month': 2592000,
+        'year': 31536000,
         '24h': 86400,
         '7d': 604800,
         '30d': 2592000
@@ -599,8 +641,8 @@
 
     function refreshChartsWithPeriod(period) {
       const newWindowSeconds = getPeriodWindowSeconds(period);
-      window.chartWindowSeconds = newWindowSeconds;
-      window.chartWindowMilliseconds = newWindowSeconds * 1000;
+      chartWindowSeconds = newWindowSeconds;
+      chartWindowMilliseconds = newWindowSeconds * 1000;
 
       // Trim existing history to new window
       const now = Date.now();
@@ -610,17 +652,17 @@
 
       // If demo is running, regenerate data for new period
       if (chartDemoRunning) {
-        chartHistory.forEach((history, key) => {
-          history.length = 0;
-        });
-        const initialScenario = realisticDemoScenario(0);
-        applyDemoEnergyFrame(initialScenario);
-        synchronizeDemoDefinitions(initialScenario);
+        const scenario = realisticDemoScenario(0);
+        applyDemoEnergyFrame(scenario);
+        synchronizeDemoChartDefinitions(scenario);
+        seedDemoHistory(period);
       } else {
         // For real data, fetch historical data from backend
         fetchHistoricalData(period);
       }
 
+      modalChartPlot?.destroy();
+      modalChartPlot = null;
       drawAllCharts();
     }
 
@@ -675,40 +717,6 @@
         button.textContent = text;
         button.disabled = disabled;
       });
-      const synchronizeDemoDefinitions = scenario => {
-        const demoRegistersByNumber = new Map(
-          (demoRegisterRows || []).map(register => [register.register, register])
-        );
-        registerKeys.forEach(key => {
-          const item = chartDefinitions.get(key);
-          if (!item) return;
-          const scenarioValue = scenario.values.get(item.register);
-          item.value = Number.isFinite(scenarioValue)
-            ? scenarioValue
-            : demoFallbackValue(item, scenario.elapsedSeconds);
-          item.available = true;
-          const demoRegister = demoRegistersByNumber.get(item.register);
-          item.displayValue = demoRegister
-            ? registerVersionDisplay(demoRegister, demoRegisterRows)
-            : item.displayValue;
-          item.interpretation = demoRegister
-            ? registerInterpretation({...demoRegister, versionDisplay: item.displayValue})
-            : '';
-          item.source = `R${item.register} · ${t('demoMode')}`;
-        });
-        meterKeys.forEach(key => {
-          const item = chartDefinitions.get(key);
-          if (!item) return;
-          const registerItem = chartDefinitions.get(key.replace('meter-', 'register-'));
-          const scenarioValue = scenario.values.get(item.register);
-          if (Number.isFinite(scenarioValue)) item.value = scenarioValue;
-          else if (registerItem) item.value = registerItem.value;
-          else item.value = demoFallbackValue(item, scenario.elapsedSeconds);
-          item.available = true;
-          item.source = `R${item.register} · ${t('demoMode')}`;
-          if (registerItem) registerItem.value = item.value;
-        });
-      };
       chartDemoRunning = true;
       chartDemoCancelRequested = false;
       document.documentElement.classList.add('demo-energy-flow');
@@ -716,7 +724,8 @@
       const initialScenario = realisticDemoScenario(0);
       applyDemoEnergyFrame(initialScenario);
       if (lastData) render(lastData);
-      synchronizeDemoDefinitions(initialScenario);
+      synchronizeDemoChartDefinitions(initialScenario);
+      seedDemoHistory(window.chartPeriod || 'realtime');
       if (!document.querySelector('#dashboard-view').hidden) renderDashboardValues();
       drawAllCharts();
 
@@ -746,12 +755,14 @@
           );
           const scenario = realisticDemoScenario(elapsedSeconds);
           applyDemoEnergyFrame(scenario);
-          synchronizeDemoDefinitions(scenario);
+          synchronizeDemoChartDefinitions(scenario);
           registerKeys.forEach(key => {
             const item = chartDefinitions.get(key);
             if (!item) return;
             const history = chartHistory.get(key) || [];
-            history.push({time: now, value: item.value});
+            const value = continuousDemoChartValue(item, history);
+            item.value = value;
+            history.push({time: now, value});
             trimChartHistory(history, now);
             chartHistory.set(key, history);
           });
@@ -759,7 +770,9 @@
             const item = chartDefinitions.get(key);
             if (!item) return;
             const history = chartHistory.get(key) || [];
-            history.push({time: now, value: item.value});
+            const value = continuousDemoChartValue(item, history);
+            item.value = value;
+            history.push({time: now, value});
             trimChartHistory(history, now);
             chartHistory.set(key, history);
           });

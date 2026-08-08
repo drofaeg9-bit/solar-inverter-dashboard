@@ -77,11 +77,33 @@
       if (button) applyLanguage(button.dataset.language);
     });
     document.querySelector('#chart-search').addEventListener('input', renderChartValueList);
-    document.querySelector('#chart-select-all').addEventListener('click', selectAllGaugeSelections);
+    document.querySelector('#chart-select-all').addEventListener('click', selectAllChartSelections);
     document.querySelector('#chart-clear-all').addEventListener('click', clearGaugeSelections);
     document.querySelector('#chart-grid').addEventListener('click', event => {
       const pageButton = event.target.closest('button[data-chart-page]');
-      if (pageButton && !pageButton.disabled) changeChartPage(pageButton.dataset.chartPage);
+      if (pageButton && !pageButton.disabled) {
+        changeChartPage(pageButton.dataset.chartPage);
+        return;
+      }
+      const card = event.target.closest('[data-open-chart]');
+      if (card) openChartModal(card.dataset.openChart);
+    });
+    document.querySelector('#chart-grid').addEventListener('keydown', event => {
+      const card = event.target.closest('[data-open-chart]');
+      if (card && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        openChartModal(card.dataset.openChart);
+      }
+    });
+    document.querySelector('#chart-modal-close').addEventListener('click', closeChartModal);
+    document.querySelector('#chart-modal-reset').addEventListener('click', () => resetChartZoom());
+    document.querySelector('#chart-modal').addEventListener('click', event => {
+      if (event.target === event.currentTarget) closeChartModal();
+    });
+    document.querySelector('#chart-modal').addEventListener('close', () => {
+      modalChartPlot?.destroy();
+      modalChartPlot = null;
+      modalChartKey = '';
     });
     document.querySelector('#dashboard-clear-gauges').addEventListener('click', clearGaugeSelections);
     document.querySelector('#chart-value-list').addEventListener('change', event => {
@@ -168,6 +190,62 @@
     });
     document.querySelector('#refresh-logs').addEventListener('click', loadLogs);
 
+    async function loadLocalUpdaterHistory() {
+      const loading = document.querySelector('#updater-history-loading');
+      const list = document.querySelector('#updater-history-list');
+      loading.hidden = false;
+      list.replaceChildren();
+      try {
+        const response = await fetch('/api/updater-history', {cache: 'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        if (!data.history?.length) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.style.padding = '12px';
+          empty.textContent = t('updaterHistoryEmpty');
+          list.appendChild(empty);
+          return;
+        }
+        const locale = currentLanguage === 'uk' ? 'uk-UA' : currentLanguage === 'ru' ? 'ru-RU' : 'en-GB';
+        data.history.forEach(item => {
+          const card = document.createElement('article');
+          card.className = 'updater-history-item';
+          const installedAt = new Date(`${item.installed_at.replace(' ', 'T')}Z`);
+          const time = Number.isNaN(installedAt.valueOf()) ? item.installed_at : installedAt.toLocaleString(locale);
+          const version = document.createElement('strong');
+          version.textContent = t('updaterVersion', {version: item.version});
+          const date = document.createElement('span');
+          date.textContent = t('updaterInstalledAt', {date: time});
+          const checksum = document.createElement('small');
+          checksum.textContent = item.checksum || '';
+          card.append(version, date, checksum);
+          list.appendChild(card);
+        });
+      } catch (error) {
+        const failed = document.createElement('div');
+        failed.className = 'error-text';
+        failed.style.padding = '12px';
+        failed.textContent = t('updaterHistoryLoadError', {error: error.message});
+        list.appendChild(failed);
+      } finally {
+        loading.hidden = true;
+      }
+    }
+    document.querySelector('#updater-history-button').addEventListener('click', () => {
+      const picker = document.querySelector('#updater-history-picker');
+      void loadLocalUpdaterHistory();
+      if (typeof picker.showModal === 'function') picker.showModal();
+      else picker.setAttribute('open', '');
+    });
+    document.querySelector('[data-close-updater-history-picker]').addEventListener('click', () =>
+      document.querySelector('#updater-history-picker').close());
+    document.querySelector('#updater-history-picker').addEventListener('click', event => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
+    });
+
+    // Compatibility guard for the removed Git-based updater UI.
+    if (document.querySelector('#git-commits-button')) {
     // Git commits modal
     let selectedGitCommit = null;
     let selectedUpdaterId = null;
@@ -442,6 +520,7 @@
       // Trigger download
       window.location.href = `/api/git/download-bundle?filename=${filename}`;
     });
+    }
 
     document.querySelector('#modbus-debug-button').addEventListener('click', () => {
       const picker = document.querySelector('#modbus-debug-picker');
@@ -453,10 +532,10 @@
       const readModeSelect = document.querySelector('#modbus-read-mode');
       const connectionModeSelect = document.querySelector('#modbus-connection-mode-select');
       if (lastData) {
-        if (pollRateSelect) pollRateSelect.value = lastData.poll_rate_index ?? 0;
+        if (pollRateSelect) pollRateSelect.value = lastData.poll_rate_index ?? 2;
         if (readModeSelect) readModeSelect.value = lastData.read_mode ?? 'fast';
       } else {
-        if (pollRateSelect) pollRateSelect.value = 0;
+        if (pollRateSelect) pollRateSelect.value = 2;
         if (readModeSelect) readModeSelect.value = 'fast';
       }
       try {
@@ -659,18 +738,23 @@
       if (!document.querySelector('#charts-view').hidden) scheduleVisibleChartDraw();
     }, {passive: true});
     document.addEventListener('visibilitychange', () => {
-      if (!pageIsActive || lastData?.paused) return;
-      scheduleRefresh(document.hidden ? null : 0);
+      if (!pageIsActive) return;
+      scheduleDashboardVersionCheck(document.hidden ? null : 0);
+      if (!lastData?.paused) scheduleRefresh(document.hidden ? null : 0);
     });
     window.addEventListener('pagehide', () => {
       pageIsActive = false;
       if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      if (versionCheckTimer !== null) window.clearTimeout(versionCheckTimer);
       refreshTimer = null;
+      versionCheckTimer = null;
       refreshController?.abort();
+      versionCheckController?.abort();
     });
     window.addEventListener('pageshow', event => {
       if (!event.persisted) return;
       pageIsActive = true;
+      scheduleDashboardVersionCheck(0);
       if (!lastData?.paused) scheduleRefresh(0);
     });
     const initialData = window.__INITIAL_STATE__ ?? null;
@@ -678,10 +762,11 @@
       lastData = initialData;
       render(initialData);
       recordChartSamples(initialData);
-      if (!initialData.paused) {
-        window.addEventListener('load', () => scheduleRefresh(), {once: true});
-      }
     } else {
       refresh();
     }
+    window.addEventListener('load', () => {
+      scheduleDashboardVersionCheck(0);
+      if (!lastData?.paused) scheduleRefresh();
+    }, {once: true});
     document.documentElement.classList.remove('booting');

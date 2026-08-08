@@ -4,11 +4,13 @@ import csv
 import gzip
 import json
 import os
+import secrets
 import subprocess
 import sys
 import threading
 import urllib.request
 import urllib.error
+from urllib.parse import parse_qs
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,12 +19,14 @@ from pathlib import Path
 
 from ..services import inverter_service
 from ..services.inverter_service import *
-from ..services.inverter_service_runtime import get_server_logs, record_updater_version, get_updater_history
-from .dashboard_template import WEB_DASHBOARD, WEB_ROOT
+from ..services.inverter_service_runtime import get_server_logs, get_updater_history
+from .api_localization import SUPPORTED_API_LANGUAGES, localize_api_status
+from .api_localization import localize_api_text, register_description, resolve_api_language
+from .dashboard_template import ASSET_VERSION, WEB_DASHBOARD, WEB_ROOT
 
+DASHBOARD_INSTANCE_ID = f"{ASSET_VERSION}-{secrets.token_hex(8)}"
 # Git executable path for Windows
 GIT_PATH = r"C:\Program Files\Git\bin\git.exe"
-
 def check_git_available() -> tuple[bool, str]:
     """Check if git is available. Returns (is_available, path_or_error)."""
     import shutil
@@ -68,9 +72,9 @@ DASHBOARD_STATIC_PATHS = {
     if path.is_file() and path.name != "index.html"
 }
 
-
-def web_state() -> dict[str, Any]:
+def web_state(language: str = "uk") -> dict[str, Any]:
     """Return a JSON-safe snapshot for the browser."""
+    language = language if language in SUPPORTED_API_LANGUAGES else "uk"
     with state_lock:
         snapshot = dict(state)
         values = dict(state["values"])
@@ -99,12 +103,14 @@ def web_state() -> dict[str, Any]:
             source = "Немає даних mbpoll"
         meters.append({
             "register": register,
-            "label": label,
+            "label": localize_api_text(label, language),
+            "label_source": label,
             "minimum": minimum,
             "maximum": maximum,
             "unit": unit,
             "value": value,
-            "source": source,
+            "source": localize_api_text(source, language),
+            "source_source": source,
             "available": available,
         })
 
@@ -114,7 +120,7 @@ def web_state() -> dict[str, Any]:
         raw = values.get(register)
         name, scale, unit, signed, group = register_metadata(register)
         if raw is None:
-            display = str(register_override(register).get("display", "0"))
+            display = "—"
         else:
             name, display, unit, normalized_value, group = normalize(register, raw)
             if register == 134:
@@ -123,9 +129,14 @@ def web_state() -> dict[str, Any]:
                     display = str(int(normalized_value))
         registers.append({
             "register": register,
-            "group": group,
-            "name": name,
-            "display": display,
+            "group": localize_api_text(group, language),
+            "group_source": group,
+            "name": localize_api_text(name, language),
+            "name_source": name,
+            "description": register_description(register, name, unit, scale, signed, language),
+            "description_source": register_description(register, name, unit, scale, signed, "uk"),
+            "display": localize_api_text(display, language),
+            "display_source": display,
             "unit": unit,
             "scale": scale,
             "signed": signed,
@@ -134,6 +145,9 @@ def web_state() -> dict[str, Any]:
         })
 
     return {
+        "language": language,
+        "dashboard_version": ASSET_VERSION,
+        "dashboard_instance": DASHBOARD_INSTANCE_ID,
         "online": bool(snapshot["online"]),
         "updated_at": snapshot["updated_at"],
         "cycle_seconds": snapshot["cycle_seconds"],
@@ -144,18 +158,18 @@ def web_state() -> dict[str, Any]:
         "requests": snapshot["requests"],
         "successful": snapshot["successful"],
         "failed": snapshot["ошибок"],
-        "error": snapshot["error"],
+        "error": localize_api_text(snapshot["error"], language),
+        "error_source": snapshot["error"],
         "identifier": snapshot["identifier"],
         "paused": bool(snapshot["paused"]),
         "site_visits": inverter_service.site_visit_total,
         "site_visits_date": datetime.now(MADRID_TIME_ZONE).strftime("%d.%m.%Y"),
-        "solar_energy": solar_energy_summary(),
-        "register_log": register_log_status(),
-        "register_map": register_map_status(),
+        "solar_energy": localize_api_status(solar_energy_summary(), language),
+        "register_log": localize_api_status(register_log_status(), language),
+        "register_map": localize_api_status(register_map_status(), language),
         "meters": meters,
         "registers": registers,
     }
-
 def safe_console_print(message: str) -> None:
     """Print localized text without failing on a legacy Windows code page."""
     console_encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
@@ -163,8 +177,6 @@ def safe_console_print(message: str) -> None:
         console_encoding, errors="backslashreplace"
     ).decode(console_encoding)
     print(safe_message, flush=True)
-
-
 def log_visit_to_console(
     handler: BaseHTTPRequestHandler, new_visitor: bool
 ) -> None:
@@ -195,8 +207,6 @@ def log_visit_to_console(
         + json.dumps(details, ensure_ascii=False, separators=(",", ":"))
     )
     safe_console_print(message)
-
-
 class DashboardHandler(BaseHTTPRequestHandler):
     """Serve the dashboard and its small JSON API."""
 
@@ -226,7 +236,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             ):
                 body = gzip.compress(body, compresslevel=5, mtime=0)
                 response_headers["Content-Encoding"] = "gzip"
-                response_headers["Vary"] = "Accept-Encoding"
+                vary = response_headers.get("Vary", "")
+                response_headers["Vary"] = ", ".join(
+                    item for item in (vary, "Accept-Encoding") if item
+                )
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
@@ -243,6 +256,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         request_path = self.path.split("?", 1)[0]
+        query = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        language = resolve_api_language(
+            query.get("lang", [""])[0], self.headers.get("Accept-Language", "")
+        )
         if request_path in DASHBOARD_STATIC_PATHS:
             path = DASHBOARD_STATIC_PATHS[request_path]
             content_type = (
@@ -303,7 +320,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 increment_site_visits()
             log_visit_to_console(self, new_visitor)
             initial_state = json.dumps(
-                web_state(), ensure_ascii=False, separators=(",", ":")
+                web_state(language), ensure_ascii=False, separators=(",", ":")
             ).replace("<", "\\u003c")
             page = WEB_DASHBOARD.replace(
                 "/*__INITIAL_STATE__*/null", initial_state, 1
@@ -324,14 +341,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 page.encode("utf-8"),
                 "text/html; charset=utf-8",
                 extra_headers=response_headers,
-                cache_control="private, max-age=0, must-revalidate",
+                cache_control="no-store, no-cache, must-revalidate",
                 compress=True,
             )
             return
+        if request_path == "/api/version":
+            body = json.dumps({"dashboard_version": ASSET_VERSION, "dashboard_instance": DASHBOARD_INSTANCE_ID}).encode("utf-8")
+            self.send_content(body, "application/json; charset=utf-8")
+            return
         if request_path == "/api/state":
             print(f"[Web Dashboard] API /api/state - Serving state snapshot")
-            body = json.dumps(web_state(), ensure_ascii=False).encode("utf-8")
-            self.send_content(body, "application/json; charset=utf-8", compress=True)
+            body = json.dumps(web_state(language), ensure_ascii=False).encode("utf-8")
+            self.send_content(
+                body,
+                "application/json; charset=utf-8",
+                extra_headers={
+                    "Content-Language": language,
+                    "Vary": "Accept-Language",
+                },
+                compress=True,
+            )
             return
         if request_path == "/api/logs":
             print(f"[Web Dashboard] API /api/logs - Serving server logs")
@@ -339,8 +368,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_content(body, "application/json; charset=utf-8")
             return
         if request_path == "/api/historical":
-            from urllib.parse import parse_qs
-            query = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
             period = query.get("period", ["realtime"])[0]
             print(f"[Web Dashboard] API /api/historical - Period: {period}")
             # TODO: Implement actual historical data storage and retrieval
@@ -393,9 +420,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if request_path.startswith("/api/git/download-bundle"):
-            from urllib.parse import parse_qs
-            query = parse_qs(request_path.split("?", 1)[1] if "?" in request_path else "")
             filename = query.get("filename", ["solar-dashboard-update.pyz"])[0]
+            if Path(filename).name != filename or not filename.endswith(".pyz"):
+                body = json.dumps({"error": "Invalid bundle filename"}).encode("utf-8")
+                self.send_content(
+                    body,
+                    "application/json; charset=utf-8",
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return
             bundle_path = PROJECT_ROOT / "deploy" / filename
             print(f"[Web Dashboard] API /api/git/download-bundle - Serving: {bundle_path}")
 
@@ -416,8 +449,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 body = json.dumps({"error": str(error)}).encode("utf-8")
                 self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
             return
-        if request_path == "/api/git/updater-history":
-            print(f"[Web Dashboard] API /api/git/updater-history - Fetching updater history")
+        if request_path == "/api/updater-history":
+            print("[Web Dashboard] API /api/updater-history - Fetching local updater history")
             try:
                 history = get_updater_history()
                 body = json.dumps({"history": history}, ensure_ascii=False).encode("utf-8")

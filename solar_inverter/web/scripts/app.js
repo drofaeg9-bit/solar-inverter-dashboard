@@ -5,6 +5,8 @@
       'var(--flow-generator-colour)'
     ];
     let lastData = null;
+    let dashboardInstance = window.__INITIAL_STATE__?.dashboard_instance || '';
+    let dashboardReloadPending = false;
     let chartDemoRunning = false;
     let chartDemoCancelRequested = false;
     let demoRegisterRows = null;
@@ -19,9 +21,11 @@
     let refreshInFlight = false;
     let refreshTimer = null;
     let refreshController = null;
+    let versionCheckTimer = null;
+    let versionCheckController = null;
     let pageIsActive = true;
     let lastLoggedSiteVisits = null;
-    const requestIntervals = [2000, 5000, 10000];
+    const requestIntervals = [500, 1000, 2000, 5000, 10000];
     const hiddenRefreshInterval = 30000;
     const flowAnimationStates = new Map();
     let chartDefinitions = new Map();
@@ -59,8 +63,9 @@
     const chartHistory = new Map();
     const dashboardGaugeRanges = savedMap('inverter-dashboard-gauge-ranges-v2');
     const dashboardGaugeColours = savedMap('inverter-dashboard-gauge-colours-v2');
-    const chartWindowSeconds = 120;
-    const chartWindowMilliseconds = chartWindowSeconds * 1000;
+    let chartWindowSeconds = 120;
+    let chartWindowMilliseconds = chartWindowSeconds * 1000;
+    window.chartPeriod = 'realtime';
 
     function numericValue(value) {
       const parsed = Number.parseFloat(value);
@@ -106,7 +111,7 @@
     function renderRegisters(registers) {
       const query = document.querySelector('#search').value.trim().toLowerCase();
       const shown = registers.filter(item =>
-        `${item.register} ${localizeDataText(item.group)} ${localizeDataText(item.name)} ${registerVersionDisplay(item, registers)} ${registerInterpretation(item)} ${item.unit}`.toLowerCase().includes(query)
+        `${item.register} ${localizeApiField(item, 'group')} ${localizeApiField(item, 'name')} ${item.description || ''} ${registerVersionDisplay(item, registers)} ${registerInterpretation(item)} ${item.unit}`.toLowerCase().includes(query)
       );
       const available = registers.filter(item => item.available).length;
       document.querySelector('#register-count').textContent =
@@ -120,9 +125,11 @@
         const bmsFormula = item.register === 413 && item.available ? r413BmsFormula(value) : '';
         const displayValue = registerVersionDisplay(item, registers);
         const interpretation = registerInterpretation({...item, versionDisplay: displayValue});
+        const descriptions = [...new Set([item.description, interpretation].filter(Boolean))];
         return `<tr class="${item.available ? '' : 'unavailable'}">
-          <td>R${item.register}</td><td>${localizeDataText(item.group)}</td><td>${localizeDataText(item.name)}</td>
-          <td>${localizeDataText(displayValue)} ${item.unit}${bmsFormula ? `<br><small>${bmsFormula}</small>` : ''}${interpretation ? `<small class="register-interpretation">${interpretation}</small>` : ''}</td><td>${item.raw ?? '—'}</td></tr>`;
+          <td>R${item.register}</td><td>${localizeApiField(item, 'group')}</td><td>${localizeApiField(item, 'name')}</td>
+          <td class="register-meaning">${descriptions.join(' · ') || '—'}</td>
+          <td class="register-live-value">${localizeDataText(displayValue)} ${item.unit}${bmsFormula ? `<br><small>${bmsFormula}</small>` : ''}</td><td>${item.raw ?? '—'}</td></tr>`;
       }).join('');
     }
 
@@ -157,7 +164,7 @@
       status.classList.toggle('active', active && !log.error);
       status.classList.toggle('error-text', Boolean(log.error));
       if (log.error) {
-        status.textContent = t('registerLogError', {error: localizeDataText(log.error)});
+        status.textContent = t('registerLogError', {error: localizeApiField(log, 'error')});
       } else if (active) {
         status.textContent = t('registerLogActive', {
           filename: log.filename,
@@ -228,7 +235,7 @@
       }
     }
     function renderCycleStatus(data) {
-      const configuredSeconds = (requestIntervals[data.poll_rate_index] ?? 1000) / 1000;
+      const configuredSeconds = (requestIntervals[data.poll_rate_index] ?? 2000) / 1000;
       document.querySelector('#cycle').textContent = data.paused
         ? t('cyclePaused', {cycle: data.cycle_id})
         : t('cycleReads', {
@@ -277,7 +284,7 @@
       const error = document.querySelector('#error');
       const connectionError = chartDemoRunning ? '' : data.error;
       error.textContent = connectionError
-        ? t('connectionError', {error: localizeDataText(data.error)})
+        ? t('connectionError', {error: localizeApiField(data, 'error')})
         : '';
       error.classList.toggle('show', Boolean(connectionError));
       renderRegisterLog(data.register_log);
@@ -289,17 +296,65 @@
       updateChartDefinitions(data);
     }
 
+    function reloadDashboardForVersion(data) {
+      if (
+        dashboardReloadPending
+        || !dashboardInstance
+        || !data?.dashboard_instance
+        || data.dashboard_instance === dashboardInstance
+      ) return false;
+      dashboardReloadPending = true;
+      pageIsActive = false;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      if (versionCheckTimer !== null) window.clearTimeout(versionCheckTimer);
+      refreshTimer = null;
+      versionCheckTimer = null;
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('_dashboard', data.dashboard_instance);
+      window.location.replace(nextUrl.toString());
+      return true;
+    }
+
+    async function checkDashboardVersion() {
+      if (!pageIsActive || dashboardReloadPending || versionCheckController) return;
+      versionCheckController = new AbortController();
+      try {
+        const response = await fetch(`/api/version?_=${Date.now()}`, {
+          cache: 'no-store',
+          signal: versionCheckController.signal
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (reloadDashboardForVersion(data)) return;
+        if (data.dashboard_instance) dashboardInstance = data.dashboard_instance;
+      } catch (error) {
+        if (error.name !== 'AbortError') console.debug('Dashboard version check failed:', error.message);
+      } finally {
+        versionCheckController = null;
+        scheduleDashboardVersionCheck();
+      }
+    }
+
+    function scheduleDashboardVersionCheck(delay = null) {
+      if (versionCheckTimer !== null) window.clearTimeout(versionCheckTimer);
+      versionCheckTimer = null;
+      if (!pageIsActive || dashboardReloadPending) return;
+      versionCheckTimer = window.setTimeout(checkDashboardVersion, delay ?? (document.hidden ? 5000 : 2000));
+    }
+
     async function refresh() {
       if (refreshInFlight) return;
       refreshInFlight = true;
       refreshController = new AbortController();
       try {
-        const response = await fetch('/api/state', {
+        const response = await fetch(`/api/state?lang=${encodeURIComponent(currentLanguage)}`, {
           cache: 'no-store',
           signal: refreshController.signal
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
+        if (reloadDashboardForVersion(data)) return;
+        if (data.dashboard_instance) dashboardInstance = data.dashboard_instance;
         lastData = data;
         recordChartSamples(data);
         if (!chartDemoRunning) render(data);
@@ -327,7 +382,7 @@
       if (!pageIsActive) return;
       // Poll rate is now in the modbus debug modal, use default if not accessible
       const pollRateSelect = document.querySelector('#modbus-poll-rate');
-      const selectedIndex = pollRateSelect ? Number(pollRateSelect.value) : 0;
+      const selectedIndex = pollRateSelect ? Number(pollRateSelect.value) : 2;
       const selectedInterval = requestIntervals[selectedIndex] ?? 2000;
       const milliseconds = delay ?? (document.hidden
         ? Math.max(hiddenRefreshInterval, selectedInterval)
@@ -522,6 +577,7 @@
           // Language switching still works when browser storage is unavailable.
         }
       }
+      if (save) scheduleRefresh(0);
       lastLoggedSiteVisits = null;
       if (lastData) {
         document.querySelector('#gauges').innerHTML = '';
@@ -624,7 +680,7 @@
 
     async function loadModbusDebug() {
       try {
-        const response = await fetch('/api/state');
+        const response = await fetch(`/api/state?lang=${encodeURIComponent(currentLanguage)}`);
         const data = await response.json();
         const modbusRequests = document.querySelector('#modbus-requests');
         const modbusSuccessful = document.querySelector('#modbus-successful');

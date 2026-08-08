@@ -24,9 +24,9 @@ _asset_digest = hashlib.sha256()
 for _asset_path in sorted(_VERSIONED_FILES, key=lambda path: str(path)):
     _asset_digest.update(str(_asset_path.relative_to(_PROJECT_ROOT)).encode("utf-8"))
     _asset_digest.update(_asset_path.read_bytes())
-_ASSET_VERSION = _asset_digest.hexdigest()[:12]
+ASSET_VERSION = _asset_digest.hexdigest()[:12]
 WEB_DASHBOARD = (
     _HTML_TEMPLATE
     .replace(_STYLE_MARKER, _DASHBOARD_CSS, 1)
-    .replace(_VERSION_MARKER, _ASSET_VERSION)
+    .replace(_VERSION_MARKER, ASSET_VERSION)
 )

@@ -287,10 +287,22 @@
           case 77:
           case 80: return rgbMode(raw);
           case 144:
-          case 145:
-          case 146:
-          case 147:
-          case 401: return reservedMeaning();
+          case 145: return reservedMeaning();
+          case 146: return text(phrase(
+            `Маска несправностей BMS 0x${raw.toString(16).toUpperCase().padStart(4, '0')}; окремі біти у V1.31 не визначені`,
+            `Маска неисправностей BMS 0x${raw.toString(16).toUpperCase().padStart(4, '0')}; отдельные биты в V1.31 не определены`,
+            `BMS fault mask 0x${raw.toString(16).toUpperCase().padStart(4, '0')}; V1.31 does not define the individual bits`
+          ));
+          case 147: return text(phrase(
+            `Маска попереджень BMS 0x${raw.toString(16).toUpperCase().padStart(4, '0')}; окремі біти у V1.31 не визначені`,
+            `Маска предупреждений BMS 0x${raw.toString(16).toUpperCase().padStart(4, '0')}; отдельные биты в V1.31 не определены`,
+            `BMS warning mask 0x${raw.toString(16).toUpperCase().padStart(4, '0')}; V1.31 does not define the individual bits`
+          ));
+          case 401: return text(phrase(
+            `Код протоколу BMS ${raw}; таблиці кодів у V1.31 немає`,
+            `Код протокола BMS ${raw}; таблицы кодов в V1.31 нет`,
+            `BMS protocol code ${raw}; V1.31 provides no code table`
+          ));
           case 321:
           case 530: return enumMeaning(outputMode, raw);
           case 323:
@@ -302,7 +314,8 @@
             `Battery-type code ${raw}; V1.31 refers to model-specific setting 0x4100`
           ));
           case 375: return enumMeaning(chargingState, raw);
-          case 402: return enumMeaning(bmsDebugConnection, raw);
+          case 402: return text(phrase(`ID пакета BMS: ${raw}`, `ID пакета BMS: ${raw}`, `BMS packet ID: ${raw}`));
+          case 403: return enumMeaning(bmsDebugConnection, raw);
           case 418:
           case 419: return text(phrase(
             `Бітова маска BMS 0x${raw.toString(16).toUpperCase().padStart(4, '0')}; окремі біти у V1.31 не визначені`,
@@ -313,7 +326,7 @@
             ? text(phrase('Вентилятор працює нормально', 'Вентилятор работает нормально', 'Fan operating normally'))
             : text(phrase('Вентилятор заблоковано або він не обертається', 'Вентилятор заблокирован или не вращается', 'Fan stalled or not rotating'));
           default: {
-            const semanticName = `${register.name || ''} ${register.group || ''}`.toLocaleLowerCase();
+            const semanticName = `${register.name_source || register.name || ''} ${register.group_source || register.group || ''}`.toLocaleLowerCase();
             if (!String(register.unit || '').trim() && /(state|status|mode|priority|alarm|fault|warning|enable|switch|стан|режим|пріоритет|помил|попереджен|состояни|приоритет|авар|ошиб)/u.test(semanticName)) {
               return text(phrase(
                 `Код ${raw}; таблиці значень для цього поля у V1.31 немає`,
@@ -341,8 +354,11 @@
           : null;
       if (!pair) return String(register?.display ?? register?.raw ?? '');
       const byNumber = new Map(registers.map(item => [Number(item.register), item]));
-      const major = Number(byNumber.get(pair[0])?.raw);
-      const encodedMinor = Number(byNumber.get(pair[1])?.raw);
+      const majorRegister = byNumber.get(pair[0]);
+      const minorRegister = byNumber.get(pair[1]);
+      if (!majorRegister?.available || !minorRegister?.available) return String(register?.display ?? '—');
+      const major = Number(majorRegister.raw);
+      const encodedMinor = Number(minorRegister.raw);
       if (!Number.isFinite(major) || !Number.isFinite(encodedMinor)) {
         return String(register?.display ?? register?.raw ?? '');
       }

@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import compileall
+import hashlib
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -23,6 +25,7 @@ SERVICE_TARGET = Path("/etc/systemd/system") / SERVICE_NAME
 SERVICE_USER = "solar-dashboard"
 SERVICE_GROUP = "solar-dashboard"
 HEALTH_URL = "http://127.0.0.1:8080/api/state"
+UPDATER_VERSION = "4"
 
 PAYLOAD_FILES = (
     "solar_invertor_web.py",
@@ -33,15 +36,21 @@ PAYLOAD_FILES = (
     "home.svg",
     "solar_inverter/__init__.py",
     "solar_inverter/components/__init__.py",
+    "solar_inverter/components/api_localization.py",
     "solar_inverter/components/web_dashboard.py",
     "solar_inverter/components/dashboard_template.py",
     "solar_inverter/web/index.html",
     "solar_inverter/web/styles/dashboard.css",
     "solar_inverter/web/styles/dashboard-responsive.css",
+    "solar_inverter/web/vendor/uPlot.iife.min.js",
+    "solar_inverter/web/vendor/uPlot.min.css",
+    "solar_inverter/web/vendor/LICENSE-uPlot.txt",
+    "solar_inverter/web/data/data-translations.json",
     "solar_inverter/web/scripts/translations.js",
     "solar_inverter/web/scripts/interpretations.js",
     "solar_inverter/web/scripts/renderers.js",
     "solar_inverter/web/scripts/charts.js",
+    "solar_inverter/web/scripts/chart-demo-history.js",
     "solar_inverter/web/scripts/chart-rendering.js",
     "solar_inverter/web/scripts/gauges.js",
     "solar_inverter/web/scripts/energy-flow.js",
@@ -172,6 +181,38 @@ def install_payload(payload_root: Path, uid: int, gid: int) -> None:
     atomic_install(payload_root / SERVICE_PAYLOAD, SERVICE_TARGET, 0o644, 0, 0)
 
 
+def record_installed_version(uid: int, gid: int) -> None:
+    """Record this local updater installation without requiring Git metadata."""
+    database_path = APPLICATION_ROOT / "solar_invertor_web_stats.sqlite3"
+    checksum = hashlib.sha256(archive_path().read_bytes()).hexdigest().upper()
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS updater_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                commit_hash TEXT NOT NULL,
+                commit_message TEXT,
+                commit_date TEXT,
+                source TEXT NOT NULL,
+                bundle_path TEXT,
+                build_output TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO updater_versions
+                (commit_hash, commit_message, commit_date, source, bundle_path, build_output)
+            VALUES (?, ?, datetime('now'), 'installer', ?, ?)
+            """,
+            (f"updater-{UPDATER_VERSION}", f"Updater {UPDATER_VERSION}", archive_path().name, f"SHA-256 {checksum}"),
+        )
+        connection.commit()
+    os.chown(database_path, uid, gid)
+    print(f"Recorded Updater {UPDATER_VERSION} installation.", flush=True)
+
+
 def wait_for_health() -> None:
     """Wait briefly for the restarted local API."""
     last_error = "no response"
@@ -200,6 +241,7 @@ def install() -> None:
         validate_payload(payload_root)
         run(["systemctl", "stop", SERVICE_NAME], check=False)
         install_payload(payload_root, uid, gid)
+        record_installed_version(uid, gid)
     run(["systemctl", "daemon-reload"])
     run(["systemctl", "enable", SERVICE_NAME])
     run(["systemctl", "restart", SERVICE_NAME])

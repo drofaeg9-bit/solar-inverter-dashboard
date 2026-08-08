@@ -6,10 +6,13 @@
   <link rel="icon" type="image/png" sizes="any" href="/favicon.png?v=__ASSET_VERSION__">
   <title data-i18n="appTitle">Solar Inverter Web</title>
   <style>/*__DASHBOARD_CSS__*/</style>
+  <link rel="stylesheet" href="/static/vendor/uPlot.min.css?v=__ASSET_VERSION__">
+  <script defer src="/static/vendor/uPlot.iife.min.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/translations.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/interpretations.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/renderers.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/charts.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/chart-demo-history.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/chart-rendering.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/gauges.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/energy-flow.js?v=__ASSET_VERSION__"></script>
@@ -49,7 +52,7 @@
           <button id="settings-button" type="button" data-i18n-title="settingsAria" aria-label="Налаштування">⚙</button>
           <button id="logs-button" type="button" data-i18n-title="logsAria" aria-label="Логи сервера">📋</button>
           <button id="modbus-debug-button" type="button" data-i18n-title="modbusDebugAria" aria-label="Modbus налагодження">🔧</button>
-          <button id="git-commits-button" type="button" data-i18n-title="gitCommitsAria" aria-label="Історія комітів Git">📜</button>
+          <button id="updater-history-button" type="button" data-i18n-title="updaterHistoryAria" data-i18n-aria="updaterHistoryAria" aria-label="Історія оновлень">📜</button>
         </div>
         <div class="status" id="status"><span class="dot"></span><span class="status-label">НЕМАЄ ЗВ’ЯЗКУ</span></div>
       </div>
@@ -229,7 +232,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th data-i18n="register">Регістр</th><th data-i18n="group">Група</th><th data-i18n="name">Назва</th><th data-i18n="value">Значення</th><th data-i18n="raw">Сире</th></tr></thead>
+          <thead><tr><th data-i18n="register">Регістр</th><th data-i18n="group">Група</th><th data-i18n="name">Назва</th><th data-i18n="meaning">Значення поля</th><th data-i18n="value">Значення</th><th data-i18n="raw">Сире</th></tr></thead>
           <tbody id="registers"></tbody>
         </table>
       </div>
@@ -300,8 +303,8 @@
     <section id="charts-view" role="tabpanel" aria-labelledby="charts-tab" tabindex="0" hidden>
       <div class="charts-layout">
         <aside class="panel chart-selector">
-          <h2 data-i18n="availableValues">Доступні значення</h2>
-          <div class="muted" data-i18n="selectionHelp">Кожен вибраний показник додається на панель і до графіків у реальному часі.</div>
+          <h2 data-i18n="availableValues">Споживання енергії</h2>
+          <div class="muted" data-i18n="selectionHelp">Виберіть лічильники споживання для панелі та графіків.</div>
           <input id="chart-search" type="search" placeholder="Пошук значень…" aria-label="Пошук значень графіка" data-i18n-placeholder="searchValues" data-i18n-aria="searchChartValues">
           <div class="chart-selector-actions">
             <button id="chart-select-all" type="button" data-i18n="selectAllGauges" data-disabled-reason="selectUnavailable" disabled>Вибрати всі</button>
@@ -318,11 +321,10 @@
             <div style="display: flex; gap: 8px; align-items: center;">
               <select id="chart-period-select" style="padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);">
                 <option value="realtime" data-i18n="periodRealtime">Реальний час (2 хв)</option>
-                <option value="1h" data-i18n="period1h">Остання година</option>
-                <option value="6h" data-i18n="period6h">Останні 6 годин</option>
-                <option value="24h" data-i18n="period24h">Останні 24 години</option>
-                <option value="7d" data-i18n="period7d">Останні 7 днів</option>
-                <option value="30d" data-i18n="period30d">Останні 30 днів</option>
+                <option value="day" data-i18n="periodDay">День</option>
+                <option value="week" data-i18n="periodWeek">Тиждень</option>
+                <option value="month" data-i18n="periodMonth">Місяць</option>
+                <option value="year" data-i18n="periodYear">Рік</option>
               </select>
               <button id="chart-demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
             </div>
@@ -333,6 +335,21 @@
         </div>
       </div>
     </section>
+
+    <dialog class="chart-modal" id="chart-modal" aria-labelledby="chart-modal-title">
+      <div class="chart-modal-head">
+        <div>
+          <h2 id="chart-modal-title"></h2>
+          <div class="muted" id="chart-modal-detail"></div>
+        </div>
+        <div class="chart-modal-actions">
+          <button id="chart-modal-reset" type="button" data-i18n="resetZoom">Reset zoom</button>
+          <button id="chart-modal-close" type="button" data-i18n-aria="close" aria-label="Close">×</button>
+        </div>
+      </div>
+      <div class="chart-modal-help" data-i18n="chartInteractionHelp">Drag to zoom, use the mouse wheel to zoom, and double-click to reset.</div>
+      <div class="chart-modal-host" id="chart-modal-host"></div>
+    </dialog>
 
     <dialog class="gauge-picker" id="gauge-picker">
       <div class="gauge-picker-head">
@@ -388,41 +405,17 @@
       </div>
     </dialog>
 
-    <dialog class="gauge-picker" id="git-commits-picker">
+    <dialog class="gauge-picker" id="updater-history-picker">
       <div class="gauge-picker-head">
         <div>
-          <h2 data-i18n="gitCommitsTitle">Історія комітів Git</h2>
-          <div class="muted" data-i18n="gitCommitsHelp">Виберіть коміт для створення оновлення</div>
+          <h2 data-i18n="updaterHistoryTitle">Історія оновлень</h2>
+          <div class="muted" data-i18n="updaterHistoryHelp">Локально встановлені версії updater</div>
         </div>
-        <button class="gauge-picker-close" type="button" data-close-git-commits-picker aria-label="Закрити" data-i18n-aria="close">×</button>
+        <button class="gauge-picker-close" type="button" data-close-updater-history-picker aria-label="Закрити" data-i18n-aria="close">×</button>
       </div>
       <div class="gauge-picker-list" style="padding: 18px;">
-        <div style="margin-bottom: 15px; padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
-          <label style="display: block; margin-bottom: 8px; font-weight: 600;" data-i18n="githubRepoUrl">GitHub Repository URL</label>
-          <input type="text" id="github-repo-url" style="width: 100%; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" value="https://github.com/santaes/solar-inverter-dashboard.git" placeholder="https://github.com/owner/repo" data-i18n-placeholder="githubRepoUrlPlaceholder">
-          <div style="font-size: 11px; color: var(--muted); margin-top: 5px;" data-i18n="githubRepoUrlHelp">Enter the GitHub repository URL to download updates from</div>
-        </div>
-        <div style="margin-bottom: 15px; padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel);">
-          <label style="display: block; margin-bottom: 8px; font-weight: 600;" data-i18n="githubToken">GitHub Token (optional)</label>
-          <input type="password" id="github-token" style="width: 100%; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" placeholder="ghp_..." data-i18n-placeholder="githubTokenPlaceholder">
-          <div style="font-size: 11px; color: var(--muted); margin-top: 5px;" data-i18n="githubTokenHelp">Required to download from private repositories or increase rate limits</div>
-        </div>
-        <div id="git-commits-loading" style="text-align: center; padding: 20px;">Завантаження...</div>
-        <div id="git-commits-list" style="max-height: 400px; overflow-y: auto;"></div>
-        <div id="git-commits-actions" style="margin-top: 15px; display: none;">
-          <button id="generate-update-from-commit" type="button" style="padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" data-i18n="generateUpdate">Створити оновлення</button>
-          <button id="download-from-github" type="button" style="padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text); margin-left: 8px;" data-i18n="downloadFromGitHub">Завантажити з GitHub</button>
-          <span id="selected-commit-info" style="margin-left: 10px; color: var(--muted);"></span>
-        </div>
-        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--ui-border);">
-          <h3 style="font-size: 14px; margin-bottom: 10px;" data-i18n="updaterHistoryTitle">Історія оновлень</h3>
-          <div id="updater-history-loading" style="text-align: center; padding: 10px; font-size: 12px; color: var(--muted);">Завантаження...</div>
-          <div id="updater-history-list" style="max-height: 200px; overflow-y: auto;"></div>
-          <div id="updater-history-actions" style="margin-top: 10px; display: none;">
-            <button id="download-selected-updater" type="button" style="padding: 8px 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);" data-i18n="downloadUpdater">Завантажити оновлення</button>
-            <span id="selected-updater-info" style="margin-left: 10px; color: var(--muted);"></span>
-          </div>
-        </div>
+        <div id="updater-history-loading" style="text-align: center; padding: 10px; font-size: 12px; color: var(--muted);" data-i18n="loading">Завантаження...</div>
+        <div id="updater-history-list" style="max-height: 420px; overflow-y: auto;"></div>
       </div>
     </dialog>
 
@@ -470,9 +463,9 @@
             <label style="display: block; margin-bottom: 8px;">
               <span data-i18n="requestEvery">Запит кожні</span>
               <select id="modbus-poll-rate" style="width: 100%; margin-top: 5px; padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);">
-                <option value="0" data-i18n="interval2">2 с</option>
-                <option value="1" data-i18n="interval5">5 с</option>
-                <option value="2" data-i18n="interval10">10 с</option>
+                <option value="2" data-i18n="interval2">2 с</option>
+                <option value="3" data-i18n="interval5">5 с</option>
+                <option value="4" data-i18n="interval10">10 с</option>
               </select>
             </label>
           </div>

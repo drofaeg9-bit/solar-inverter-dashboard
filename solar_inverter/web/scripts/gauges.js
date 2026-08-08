@@ -152,7 +152,7 @@
       const showSpeedometer = showsSpeedometer(meter);
       return DashboardRenderers.gaugeCard({
         meter,
-        label: localizeDataText(meter.label),
+        label: localizeApiField(meter, 'label'),
         showSpeedometer,
         scale: showSpeedometer ? scaleMarkup(meter) : '',
         translations: {
@@ -190,7 +190,7 @@
         if (needle && needle.style.transform !== needleTransform) needle.style.transform = needleTransform;
         if (progress && progress.style.strokeDashoffset !== progressOffset) progress.style.strokeDashoffset = progressOffset;
         if (valueElement.textContent !== valueText) valueElement.textContent = valueText;
-        const localizedSource = meter.available === false ? t('noData') : localizeDataText(meter.source || meter.detail);
+        const localizedSource = meter.available === false ? t('noData') : localizeApiField(meter, 'source') || meter.detail;
         if (sourceElement.textContent !== localizedSource) sourceElement.textContent = localizedSource;
 
       });

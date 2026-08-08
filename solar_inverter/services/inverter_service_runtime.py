@@ -788,14 +788,15 @@ def record_updater_version(commit_hash: str, commit_message: str, commit_date: s
 
 
 def get_updater_history() -> list:
-    """Get all updater versions from the database."""
+    """Get locally installed updater versions without Git metadata."""
     global stats_error
     try:
         with stats_lock, closing(sqlite3.connect(STATS_DB_PATH)) as connection:
             rows = connection.execute(
                 """
-                SELECT id, commit_hash, commit_message, commit_date, source, bundle_path, build_output, created_at
+                SELECT id, commit_hash, build_output, created_at
                 FROM updater_versions
+                WHERE source = 'installer'
                 ORDER BY created_at DESC
                 """
             ).fetchall()
@@ -803,13 +804,9 @@ def get_updater_history() -> list:
         return [
             {
                 "id": row[0],
-                "commit_hash": row[1],
-                "commit_message": row[2],
-                "commit_date": row[3],
-                "source": row[4],
-                "bundle_path": row[5],
-                "build_output": row[6],
-                "created_at": row[7]
+                "version": row[1].removeprefix("updater-"),
+                "checksum": row[2],
+                "installed_at": row[3],
             }
             for row in rows
         ]

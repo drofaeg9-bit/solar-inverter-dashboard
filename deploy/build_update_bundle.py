@@ -25,15 +25,21 @@ PAYLOAD_FILES = (
     "home.svg",
     "solar_inverter/__init__.py",
     "solar_inverter/components/__init__.py",
+    "solar_inverter/components/api_localization.py",
     "solar_inverter/components/web_dashboard.py",
     "solar_inverter/components/dashboard_template.py",
     "solar_inverter/web/index.html",
     "solar_inverter/web/styles/dashboard.css",
     "solar_inverter/web/styles/dashboard-responsive.css",
+    "solar_inverter/web/vendor/uPlot.iife.min.js",
+    "solar_inverter/web/vendor/uPlot.min.css",
+    "solar_inverter/web/vendor/LICENSE-uPlot.txt",
+    "solar_inverter/web/data/data-translations.json",
     "solar_inverter/web/scripts/translations.js",
     "solar_inverter/web/scripts/interpretations.js",
     "solar_inverter/web/scripts/renderers.js",
     "solar_inverter/web/scripts/charts.js",
+    "solar_inverter/web/scripts/chart-demo-history.js",
     "solar_inverter/web/scripts/chart-rendering.js",
     "solar_inverter/web/scripts/gauges.js",
     "solar_inverter/web/scripts/energy-flow.js",
@@ -147,11 +153,6 @@ def main() -> None:
             compressed=True,
         )
     print(f"Created {OUTPUT} ({OUTPUT.stat().st_size:,} bytes)")
-    
-    # Record to database
-    commit_hash, commit_message, commit_date = get_current_commit_info()
-    build_output = f"Created {OUTPUT} ({OUTPUT.stat().st_size:,} bytes)"
-    record_updater_version(commit_hash, commit_message, commit_date, "manual", str(OUTPUT), build_output)
 
 
 if __name__ == "__main__":
