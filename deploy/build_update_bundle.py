@@ -28,6 +28,7 @@ PAYLOAD_FILES = (
     "solar_inverter/components/api_localization.py",
     "solar_inverter/components/web_dashboard.py",
     "solar_inverter/components/dashboard_template.py",
+    "solar_inverter/components/state_consistency.py",
     "solar_inverter/web/index.html",
     "solar_inverter/web/styles/dashboard.css",
     "solar_inverter/web/styles/dashboard-responsive.css",
@@ -53,6 +54,19 @@ PAYLOAD_FILES = (
     "deploy/solar-inverter-dashboard.service",
 )
 
+def ensure_updater_history_schema(connection: sqlite3.Connection) -> None:
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(updater_versions)")}
+    additions = {
+        "commit_message": "TEXT", "commit_date": "TEXT",
+        "source": "TEXT NOT NULL DEFAULT 'local'", "bundle_path": "TEXT",
+        "build_output": "TEXT", "created_at": "TEXT",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.execute(f"ALTER TABLE updater_versions ADD COLUMN {name} {declaration}")
+    connection.execute("UPDATE updater_versions SET created_at = datetime('now') WHERE created_at IS NULL")
+    connection.commit()
+
 
 def record_updater_version(commit_hash: str, commit_message: str, commit_date: str, source: str, bundle_path: str, build_output: str = "") -> bool:
     """Record an updater version in the database."""
@@ -74,6 +88,7 @@ def record_updater_version(commit_hash: str, commit_message: str, commit_date: s
                 )
                 """
             )
+            ensure_updater_history_schema(connection)
             # Insert record
             connection.execute(
                 """

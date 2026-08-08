@@ -62,14 +62,22 @@
       const apparentLoadPower = numberValue([93]);
       const batteryVoltage = numberValue([129, 137, 404, 342]);
       const batteryCurrent = numberValue([130]);
-      const batterySoc = numberValue([133, 139, 407, 339]);
+      const measuredBatterySoc = numberValue([133, 139, 339, 407]);
       const batteryPowerReading = numberValue([134]);
       const batteryTemperature = numberValue([140, 406]);
       const inverterTemperature = numberValue([818]);
       const maximumChargeVoltage = numberValue([141, 411, 16651, 376, 377]);
       const currentLimit = numberValue([413]);
       const lowSocThreshold = numberValue([415]);
-      const statusRegister = firstRegister([325, 67]);
+      const statusRegister = firstRegister([67, 325]);
+      const terminalStateSource = firstRegister([68]);
+      const flowStateSource = firstRegister([69]);
+      const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online);
+      const terminalState = liveMeasurementsFresh ? decodeEnergyTerminalState(terminalStateSource) : null;
+      const flowState = liveMeasurementsFresh ? decodeEnergyFlowState(flowStateSource) : null;
+      const inverterState = liveMeasurementsFresh ? decodeBoundedRegister(statusRegister, 10) : null;
+      const flowSuppressed = [0, 1, 7, 8, 10].includes(inverterState);
+      const batterySoc = effectiveBatterySoc(measuredBatterySoc, terminalState);
       const statusText = statusRegister
         ? registerInterpretation(statusRegister) || localizeDataText(statusRegister.display)
         : t('noData');
@@ -86,12 +94,50 @@
         ? batteryCurrent
         : batteryPower;
       const batteryActivityThreshold = batteryDirectionFromCurrent ? .3 : 20;
-      const batteryState = !Number.isFinite(batteryActiveValue) || Math.abs(batteryActiveValue) < batteryActivityThreshold
-        ? t('batteryIdle')
-        : batteryActiveValue > 0 ? t('charging') : t('discharging');
-      const batteryCharging = Number.isFinite(batteryActiveValue) && batteryActiveValue > batteryActivityThreshold;
+      const batteryConnected = terminalState
+        ? terminalState.battery !== 0
+        : Number.isFinite(batteryVoltage) && batteryVoltage > 20;
+      const measuredBatteryCharging = Number.isFinite(batteryActiveValue)
+        && batteryActiveValue > batteryActivityThreshold;
+      const measuredBatteryDischarging = Number.isFinite(batteryActiveValue)
+        && batteryActiveValue < -batteryActivityThreshold;
+      const batteryCharging = liveMeasurementsFresh && !flowSuppressed && batteryConnected && (flowState
+        ? flowState.rectifierToBattery && !flowState.batteryToInverter
+        : terminalState ? terminalState.battery === 3 : measuredBatteryCharging);
+      const batteryDischarging = liveMeasurementsFresh && !flowSuppressed && batteryConnected && (flowState
+        ? flowState.batteryToInverter
+        : terminalState ? terminalState.battery === 2 : measuredBatteryDischarging);
+      const batteryState = !batteryConnected
+        ? t('notConnected')
+        : terminalState?.battery === 1
+          ? t('batteryLow')
+          : terminalState?.battery === 4
+            ? t('batteryFull')
+            : batteryCharging
+              ? t('charging')
+              : batteryDischarging ? t('discharging') : t('batteryIdle');
       const lcdGridVoltagePresent = Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .5;
-      const gridConnected = lcdGridVoltagePresent;
+      const gridConnected = liveMeasurementsFresh && (terminalState
+        ? terminalState.grid !== 0
+        : lcdGridVoltagePresent);
+      const gridNormal = terminalState ? terminalState.grid === 2 : gridConnected;
+      const pvConnected = liveMeasurementsFresh && (terminalState
+        ? terminalState.pv1 !== 0 || terminalState.pv2 !== 0
+        : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .5);
+      const pvNormal = terminalState
+        ? terminalState.pv1 === 2 || terminalState.pv2 === 2
+        : pvConnected;
+      const outputConnected = liveMeasurementsFresh && (terminalState ? terminalState.output !== 0 : true);
+      const outputCanSupply = terminalState ? terminalState.output === 1 : outputConnected;
+      const gridFlowActive = !flowSuppressed && gridConnected && gridNormal && (flowState
+        ? flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid
+        : Number.isFinite(measuredGridPower) && Math.abs(measuredGridPower) > 20);
+      const pvFlowActive = !flowSuppressed && pvConnected && pvNormal && (flowState
+        ? flowState.pvToRectifier
+        : Number.isFinite(pvPower) && pvPower > 20);
+      const loadFlowActive = !flowSuppressed && outputConnected && outputCanSupply && (flowState
+        ? flowState.gridToLoad || flowState.generatorToLoad || flowState.inverterToMainOutput || flowState.inverterToSecondaryOutput
+        : Number.isFinite(loadPower) && loadPower > 20);
       const displayedGridVoltage = gridConnected && Number.isFinite(gridVoltage) ? gridVoltage : 0;
       const displayedGridCurrent = gridConnected && Number.isFinite(gridCurrent) ? gridCurrent : 0;
       const displayedGridFrequency = gridConnected && Number.isFinite(frequency) ? frequency : 0;
@@ -299,11 +345,11 @@
       const active = (selector, enabled) =>
         document.querySelector(selector)?.classList.toggle('active', Boolean(enabled));
       active('#lcd-grid-node', gridConnected);
-      active('#lcd-grid-arrow', gridConnected && Number.isFinite(gridPower) && Math.abs(gridPower) > 20);
-      active('#lcd-inverter-node', chartDemoRunning || data.online);
-      active('#lcd-load-node', Number.isFinite(pvPower) && pvPower > 20);
-      active('#lcd-load-arrow', Number.isFinite(loadPower) && loadPower > 20);
-      active('#lcd-ac-output-card', Number.isFinite(outputCurrent) && outputCurrent > .05);
-      active('#lcd-battery-card', Number.isFinite(batteryVoltage) && batteryVoltage > 20);
+      active('#lcd-grid-arrow', gridFlowActive);
+      active('#lcd-inverter-node', liveMeasurementsFresh && !flowSuppressed);
+      active('#lcd-load-node', pvFlowActive);
+      active('#lcd-load-arrow', loadFlowActive);
+      active('#lcd-ac-output-card', outputConnected && Number.isFinite(outputCurrent) && outputCurrent > .05);
+      active('#lcd-battery-card', liveMeasurementsFresh && batteryConnected);
       active('#lcd-soc-card', Number.isFinite(batterySoc));
     }

@@ -1,6 +1,52 @@
     let inverterFanAnimation = null;
     let inverterFanAnimationRotor = null;
     const INVERTER_FAN_MAX_ROTATION_MS = 225;
+    function decodeEnergyTerminalState(source) {
+      const raw = Number(source?.raw);
+      if (!source?.available || !Number.isInteger(raw) || raw < 0 || raw >= 65535) return null;
+      return {
+        raw,
+        grid: raw & 0x03,
+        generator: (raw >> 2) & 0x03,
+        pv1: (raw >> 4) & 0x03,
+        output: (raw >> 6) & 0x03,
+        battery: (raw >> 8) & 0x07,
+        charging: (raw >> 11) & 0x07,
+        pv2: (raw >> 14) & 0x03
+      };
+    }
+    function decodeEnergyFlowState(source) {
+      const raw = Number(source?.raw);
+      if (!source?.available || !Number.isInteger(raw) || raw < 0 || raw >= 65535) return null;
+      return {
+        raw,
+        gridToRectifier: Boolean(raw & 1 << 0),
+        gridToLoad: Boolean(raw & 1 << 1),
+        generatorToRectifier: Boolean(raw & 1 << 2),
+        generatorToLoad: Boolean(raw & 1 << 3),
+        pvToRectifier: Boolean(raw & 1 << 4),
+        rectifierToBattery: Boolean(raw & 1 << 5),
+        rectifierToInverter: Boolean(raw & 1 << 6),
+        rectifierToGrid: Boolean(raw & 1 << 7),
+        batteryToInverter: Boolean(raw & 1 << 8),
+        inverterToMainOutput: Boolean(raw & 1 << 9),
+        inverterToSecondaryOutput: Boolean(raw & 1 << 10)
+      };
+    }
+    function decodeBoundedRegister(source, maximum) {
+      const raw = Number(source?.raw);
+      return source?.available && Number.isInteger(raw) && raw >= 0 && raw <= maximum ? raw : null;
+    }
+    function effectiveBatterySoc(measuredSoc, terminalState) {
+      if (terminalState?.battery === 4) return 100;
+      return Number.isFinite(measuredSoc) ? Math.max(0, Math.min(100, measuredSoc)) : null;
+    }
+    function parallelTopologyCode(state) {
+      return [null, '1Φ', '3Φ-R', '3Φ-S', '3Φ-T'][state] || '';
+    }
+    function uniqueLabels(values) {
+      return [...new Set(values.filter(Boolean))];
+    }
     function updateInverterFanAnimation(fanRow, normalizedSpeed, forceMotion = false) {
       const rotor = fanRow?.querySelector('.energy-inverter-fan-rotor');
       const shouldRotate = normalizedSpeed > 0
@@ -167,9 +213,13 @@
       };
 
       const gridVoltageSource = firstRegister([81, 433]);
+      const terminalStateSource = firstRegister([68]);
+      const flowStateSource = firstRegister([69]);
+      const simplifiedStateSource = firstRegister([67, 325]);
+      const parallelStateSource = firstRegister([70, 322]);
       const gridCurrentSource = firstRegister([82, 434]);
       const gridPowerSource = firstRegister([84, 150, 436]);
-      const gridModeSource = firstRegister([325, 67]);
+      const gridModeSource = firstRegister([67, 325]);
       const generatorVoltageSource = firstRegister([85]);
       const generatorCurrentSource = firstRegister([86]);
       const generatorPowerSource = firstRegister([88]);
@@ -182,12 +232,12 @@
       const outputCurrentSource = firstRegister([90, 539]);
       const batteryVoltageSource = firstRegister([129, 137, 404, 342]);
       const batteryCurrentSource = firstRegister([130]);
-      const batterySocSource = firstRegister([339]);
+      const batterySocSource = firstRegister([133, 139, 339, 407]);
       const batteryPowerSource = firstRegister([134, 149]);
       const inverterPrioritySource = firstRegister([529, 323, 16643]);
       const inverterAcModeSource = firstRegister([530, 321, 16644]);
       const inverterChargeModeSource = firstRegister([324, 16645]);
-      const inverterStateSource = firstRegister([325, 67]);
+      const inverterStateSource = simplifiedStateSource;
       const gridVoltage = registerNumericValue(gridVoltageSource);
       const measuredGridCurrent = registerNumericValue(gridCurrentSource);
       const measuredGridPower = registerNumericValue(gridPowerSource);
@@ -233,21 +283,52 @@
           : 0
         : Number.isFinite(batteryPowerReading) ? batteryPowerReading : calculatedBatteryPower;
       const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online);
-      const batteryActive = liveMeasurementsFresh && ((Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3)
-        || (Number.isFinite(batteryPower) && Math.abs(batteryPower) > 20));
-      const batteryCharging = batteryActive && (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3
-        ? batteryCurrent > 0
-        : batteryPower > 0);
-      const batteryDischarging = batteryActive && (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3
-        ? batteryCurrent < 0
-        : batteryPower < 0);
-      const pvActive = liveMeasurementsFresh && Number.isFinite(pvPower) && pvPower > 20;
-      const solarDataVisible = pvActive;
+      const terminalState = liveMeasurementsFresh ? decodeEnergyTerminalState(terminalStateSource) : null;
+      const energyFlowState = liveMeasurementsFresh ? decodeEnergyFlowState(flowStateSource) : null;
+      const inverterState = decodeBoundedRegister(inverterStateSource, 10);
+      const parallelState = decodeBoundedRegister(parallelStateSource, 4);
+      const flowSuppressedByState = [0, 1, 7, 8, 10].includes(inverterState);
+      const batteryConnected = liveMeasurementsFresh && (terminalState ? terminalState.battery !== 0 : (
+        Number.isFinite(batteryVoltage) || Number.isFinite(batterySoc)
+      ));
+      const measuredBatteryActive = (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3)
+        || (Number.isFinite(batteryPower) && Math.abs(batteryPower) > 20);
+      const batteryActive = liveMeasurementsFresh && !flowSuppressedByState && batteryConnected && (energyFlowState
+        ? energyFlowState.rectifierToBattery || energyFlowState.batteryToInverter
+        : terminalState ? terminalState.battery === 2 || terminalState.battery === 3 : measuredBatteryActive);
+      const batteryCharging = batteryActive && (energyFlowState
+        ? energyFlowState.rectifierToBattery && !energyFlowState.batteryToInverter
+        : terminalState ? terminalState.battery === 3
+        : Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3 ? batteryCurrent > 0 : batteryPower > 0);
+      const batteryDischarging = batteryActive && (energyFlowState
+        ? energyFlowState.batteryToInverter
+        : terminalState ? terminalState.battery === 2
+        : Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3 ? batteryCurrent < 0 : batteryPower < 0);
+      const pvConnected = liveMeasurementsFresh && (terminalState
+        ? terminalState.pv1 !== 0 || terminalState.pv2 !== 0
+        : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .5);
+      const pvNormal = terminalState
+        ? terminalState.pv1 === 2 || terminalState.pv2 === 2
+        : pvConnected;
+      const pvAbnormal = terminalState
+        ? (terminalState.pv1 === 1 || terminalState.pv2 === 1) && !pvNormal
+        : false;
+      const pvActive = liveMeasurementsFresh && !flowSuppressedByState && pvConnected && pvNormal && (energyFlowState
+        ? energyFlowState.pvToRectifier
+        : Number.isFinite(pvPower) && pvPower > 20);
+      const solarDataVisible = liveMeasurementsFresh && pvConnected;
       const pvReceiving = false;
       const gridVoltagePresent = Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .5;
       // R81 is physical mains input. R89 is inverter/load output and remains
-      // available while the house is powered from PV or battery.
-      const gridAvailable = liveMeasurementsFresh && gridVoltagePresent;
+      // available while the house is powered from PV or battery. R68 determines
+      // whether the physical grid terminal is actually connected.
+      const gridTerminalConnected = terminalState ? terminalState.grid !== 0 : gridVoltagePresent;
+      const gridAvailable = liveMeasurementsFresh && gridTerminalConnected;
+      const gridNormal = terminalState ? terminalState.grid === 2 : gridAvailable;
+      const gridAbnormal = terminalState?.grid === 1;
+      const outputState = terminalState?.output;
+      const outputConnected = terminalState ? outputState !== 0 : true;
+      const outputCanSupply = terminalState ? outputState === 1 || outputState === 2 : true;
       const loadPower = Number.isFinite(measuredLoadPower) ? Math.max(0, measuredLoadPower) : null;
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
@@ -260,7 +341,7 @@
         : gridAvailable && Number.isFinite(loadPower)
             ? Math.max(0, loadPower + batteryChargePower - batteryDischargePower - Math.max(0, pvPower || 0))
             : null;
-      // Grid is a one-way source. Surplus energy is never represented as grid export.
+      // R69 supplies the direction. Power registers provide a display magnitude.
       const gridPower = Number.isFinite(calculatedGridPower) ? Math.max(0, calculatedGridPower) : null;
       const gridCurrent = gridAvailable && Number.isFinite(measuredGridCurrent)
         ? Math.abs(measuredGridCurrent)
@@ -278,11 +359,16 @@
         : Number.isFinite(generatorPower) && Number.isFinite(generatorVoltage) && generatorVoltage > .1
           ? generatorPower / generatorVoltage
           : null;
-      const generatorConnected = liveMeasurementsFresh && Number.isFinite(generatorVoltage) && generatorVoltage > 80;
-      const generatorActive = generatorConnected && (
-        (Number.isFinite(generatorPower) && generatorPower > 20)
-        || (Number.isFinite(generatorCurrent) && generatorCurrent > .1)
-      );
+      const measuredGeneratorConnected = Number.isFinite(generatorVoltage) && generatorVoltage > 80;
+      const generatorConnected = liveMeasurementsFresh && (terminalState
+        ? terminalState.generator !== 0
+        : measuredGeneratorConnected);
+      const generatorNormal = terminalState ? terminalState.generator === 2 : generatorConnected;
+      const generatorAbnormal = terminalState?.generator === 1;
+      const generatorActive = !flowSuppressedByState && generatorConnected && generatorNormal && (energyFlowState
+        ? energyFlowState.generatorToRectifier || energyFlowState.generatorToLoad
+        : (Number.isFinite(generatorPower) && generatorPower > 20)
+          || (Number.isFinite(generatorCurrent) && generatorCurrent > .1));
       const batteryPowerSources = batteryPowerSource
         ? [batteryPowerSource]
         : [batteryVoltageSource, batteryCurrentSource];
@@ -292,16 +378,27 @@
           ? [loadPowerSource, pvPowerSource, batteryPowerSources, gridVoltageSource, gridModeSource]
         : gridAvailable ? [gridModeSource, gridVoltageSource] : [gridModeSource];
 
-      const homeActive = liveMeasurementsFresh && Number.isFinite(loadPower) && loadPower > 20;
-      const gridFlowActive = gridAvailable && Number.isFinite(gridPower) && gridPower > 20;
-      const displayedGridVoltage = gridFlowActive && Number.isFinite(gridVoltage)
+      const homeConnected = liveMeasurementsFresh && outputConnected;
+      const homeActive = homeConnected && Number.isFinite(loadPower) && loadPower > 20;
+      const homeFlowActive = !flowSuppressedByState && homeConnected && outputCanSupply && (energyFlowState
+        ? energyFlowState.inverterToMainOutput
+          || energyFlowState.inverterToSecondaryOutput
+          || energyFlowState.gridToLoad
+          || energyFlowState.generatorToLoad
+        : homeActive);
+      const gridImporting = energyFlowState
+        ? energyFlowState.gridToRectifier || energyFlowState.gridToLoad
+        : Number.isFinite(gridPower) && gridPower > 20;
+      const gridExporting = Boolean(energyFlowState?.rectifierToGrid);
+      const gridFlowActive = !flowSuppressedByState && gridAvailable && gridNormal && (gridImporting || gridExporting);
+      const displayedGridVoltage = gridAvailable && Number.isFinite(gridVoltage)
         ? Math.abs(gridVoltage)
         : 0;
       const displayedHouseVoltage = Number.isFinite(outputVoltage) ? Math.abs(outputVoltage) : null;
       const displayedGridPower = gridAvailable && Number.isFinite(gridPower) ? Math.abs(gridPower) : 0;
       const displayedGridCurrent = gridAvailable && Number.isFinite(gridCurrent) ? Math.abs(gridCurrent) : 0;
-      const inverterActive = chartDemoRunning || (Boolean(data.online) && (
-        pvActive || homeActive || batteryActive || gridAvailable || generatorConnected
+      const inverterActive = chartDemoRunning || (Boolean(data.online) && !flowSuppressedByState && (
+        pvConnected || outputConnected || batteryConnected || gridAvailable || generatorConnected
       ));
       const inverterOutputPriority = modeDetails(inverterPrioritySource, {
         0: {label: 'GPB', description: 'modeGpbShort'},
@@ -309,7 +406,6 @@
         2: {label: 'PBG', description: 'modePbgShort'},
         3: {label: 'MKS', description: 'modeMksShort'}
       });
-      const inverterState = Number(inverterStateSource?.raw);
       const inverterInputMode = !inverterActive
         ? {label: '—', description: ''}
         : inverterState === 3 && gridAvailable
@@ -333,28 +429,66 @@
         2: {label: 'PVF', description: 'modePvfShort'}
       });
 
-      setText('#energy-flow-status', chartDemoRunning
-        ? t(demoFlowCase || 'demoMode')
-        : data.online ? t('online') : t('offline'));
+      const routeFlowState = flowSuppressedByState ? null : energyFlowState;
+      const routeSources = uniqueLabels([
+        (routeFlowState
+          ? routeFlowState.gridToRectifier || routeFlowState.gridToLoad
+          : gridFlowActive && !gridExporting) && t('grid'),
+        (routeFlowState
+          ? routeFlowState.generatorToRectifier || routeFlowState.generatorToLoad
+          : generatorActive) && t('generator'),
+        (routeFlowState ? routeFlowState.pvToRectifier : pvActive) && 'PV',
+        (routeFlowState ? routeFlowState.batteryToInverter : batteryDischarging) && t('battery')
+      ]);
+      const routeDestinations = uniqueLabels([
+        (routeFlowState
+          ? routeFlowState.gridToLoad || routeFlowState.generatorToLoad
+            || routeFlowState.inverterToMainOutput || routeFlowState.inverterToSecondaryOutput
+          : homeFlowActive) && t('home'),
+        (routeFlowState ? routeFlowState.rectifierToBattery : batteryCharging) && t('battery'),
+        (routeFlowState ? routeFlowState.rectifierToGrid : gridExporting) && t('grid'),
+        routeFlowState?.rectifierToInverter && !(
+          routeFlowState.inverterToMainOutput || routeFlowState.inverterToSecondaryOutput
+        ) && t('inverter')
+      ]);
+      const topologyCode = parallelTopologyCode(parallelState);
+      const routeText = routeSources.length && routeDestinations.length
+        ? `${routeSources.join(' + ')} → ${routeDestinations.join(' + ')}`
+        : inverterState === 7
+          ? t('flowFault')
+          : [0, 1, 2, 8, 10].includes(inverterState)
+            ? t('flowStopped')
+            : data.online ? t('batteryIdle') : t('offline');
+      const statusText = [chartDemoRunning ? t('demoMode') : '', topologyCode, routeText].filter(Boolean).join(' · ');
+      setText('#energy-flow-status', statusText);
+      const statusElement = document.querySelector('#energy-flow-status');
+      if (statusElement) {
+        statusElement.title = [
+          inverterStateSource && `R${inverterStateSource.register}: ${registerInterpretation(inverterStateSource) || inverterStateSource.display}`,
+          terminalStateSource && `R${terminalStateSource.register}: ${registerInterpretation(terminalStateSource) || terminalStateSource.display}`,
+          flowStateSource && `R${flowStateSource.register}: ${registerInterpretation(flowStateSource) || flowStateSource.display}`,
+          parallelStateSource && `R${parallelStateSource.register}: ${registerInterpretation(parallelStateSource) || parallelStateSource.display}`
+        ].filter(Boolean).join('\n');
+      }
       setText('#energy-solar-registers', chartDemoRunning
         ? t('demoMode')
         : registerText([pvVoltageSource, pvPowerSource], [151, 153, 154, 156]));
       setText('#energy-inverter-registers', registerText(
-        [inverterLoadSource, inverterFanSpeedSource, inverterPrioritySource, inverterStateSource, inverterChargeModeSource],
-        [94, 801, 529, 325, 324]
+        [inverterLoadSource, inverterFanSpeedSource, inverterStateSource, terminalStateSource, flowStateSource, parallelStateSource, inverterPrioritySource, inverterChargeModeSource],
+        [94, 801, 67, 68, 69, 70, 529, 324]
       ));
       setText('#energy-home-registers', registerText(
-        [outputCurrentSource, loadPowerSource, outputVoltageSource],
-        [90, 92, 537]
+        [outputCurrentSource, loadPowerSource, outputVoltageSource, terminalStateSource, flowStateSource],
+        [90, 92, 537, 68, 69]
       ));
       setText('#energy-battery-registers', registerText(
-        [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource],
-        [129, 130, 134, 339]
+        [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource, terminalStateSource, flowStateSource],
+        [129, 130, 134, 133, 68, 69]
       ));
-      setText('#energy-grid-registers', registerText(gridRegisterSources, [84, 82, 89, 325]));
+      setText('#energy-grid-registers', registerText([gridRegisterSources, terminalStateSource, flowStateSource], [84, 82, 68, 69]));
       setText('#energy-generator-registers', chartDemoRunning
         ? t('demoMode')
-        : registerText([generatorVoltageSource, generatorCurrentSource, generatorPowerSource], [85, 86, 88]));
+        : registerText([generatorVoltageSource, generatorCurrentSource, generatorPowerSource, terminalStateSource, flowStateSource], [85, 86, 88, 68, 69]));
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-solar-node',
         active: pvActive,
@@ -366,8 +500,10 @@
           '#energy-solar-current': Number.isFinite(pvCurrent) ? reading(pvCurrent, 'A', 1) : '— A'
         },
         directionSelector: '#energy-solar-direction',
-        direction: !solarDataVisible
+        direction: !pvConnected
           ? t('notConnected')
+          : pvAbnormal
+            ? t('connectedAbnormal')
           : pvActive
             ? pvReceiving ? t('receiving') : t('supplying')
             : t('batteryIdle')
@@ -383,7 +519,9 @@
           '#energy-generator-voltage': generatorConnected ? reading(generatorVoltage, 'V', 1) : '— V'
         },
         directionSelector: '#energy-generator-direction',
-        direction: generatorActive ? t('supplying') : generatorConnected ? t('batteryIdle') : t('notConnected')
+        direction: generatorAbnormal
+          ? t('connectedAbnormal')
+          : generatorActive ? t('supplying') : generatorConnected ? t('batteryIdle') : t('notConnected')
       });
       const normalizedFanSpeed = Number.isFinite(inverterFanSpeed)
         ? Math.max(0, Math.min(100, inverterFanSpeed))
@@ -403,14 +541,22 @@
       setModeText('#energy-inverter-charge-mode', '#energy-inverter-charge-definition', inverterBatteryMode);
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-home-node',
-        active: homeActive,
+        active: homeConnected,
+        valuesSelector: '.energy-home-values',
+        valuesVisible: homeConnected,
         values: {
           '#energy-home-current': Number.isFinite(outputCurrent) ? reading(Math.abs(outputCurrent), 'A', 2) : '— A',
           '#energy-home-voltage': Number.isFinite(displayedHouseVoltage) ? reading(displayedHouseVoltage, 'V', 1) : '— V',
           '#energy-home-power': Number.isFinite(loadPower) ? reading(loadPower, 'W') : '— W'
         },
         directionSelector: '#energy-home-direction',
-        direction: homeActive ? t('consuming') : t('batteryIdle')
+        direction: outputState === 2
+          ? t('outputOverload')
+          : outputState === 3
+            ? t('outputShort')
+            : outputState === 0
+              ? t('outputStopped')
+              : homeFlowActive ? t('consuming') : t('batteryIdle')
       });
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-grid-node',
@@ -421,38 +567,49 @@
           '#energy-grid-voltage': reading(displayedGridVoltage, 'V', 1)
         },
         directionSelector: '#energy-grid-direction',
-        direction: gridFlowActive ? t('gridSupplying') : gridAvailable ? t('gridReady') : t('offline')
+        direction: gridAbnormal
+          ? t('connectedAbnormal')
+          : gridExporting ? t('gridExporting') : gridFlowActive ? t('gridSupplying') : gridAvailable ? t('gridReady') : t('offline')
       });
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-battery-node',
-        active: Number.isFinite(batteryVoltage) || Number.isFinite(batterySoc),
+        active: liveMeasurementsFresh && batteryConnected,
+        valuesSelector: '.energy-battery-values',
+        valuesVisible: liveMeasurementsFresh && batteryConnected,
         values: {
           '#energy-battery-current': Number.isFinite(batteryCurrent) ? reading(batteryCurrent, 'A', 1) : '— A',
           '#energy-battery-power': Number.isFinite(batteryPower) ? reading(batteryPower, 'W') : '— W',
           '#energy-battery-voltage': Number.isFinite(batteryVoltage) ? reading(batteryVoltage, 'V', 1) : '— V'
         },
         directionSelector: '#energy-battery-direction',
-        direction: batteryActive
+        direction: !batteryConnected
+          ? t('notConnected')
+          : terminalState?.battery === 1
+            ? t('batteryLow')
+            : terminalState?.battery === 4
+              ? t('batteryFull')
+              : batteryActive
           ? batteryCharging
             ? t('charging')
             : batteryDischarging ? t('discharging') : t('batteryIdle')
           : t('batteryIdle')
       });
       const batteryIcon = document.querySelector('#energy-battery-icon');
-      const batteryLevel = Number.isFinite(batterySoc)
-        ? Math.max(0, Math.min(100, batterySoc))
-        : 0;
+      const effectiveSoc = effectiveBatterySoc(batterySoc, terminalState);
+      const batteryLevelKnown = Number.isFinite(effectiveSoc);
+      const batteryLevel = effectiveSoc ?? 0;
       batteryIcon?.style.setProperty('--battery-level', `${batteryLevel}%`);
-      setText('#energy-battery-percent', Number.isFinite(batterySoc) ? `${Math.round(batteryLevel)}%` : '—');
+      setText('#energy-battery-percent', batteryLevelKnown ? `${Math.round(batteryLevel)}%` : '—');
       batteryIcon?.setAttribute(
         'aria-label',
-        Number.isFinite(batterySoc) ? `${t('battery')} ${Math.round(batteryLevel)}%` : `${t('battery')} ${t('noData')}`
+        batteryLevelKnown ? `${t('battery')} ${Math.round(batteryLevel)}%` : `${t('battery')} ${t('noData')}`
       );
       // PV is a one-way source and can only supply the inverter.
       setFlow('#energy-pv-flow', pvActive && inverterActive && !pvReceiving, false, pvPower);
-      document.querySelector('#energy-pv-flow')?.classList.toggle('disconnected', !pvActive);
+      document.querySelector('#energy-pv-flow')?.classList.toggle('disconnected', !pvConnected);
       // Home is deliberately one-way: it can consume energy but never supply it.
-      setFlow('#energy-home-flow', inverterActive && homeActive, false, loadPower);
+      setFlow('#energy-home-flow', inverterActive && homeFlowActive, false, loadPower);
+      document.querySelector('#energy-home-flow')?.classList.toggle('disconnected', !outputConnected);
       // Generator is a one-way source: animation always travels toward the inverter.
       setFlow(
         '#energy-generator-flow',
@@ -460,17 +617,18 @@
         true,
         generatorActive ? generatorPower : 0
       );
-      document.querySelector('#energy-generator-flow')?.classList.toggle('disconnected', !generatorActive);
-      // Grid is a one-way source: animation always travels upward toward the inverter.
+      document.querySelector('#energy-generator-flow')?.classList.toggle('disconnected', !generatorConnected);
+      // R69 bit 7 reverses this connector when the rectifier exports to the grid.
       setFlow(
         '#energy-grid-flow',
         gridFlowActive && inverterActive,
-        true,
+        !gridExporting,
         gridFlowActive ? gridPower : 0
       );
       document.querySelector('#energy-grid-flow')?.classList.toggle('disconnected', !gridAvailable);
       // Battery and inverter exchange energy in both directions.
       setFlow('#energy-battery-flow', batteryActive && inverterActive, batteryCharging, batteryPower);
+      document.querySelector('#energy-battery-flow')?.classList.toggle('disconnected', !batteryConnected);
 
       const status = document.querySelector('#energy-flow-status');
       status?.classList.toggle('active', inverterActive);

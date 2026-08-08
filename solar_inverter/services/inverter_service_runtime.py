@@ -11,6 +11,20 @@ log_buffer_lock = threading.Lock()
 UPDATER_RECEIPT_PATH = PROJECT_ROOT / "updater_history.json"
 UPDATER_ARCHIVE_DIR = PROJECT_ROOT / "updater_archives"
 
+def ensure_updater_history_schema(connection: sqlite3.Connection) -> None:
+    """Add updater-history columns introduced after the original table."""
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(updater_versions)")}
+    additions = {
+        "commit_message": "TEXT", "commit_date": "TEXT",
+        "source": "TEXT NOT NULL DEFAULT 'local'", "bundle_path": "TEXT",
+        "build_output": "TEXT", "created_at": "TEXT",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.execute(f"ALTER TABLE updater_versions ADD COLUMN {name} {declaration}")
+    connection.execute("UPDATE updater_versions SET created_at = datetime('now') WHERE created_at IS NULL")
+    connection.commit()
+
 class LogCapture:
     """Capture print() output to a buffer for UI display."""
     def __init__(self, original_stdout):
@@ -735,6 +749,7 @@ def initialise_statistics() -> None:
                 )
                 """
             )
+            ensure_updater_history_schema(connection)
             site_visit_total = int(
                 connection.execute(
                     "SELECT value FROM site_counters WHERE name = 'page_views'"

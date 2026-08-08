@@ -291,8 +291,25 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("firstRegister([85])", flow)
         self.assertIn("firstRegister([86])", flow)
         self.assertIn("firstRegister([88])", flow)
+        self.assertIn("firstRegister([68])", flow)
+        self.assertIn("firstRegister([69])", flow)
+        self.assertIn("firstRegister([67, 325])", flow)
+        self.assertIn("firstRegister([70, 322])", flow)
         self.assertIn("const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online)", flow)
-        self.assertIn("classList.toggle('disconnected', !generatorActive)", flow)
+        self.assertIn("grid: raw & 0x03", flow)
+        self.assertIn("generator: (raw >> 2) & 0x03", flow)
+        self.assertIn("pv1: (raw >> 4) & 0x03", flow)
+        self.assertIn("output: (raw >> 6) & 0x03", flow)
+        self.assertIn("battery: (raw >> 8) & 0x07", flow)
+        self.assertIn("charging: (raw >> 11) & 0x07", flow)
+        self.assertIn("pv2: (raw >> 14) & 0x03", flow)
+        self.assertIn("rectifierToGrid: Boolean(raw & 1 << 7)", flow)
+        self.assertIn("batteryToInverter: Boolean(raw & 1 << 8)", flow)
+        self.assertIn("inverterToMainOutput: Boolean(raw & 1 << 9)", flow)
+        self.assertIn("const flowSuppressedByState = [0, 1, 7, 8, 10].includes(inverterState)", flow)
+        self.assertIn("`${routeSources.join(' + ')} → ${routeDestinations.join(' + ')}`", flow)
+        self.assertIn("parallelTopologyCode(parallelState)", flow)
+        self.assertIn("classList.toggle('disconnected', !generatorConnected)", flow)
         self.assertIn("classList.toggle('disconnected', !gridAvailable)", flow)
 
     def test_poll_timing_reports_real_cycles_and_accounts_for_postprocessing(self) -> None:
@@ -476,6 +493,25 @@ class DashboardAssetTests(unittest.TestCase):
             bundle_path = root / "solar-dashboard-update.pyz"
             legacy_path.parent.mkdir(parents=True)
             bundle_path.write_bytes(b"updater-four-test")
+            service_path.parent.mkdir(parents=True)
+            with closing(sqlite3.connect(service_path)) as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE updater_versions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        commit_hash TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO updater_versions (commit_hash, source, created_at)
+                    VALUES ('old-local-build', 'local', '2026-08-08 11:00:00')
+                    """
+                )
+                connection.commit()
             with closing(sqlite3.connect(legacy_path)) as connection:
                 connection.execute(
                     """
@@ -511,19 +547,24 @@ class DashboardAssetTests(unittest.TestCase):
             })
             record(1000, 1000, "abc123def456")
             with closing(sqlite3.connect(service_path)) as connection:
+                columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(updater_versions)")
+                }
                 rows = connection.execute(
                     "SELECT commit_hash, source, build_output FROM updater_versions ORDER BY id"
                 ).fetchall()
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             archive_exists = (archive_dir / "solar-dashboard-updater-4-abc123def456.pyz").is_file()
-        self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[0], ("updater-4", "installer", "SHA-256 OLD"))
-        self.assertEqual(rows[1][0:2], ("updater-4-abc123def456", "installer"))
-        self.assertRegex(rows[1][2], r"^SHA-256 [0-9A-F]{64}$")
+        self.assertIn("build_output", columns)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0], ("old-local-build", "local", None))
+        self.assertEqual(rows[1], ("updater-4", "installer", "SHA-256 OLD"))
+        self.assertEqual(rows[2][0:2], ("updater-4-abc123def456", "installer"))
+        self.assertRegex(rows[2][2], r"^SHA-256 [0-9A-F]{64}$")
         self.assertEqual(receipt["schema"], 1)
         self.assertEqual(receipt["installations"][0]["version"], "4")
         self.assertEqual(receipt["installations"][0]["dashboard_version"], "abc123def456")
-        self.assertEqual(receipt["installations"][0]["checksum"], rows[1][2])
+        self.assertEqual(receipt["installations"][0]["checksum"], rows[2][2])
         self.assertTrue(archive_exists)
 
     def test_updater_history_uses_receipt_when_sqlite_history_is_missing(self) -> None:
@@ -698,6 +739,71 @@ class DashboardRendererTests(unittest.TestCase):
         browser_source = script_source("app.js", "charts.js", "energy-flow.js", "lcd.js")
         self.assertIn("function registerNumericValue(register)", browser_source)
         self.assertGreaterEqual(browser_source.count("registerNumericValue("), 18)
+
+    def test_demo_r67_to_r70_words_describe_each_energy_route(self) -> None:
+        chart_path = WEB_ROOT / "scripts" / "charts.js"
+        probe = textwrap.dedent(
+            """
+            const fs = require('fs');
+            const source = fs.readFileSync(process.argv[1], 'utf8');
+            const start = source.indexOf('function interpolate');
+            const end = source.indexOf('function demoSolarEnergySummary', start);
+            eval(source.slice(start, end));
+            console.log(JSON.stringify([10, 30, 50, 70, 90, 110].map(second => {
+              const values = realisticDemoScenario(second).values;
+              return [values.get(67), values.get(68), values.get(69), values.get(70), values.get(322), values.get(325), values.get(133), values.get(139), values.get(339)];
+            })));
+            """
+        )
+        result = subprocess.run(
+            [shutil.which("node") or "node", "-e", probe, str(chart_path)],
+            check=True, capture_output=True, text=True,
+        )
+        frames = json.loads(result.stdout)
+        self.assertEqual([frame[0] for frame in frames], [4, 3, 5, 4, 6, 4])
+        self.assertEqual([frame[3] for frame in frames], [0, 1, 2, 3, 4, 0])
+        self.assertEqual([frame[4] for frame in frames], [0, 1, 2, 3, 4, 0])
+        self.assertEqual([frame[5] for frame in frames], [4, 3, 5, 4, 6, 4])
+        expected_r69 = [624, 611, 768, 592, 588, 848]
+        self.assertEqual([frame[2] for frame in frames], expected_r69)
+        # Every frame has a normal main output in R68; source terminals vary by route.
+        self.assertTrue(all(((frame[1] >> 6) & 3) == 1 for frame in frames))
+        self.assertEqual([frame[1] & 3 for frame in frames], [0, 2, 0, 0, 0, 0])
+        self.assertEqual([(frame[1] >> 2) & 3 for frame in frames], [0, 0, 0, 0, 2, 0])
+        self.assertEqual([frames[index][6:] for index in (3, 4)], [[100, 100, 100], [100, 100, 100]])
+
+    def test_full_r68_battery_state_forces_a_complete_soc_display(self) -> None:
+        flow = (WEB_ROOT / "scripts" / "energy-flow.js").read_text(encoding="utf-8")
+        lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
+        self.assertIn("firstRegister([133, 139, 339, 407])", flow)
+        self.assertIn("function effectiveBatterySoc(measuredSoc, terminalState)", flow)
+        self.assertIn("if (terminalState?.battery === 4) return 100", flow)
+        self.assertIn("const effectiveSoc = effectiveBatterySoc(batterySoc, terminalState)", flow)
+        self.assertIn("batteryLevelKnown ? `${Math.round(batteryLevel)}%` : '—'", flow)
+        self.assertIn("numberValue([133, 139, 339, 407])", lcd)
+        self.assertIn("const batterySoc = effectiveBatterySoc(measuredBatterySoc, terminalState)", lcd)
+
+    def test_api_battery_soc_uses_r68_full_state_without_mutating_raw_data(self) -> None:
+        from solar_inverter.components.web_dashboard import effective_battery_soc
+
+        full_terminal_state = 4 << 8
+        self.assertEqual(effective_battery_soc(73.0, full_terminal_state), 100.0)
+        self.assertEqual(effective_battery_soc(73.0, 3 << 8), 73.0)
+        self.assertEqual(effective_battery_soc(None, full_terminal_state), 100.0)
+        self.assertIsNone(effective_battery_soc(None, None))
+
+    def test_lcd_uses_canonical_state_registers_for_connections_and_flow(self) -> None:
+        lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
+        self.assertIn("firstRegister([67, 325])", lcd)
+        self.assertIn("firstRegister([68])", lcd)
+        self.assertIn("firstRegister([69])", lcd)
+        self.assertIn("decodeEnergyTerminalState(terminalStateSource)", lcd)
+        self.assertIn("decodeEnergyFlowState(flowStateSource)", lcd)
+        self.assertIn("terminalState.grid !== 0", lcd)
+        self.assertIn("flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid", lcd)
+        self.assertIn("terminalState.pv1 !== 0 || terminalState.pv2 !== 0", lcd)
+        self.assertIn("flowState.inverterToMainOutput || flowState.inverterToSecondaryOutput", lcd)
+        self.assertIn("terminalState?.battery === 4", lcd)
 
     def test_all_tabs_use_complete_translation_catalogs(self) -> None:
         translation_path = WEB_ROOT / "scripts" / "translations.js"

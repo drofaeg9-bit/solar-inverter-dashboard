@@ -47,6 +47,7 @@ PAYLOAD_FILES = (
     "solar_inverter/components/api_localization.py",
     "solar_inverter/components/web_dashboard.py",
     "solar_inverter/components/dashboard_template.py",
+    "solar_inverter/components/state_consistency.py",
     "solar_inverter/web/index.html",
     "solar_inverter/web/styles/dashboard.css",
     "solar_inverter/web/styles/dashboard-responsive.css",
@@ -71,6 +72,20 @@ PAYLOAD_FILES = (
     "solar_inverter/services/inverter_service_runtime.py",
 )
 SERVICE_PAYLOAD = "deploy/solar-inverter-dashboard.service"
+
+def ensure_updater_history_schema(connection: sqlite3.Connection) -> None:
+    """Upgrade an existing updater history table without deleting its rows."""
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(updater_versions)")}
+    additions = {
+        "commit_message": "TEXT", "commit_date": "TEXT",
+        "source": "TEXT NOT NULL DEFAULT 'local'", "bundle_path": "TEXT",
+        "build_output": "TEXT", "created_at": "TEXT",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.execute(f"ALTER TABLE updater_versions ADD COLUMN {name} {declaration}")
+    connection.execute("UPDATE updater_versions SET created_at = datetime('now') WHERE created_at IS NULL")
+    connection.commit()
 
 
 def run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -242,6 +257,8 @@ def next_updater_version() -> int:
             table_exists = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'updater_versions'"
             ).fetchone()
+            if table_exists:
+                ensure_updater_history_schema(connection)
             rows = connection.execute(
                 "SELECT commit_hash, build_output FROM updater_versions WHERE source = 'installer'"
             ).fetchall() if table_exists else []
@@ -309,11 +326,14 @@ def record_installed_version(uid: int, gid: int, dashboard_version: str) -> None
                 )
                 """
             )
+            ensure_updater_history_schema(connection)
             if LEGACY_STATS_DATABASE_PATH.is_file():
                 with closing(sqlite3.connect(LEGACY_STATS_DATABASE_PATH)) as legacy:
                     table_exists = legacy.execute(
                         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'updater_versions'"
                     ).fetchone()
+                    if table_exists:
+                        ensure_updater_history_schema(legacy)
                     legacy_rows = legacy.execute(
                         """
                         SELECT commit_hash, commit_message, commit_date, source,

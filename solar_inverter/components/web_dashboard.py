@@ -21,13 +21,12 @@ from ..services.inverter_service_runtime import get_server_logs, get_updater_arc
 from .api_localization import SUPPORTED_API_LANGUAGES, localize_api_status
 from .api_localization import localize_api_text, register_description, resolve_api_language
 from .dashboard_template import ASSET_VERSION, WEB_DASHBOARD, WEB_ROOT
+from .state_consistency import effective_battery_soc
 DASHBOARD_INSTANCE_ID = f"{ASSET_VERSION}-{secrets.token_hex(8)}"
-# Git executable path for Windows
 GIT_PATH = r"C:\Program Files\Git\bin\git.exe"
 def check_git_available() -> tuple[bool, str]:
     """Check if git is available. Returns (is_available, path_or_error)."""
     import shutil
-    # Try the hardcoded path first
     if Path(GIT_PATH).exists():
         return True, GIT_PATH
     # Try to find git in PATH
@@ -87,6 +86,8 @@ def web_state(language: str = "uk") -> dict[str, Any]:
         unit = str(metadata_override.get("unit", unit))
         if register == 134:
             value = battery_power_with_current_direction(value)
+        elif register == 133:
+            value = effective_battery_soc(value, values.get(68))
         available = value is not None
         if value is None:
             value = 0.0
@@ -103,7 +104,6 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             "source_source": source,
             "available": available,
         })
-
     registers = []
     all_registers = sorted(set(KNOWN_REGISTERS) | set(values))
     for register in all_registers:

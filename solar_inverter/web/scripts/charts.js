@@ -379,6 +379,7 @@
       let chargingPriority;
       let caseKey;
       let generatorPower = 0;
+      let parallelState = 0;
 
       if (second < 20) {
         // PV supplies the home and charges the battery; surplus production is curtailed.
@@ -403,6 +404,7 @@
         outputPriority = 0;
         chargingPriority = 0;
         caseKey = 'demoGridHome';
+        parallelState = 1;
       } else if (second < 60) {
         // With PV and AC input unavailable, the battery supplies the home.
         gridAvailable = false;
@@ -415,6 +417,7 @@
         outputPriority = 0;
         chargingPriority = 2;
         caseKey = 'demoBatteryHome';
+        parallelState = 2;
       } else if (second < 80) {
         // Solar supplies the home; surplus production is curtailed and the battery remains idle.
         gridAvailable = false;
@@ -422,11 +425,12 @@
         pvPower = 5600 + ripple * 220;
         loadPower = 2700 + Math.sin(second * .27) * 130;
         batteryCurrent = ripple * .08;
-        batterySoc = 72.6;
+        batterySoc = 100;
         statusCode = 4;
         outputPriority = 2;
         chargingPriority = 1;
         caseKey = 'demoSolarExport';
+        parallelState = 3;
       } else if (second < 100) {
         // The generator is a one-way source that supplies the inverter and home.
         gridAvailable = false;
@@ -434,12 +438,13 @@
         pvPower = 0;
         loadPower = 2800 + Math.sin(second * .25) * 120;
         batteryCurrent = 0;
-        batterySoc = 72.5;
+        batterySoc = 100;
         statusCode = 6;
         outputPriority = 3;
         chargingPriority = 0;
         generatorPower = 3400 + ripple * 180;
         caseKey = 'demoGeneratorHome';
+        parallelState = 4;
       } else {
         // With AC input unavailable, solar and battery jointly supply the home.
         gridAvailable = false;
@@ -464,13 +469,33 @@
       ));
       const powerFactor = .86;
       const apparentLoadPower = loadPower / powerFactor;
-      const gridPower = Math.max(0,
-        loadPower + Math.max(0, batteryPower) - Math.max(0, pvPower) - Math.max(0, -batteryPower)
-      );
+      const gridPower = gridAvailable ? Math.max(0,
+        loadPower + Math.max(0, batteryPower)
+          - Math.max(0, pvPower) - Math.max(0, -batteryPower) - Math.max(0, generatorPower)
+      ) : 0;
       const inputMode = generatorPower > 20 ? 2 : 0;
       const generatorVoltage = generatorPower > 20 ? 230 : 0;
       const generatorCurrent = generatorVoltage > 0 ? generatorPower / generatorVoltage : 0;
       const pvChargingCurrent = pvPower > loadPower ? Math.max(0, batteryCurrent) : 0;
+      const gridTerminalState = gridAvailable ? 2 : 0;
+      const generatorTerminalState = generatorPower > 20 ? 2 : 0;
+      const pv1TerminalState = pvPower > 20 ? 2 : 0;
+      const outputTerminalState = loadPower > 0 ? 1 : 0;
+      const batteryTerminalState = batteryCurrent > .3 ? 3 : batteryCurrent < -.3 ? 2 : batterySoc <= 20 ? 1 : 4;
+      const chargingStage = batteryCurrent > .3 ? 1 : 0;
+      const energyTerminalState = gridTerminalState
+        | generatorTerminalState << 2
+        | pv1TerminalState << 4
+        | outputTerminalState << 6
+        | batteryTerminalState << 8
+        | chargingStage << 11;
+      const energyFlowState = (gridPower > 20 ? (1 << 0) | (1 << 1) : 0)
+        | (generatorPower > 20 ? (1 << 2) | (1 << 3) : 0)
+        | (pvPower > 20 ? 1 << 4 : 0)
+        | (batteryCurrent > .3 ? 1 << 5 : 0)
+        | (gridPower > 20 || generatorPower > 20 || pvPower > 20 ? 1 << 6 : 0)
+        | (batteryCurrent < -.3 ? 1 << 8 : 0)
+        | (loadPower > 0 ? 1 << 9 : 0);
       const energyProgress = second / 120;
       return {
         elapsedSeconds: second,
@@ -486,9 +511,9 @@
           [6, 0x4d4f], [7, 0x2d30], [8, 0x3030], [9, 0x3031], [10, 0],
           [17, 1], [18, 31], [27, 1], [28, 31], [58, 0x0100],
           [65, 0x0131], [66, 1], [67, statusCode],
-          [68, gridAvailable ? 0x0262 : 0x0220],
-          [69, gridAvailable ? 0x0233 : 0x0330],
-          [70, 0], [71, 0], [72, 0], [73, 0], [74, 0],
+          [68, energyTerminalState],
+          [69, energyFlowState],
+          [70, parallelState], [71, 0], [72, 0], [73, 0], [74, 0],
           [75, 0], [76, 0], [77, 1], [78, 8224], [79, 0], [80, 1],
           [81, gridVoltage], [82, gridVoltage > 0 ? gridPower / gridVoltage : 0],
           [83, gridFrequency], [84, gridPower],
@@ -522,7 +547,7 @@
           [184, 2.8 + energyProgress], [185, 65.7 + energyProgress],
           [186, 558.4 + energyProgress], [187, 4471.2 + energyProgress],
           [188, loadPower], [189, 0], [190, 0],
-          [321, inputMode], [322, 0], [323, outputPriority], [324, chargingPriority], [325, statusCode],
+          [321, inputMode], [322, parallelState], [323, outputPriority], [324, chargingPriority], [325, statusCode],
           [337, 2], [339, batterySoc],
           [341, 47.5], [342, batteryVoltage],
           [343, Math.max(0, -batteryCurrent)], [344, Math.max(0, batteryCurrent)],
