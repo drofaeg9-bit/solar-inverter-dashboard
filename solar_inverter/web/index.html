@@ -6,7 +6,6 @@
   <link rel="icon" type="image/png" sizes="any" href="/favicon.png?v=__ASSET_VERSION__">
   <title data-i18n="appTitle">Solar Inverter Web</title>
   <style>/*__DASHBOARD_CSS__*/</style>
-  <link rel="stylesheet" href="/static/vendor/uPlot.min.css?v=__ASSET_VERSION__">
   <script defer src="/static/vendor/uPlot.iife.min.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/translations.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/interpretations.js?v=__ASSET_VERSION__"></script>
@@ -242,42 +241,77 @@
     <section id="lcd-view" role="tabpanel" aria-labelledby="lcd-tab" tabindex="0" hidden>
       <div class="panel lcd-panel">
         <div class="lcd-screen">
-          <div class="lcd-head">
-            <div><h2 data-i18n="lcdTitle">LCD ІНВЕРТОРА</h2><div class="lcd-subtitle" data-i18n="lcdSubtitle">Поточні показники з Modbus</div></div>
-            <span class="lcd-mode" id="lcd-mode">—</span>
+          <div class="lcd-device-display" id="lcd-device-display" role="img" aria-label="Inverter LCD live display">
+            <svg class="lcd-icon-definitions" aria-hidden="true" focusable="false">
+              <defs>
+                <symbol id="lcd-icon-source-square" viewBox="0 0 64 64">
+                  <rect x="8" y="6" width="48" height="52" rx="12"></rect><path d="M19 27h26M21 39h22"></path>
+                </symbol>
+                <symbol id="lcd-icon-source-wide" viewBox="0 0 84 56">
+                  <rect x="5" y="6" width="74" height="44" rx="12"></rect><path d="M21 23h42M21 35h42"></path>
+                </symbol>
+                <symbol id="lcd-icon-arrow-long" viewBox="0 0 100 32">
+                  <path class="lcd-icon-solid" d="M2 12h72V4l24 12-24 12v-8H2z"></path>
+                </symbol>
+                <symbol id="lcd-icon-arrow-compact" viewBox="0 0 64 44">
+                  <path class="lcd-icon-solid" d="M3 16h32V5l26 17-26 17V28H3z"></path>
+                </symbol>
+                <symbol id="lcd-icon-solar" viewBox="0 0 72 64">
+                  <path d="M15 8h47l-7 36H7zM18 8l-6 36M33 8l-3 36M48 8l1 36M12 20h47M9 32h48M31 45l-6 11M47 45l7 11M19 56h40"></path>
+                </symbol>
+                <symbol id="lcd-icon-sun" viewBox="0 0 64 64">
+                  <circle cx="32" cy="32" r="13"></circle><path d="M32 4v10M32 50v10M4 32h10M50 32h10M12 12l7 7M45 45l7 7M52 12l-7 7M19 45l-7 7"></path>
+                </symbol>
+                <symbol id="lcd-icon-battery-horizontal" viewBox="0 0 84 42">
+                  <rect x="4" y="5" width="70" height="32" rx="6"></rect><path d="M74 15h6v12h-6"></path>
+                </symbol>
+                <symbol id="lcd-icon-battery-vertical" viewBox="0 0 48 72">
+                  <path d="M17 8V3h14v5M12 8h24a6 6 0 0 1 6 6v50a5 5 0 0 1-5 5H11a5 5 0 0 1-5-5V14a6 6 0 0 1 6-6Z"></path>
+                </symbol>
+              </defs>
+            </svg>
+            <div class="lcd-device-mode" id="lcd-mode">—</div>
+            <div class="lcd-battery-source" aria-hidden="true"><svg class="lcd-icon lcd-source-grid"><use href="#lcd-icon-source-square"></use></svg><span class="lcd-source-plus"></span><svg class="lcd-icon lcd-source-sun"><use href="#lcd-icon-sun"></use></svg><svg class="lcd-icon lcd-source-arrow"><use href="#lcd-icon-arrow-long"></use></svg><svg class="lcd-icon lcd-battery-mini"><use href="#lcd-icon-battery-horizontal"></use></svg></div>
+            <div class="lcd-battery-top" id="lcd-battery-card">
+              <span class="lcd-tag">Li-ion</span>
+              <span class="lcd-measure lcd-battery-main"><span class="lcd-digits" id="lcd-battery-voltage">—</span><span class="lcd-unit">V</span></span>
+            </div>
+            <div class="lcd-battery-side">
+              <span class="lcd-measure"><span class="lcd-digits" id="lcd-charge-voltage">—</span><span class="lcd-unit">V</span></span>
+              <span class="lcd-state-caption" id="lcd-battery-state">—</span>
+              <span class="lcd-measure"><span class="lcd-digits" id="lcd-battery-current">—</span><span class="lcd-unit">A</span></span>
+            </div>
+            <div class="lcd-battery-scale" id="lcd-soc-card"><span>100</span><span>75</span><span>50</span><span>25</span><svg class="lcd-icon lcd-battery-level-icon" viewBox="0 0 48 72" aria-hidden="true"><use href="#lcd-icon-battery-vertical"></use><rect class="lcd-battery-level-fill" x="10" y="13" width="28" height="52" rx="2"></rect></svg><em id="lcd-soc">—</em></div>
+
+            <div class="lcd-power-path" aria-hidden="true"><svg class="lcd-icon lcd-path-left"><use href="#lcd-icon-arrow-compact"></use></svg><svg class="lcd-icon lcd-path-mid"><use href="#lcd-icon-arrow-compact"></use></svg></div>
+            <div class="lcd-column lcd-column-input" id="lcd-grid-node">
+              <svg class="lcd-icon lcd-column-icon lcd-ac-icon" aria-hidden="true"><use href="#lcd-icon-source-wide"></use></svg><strong>UPS APP</strong>
+              <span class="lcd-measure lcd-measure-large"><span class="lcd-digits" id="lcd-grid-voltage">—</span><span class="lcd-unit">V</span></span>
+              <span class="lcd-measure"><span class="lcd-digits" id="lcd-frequency">—</span><span class="lcd-unit">Hz</span></span>
+              <strong>AC OUTPUT2</strong>
+              <span class="lcd-measure"><span class="lcd-digits" id="lcd-ac2-voltage">—</span><span class="lcd-unit">V</span></span>
+              <span class="lcd-measure"><span class="lcd-digits" id="lcd-ac2-frequency">—</span><span class="lcd-unit">Hz</span></span>
+            </div>
+            <div class="lcd-column lcd-column-output" id="lcd-inverter-node">
+              <strong>AC OUTPUT</strong>
+              <span class="lcd-measure lcd-measure-large"><span class="lcd-digits" id="lcd-output-voltage">—</span><span class="lcd-unit">V</span></span>
+              <span class="lcd-measure"><span class="lcd-digits" id="lcd-output-frequency">—</span><span class="lcd-unit">Hz</span></span>
+              <svg class="lcd-icon lcd-output-arrow" id="lcd-grid-arrow" aria-hidden="true"><use href="#lcd-icon-arrow-compact"></use></svg>
+            </div>
+            <div class="lcd-column lcd-column-pv" id="lcd-load-node">
+              <svg class="lcd-icon lcd-column-icon lcd-solar-panel" aria-hidden="true"><use href="#lcd-icon-solar"></use></svg><strong>PV</strong>
+              <span class="lcd-measure lcd-measure-large"><span class="lcd-digits" id="lcd-pv-voltage">—</span><span class="lcd-unit">V</span></span>
+              <span class="lcd-measure"><span class="lcd-digits" id="lcd-pv-current">—</span><span class="lcd-unit">A</span></span>
+              <span class="lcd-measure"><span class="lcd-digits" id="lcd-pv-power">—</span><span class="lcd-unit">W</span></span>
+            </div>
+            <div class="lcd-day-energy"><span>DAY</span><span class="lcd-measure"><span class="lcd-digits" id="lcd-pv-day-energy">—</span><span class="lcd-unit">kWh</span></span></div>
+            <div class="lcd-hidden-values" aria-hidden="true">
+              <span id="lcd-grid"></span><span id="lcd-power"></span><span id="lcd-load"></span><span id="lcd-grid-current"></span><span id="lcd-grid-power"></span>
+              <span id="lcd-ac-output-current"></span><span id="lcd-inverter-load"></span><span id="lcd-inverter-fan-speed"></span><span id="lcd-load-power"></span>
+              <span id="lcd-apparent-load-power"></span><span id="lcd-grid-low-voltage-threshold"></span><span id="lcd-battery-power"></span><span id="lcd-temperature"></span>
+              <span id="lcd-current-limit"></span><span id="lcd-low-soc-threshold"></span><span id="lcd-system-status"></span><span id="lcd-status-line"></span><span id="lcd-load-arrow"></span>
+            </div>
           </div>
-          <div class="lcd-flow">
-            <div class="lcd-node" id="lcd-grid-node"><span class="lcd-node-icon">∿</span><span class="lcd-node-label" data-i18n="grid">Мережа</span><span class="lcd-node-value" id="lcd-grid">—</span></div>
-            <div class="lcd-arrow" id="lcd-grid-arrow">→</div>
-            <div class="lcd-node" id="lcd-inverter-node"><span class="lcd-node-icon">▣</span><span class="lcd-node-label" data-i18n="inverter">Інвертор</span><span class="lcd-node-value" id="lcd-power">—</span></div>
-            <div class="lcd-arrow" id="lcd-load-arrow">→</div>
-            <div class="lcd-node" id="lcd-load-node"><span class="lcd-node-icon">⌂</span><span class="lcd-node-label" data-i18n="load">Навантаження</span><span class="lcd-node-value" id="lcd-load">—</span></div>
-          </div>
-          <div class="lcd-main">
-            <div class="lcd-primary" id="lcd-ac-output-card"><span class="lcd-primary-label" data-i18n="acOutputCurrent">Вихідний струм AC</span><span class="lcd-primary-value" id="lcd-ac-output-current">—</span></div>
-            <div class="lcd-primary" id="lcd-battery-card"><span class="lcd-primary-label" data-i18n="batteryVoltage">Напруга батареї</span><span class="lcd-primary-value" id="lcd-battery-voltage">—</span></div>
-            <div class="lcd-primary" id="lcd-soc-card"><span class="lcd-primary-label" data-i18n="batterySoc">Заряд батареї</span><span class="lcd-primary-value" id="lcd-soc">—</span></div>
-          </div>
-          <div class="lcd-readouts">
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridVoltage">Напруга мережі</span><span class="lcd-readout-value" id="lcd-grid-voltage">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="frequency">Частота</span><span class="lcd-readout-value" id="lcd-frequency">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridCurrent">Струм мережі</span><span class="lcd-readout-value" id="lcd-grid-current">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridPower">Потужність мережі</span><span class="lcd-readout-value" id="lcd-grid-power">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="inverterLoad">Завантаження інвертора</span><span class="lcd-readout-value" id="lcd-inverter-load">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="inverterFanSpeed">Швидкість вентилятора</span><span class="lcd-readout-value" id="lcd-inverter-fan-speed">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="loadPower">Активна потужність навантаження</span><span class="lcd-readout-value" id="lcd-load-power">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="apparentLoadPower">Повна потужність навантаження</span><span class="lcd-readout-value" id="lcd-apparent-load-power">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="gridLowVoltageThreshold">Нижній поріг напруги мережі</span><span class="lcd-readout-value" id="lcd-grid-low-voltage-threshold">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryCurrent">Струм батареї</span><span class="lcd-readout-value" id="lcd-battery-current">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryPower">Потужність батареї</span><span class="lcd-readout-value" id="lcd-battery-power">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="inverterTemperature">Температура інвертора</span><span class="lcd-readout-value" id="lcd-temperature">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="maxChargeVoltage">Макс. напруга заряду</span><span class="lcd-readout-value" id="lcd-charge-voltage">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="currentLimit">Дозволений тривалий струм розряду</span><span class="lcd-readout-value" id="lcd-current-limit">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="lowSocThreshold">Нижній поріг SOC</span><span class="lcd-readout-value" id="lcd-low-soc-threshold">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="batteryState">Стан батареї</span><span class="lcd-readout-value" id="lcd-battery-state">—</span></div>
-            <div class="lcd-readout"><span class="lcd-readout-label" data-i18n="systemStatus">Стан системи</span><span class="lcd-readout-value" id="lcd-system-status">—</span></div>
-          </div>
-          <div class="lcd-status-line" id="lcd-status-line">—</div>
           <div class="lcd-page-panel" aria-live="polite">
             <div class="lcd-page-head"><span class="lcd-page-code" id="lcd-page-code">LCD</span><span class="lcd-page-title" id="lcd-page-title">—</span></div>
             <div class="lcd-page-values">

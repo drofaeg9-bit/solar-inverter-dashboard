@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import compileall
 import hashlib
+import json
 import os
 import shutil
 import sqlite3
@@ -16,15 +17,22 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 APPLICATION_ROOT = Path("/opt/solar_assistant")
+STATS_DATABASE_PATH = Path("/var/lib/solar-inverter-dashboard/stats.sqlite3")
+LEGACY_STATS_DATABASE_PATH = APPLICATION_ROOT / "solar_invertor_web_stats.sqlite3"
+UPDATER_RECEIPT_PATH = APPLICATION_ROOT / "updater_history.json"
+UPDATER_ARCHIVE_DIR = APPLICATION_ROOT / "updater_archives"
 SERVICE_NAME = "solar-inverter-dashboard.service"
 SERVICE_TARGET = Path("/etc/systemd/system") / SERVICE_NAME
 SERVICE_USER = "solar-dashboard"
 SERVICE_GROUP = "solar-dashboard"
 HEALTH_URL = "http://127.0.0.1:8080/api/state"
+VERSION_URL = "http://127.0.0.1:8080/api/version"
 UPDATER_VERSION = "4"
 
 PAYLOAD_FILES = (
@@ -108,6 +116,23 @@ def validate_payload(payload_root: Path) -> None:
         raise RuntimeError("The bundled Python source did not compile")
 
 
+def dashboard_asset_version(payload_root: Path) -> str:
+    """Calculate the version that dashboard_template.py will serve."""
+    project_root = payload_root
+    web_root = project_root / "solar_inverter" / "web"
+    versioned_files = [path for path in web_root.rglob("*") if path.is_file()]
+    versioned_files.extend(
+        project_root / name
+        for name in ("favicon.png", "generator-mask.png", "1258380.png", "inverter.svg", "home.svg")
+        if (project_root / name).is_file()
+    )
+    digest = hashlib.sha256()
+    for asset_path in sorted(versioned_files, key=lambda path: str(path)):
+        digest.update(str(asset_path.relative_to(project_root)).encode("utf-8"))
+        digest.update(asset_path.read_bytes())
+    return digest.hexdigest()[:12]
+
+
 def require_root() -> None:
     if not hasattr(os, "geteuid") or os.geteuid() != 0:
         raise PermissionError("Run the update with: sudo python3 solar-dashboard-update.pyz")
@@ -181,49 +206,177 @@ def install_payload(payload_root: Path, uid: int, gid: int) -> None:
     atomic_install(payload_root / SERVICE_PAYLOAD, SERVICE_TARGET, 0o644, 0, 0)
 
 
-def record_installed_version(uid: int, gid: int) -> None:
+def verify_installed_payload(payload_root: Path) -> None:
+    """Refuse success when any installed application file differs from the archive."""
+    mismatches = [
+        relative_name
+        for relative_name in PAYLOAD_FILES
+        if not (APPLICATION_ROOT / relative_name).is_file()
+        or hashlib.sha256((payload_root / relative_name).read_bytes()).digest()
+        != hashlib.sha256((APPLICATION_ROOT / relative_name).read_bytes()).digest()
+    ]
+    if mismatches:
+        raise RuntimeError(f"Installed payload verification failed: {', '.join(mismatches)}")
+    print(f"Verified {len(PAYLOAD_FILES)} installed application files.", flush=True)
+
+
+def next_updater_version() -> int:
+    """Return the next sequential local release number, starting at Updater 4."""
+    checksums: set[str] = set()
+    versions: list[int] = []
+    try:
+        receipt = json.loads(UPDATER_RECEIPT_PATH.read_text(encoding="utf-8"))
+        for item in receipt.get("installations", []):
+            if not isinstance(item, dict):
+                continue
+            if item.get("checksum"):
+                checksums.add(str(item["checksum"]))
+            try:
+                versions.append(int(item.get("version", UPDATER_VERSION)))
+            except (TypeError, ValueError):
+                pass
+    except (OSError, ValueError):
+        pass
+    try:
+        with closing(sqlite3.connect(STATS_DATABASE_PATH)) as connection:
+            table_exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'updater_versions'"
+            ).fetchone()
+            rows = connection.execute(
+                "SELECT commit_hash, build_output FROM updater_versions WHERE source = 'installer'"
+            ).fetchall() if table_exists else []
+        for commit_hash, checksum in rows:
+            if checksum:
+                checksums.add(str(checksum))
+            try:
+                versions.append(int(str(commit_hash).removeprefix("updater-").split("-", 1)[0]))
+            except ValueError:
+                pass
+    except sqlite3.Error:
+        pass
+    base_version = int(UPDATER_VERSION)
+    return max([base_version + len(checksums), *(version + 1 for version in versions)] or [base_version])
+
+
+def record_installed_version(uid: int, gid: int, dashboard_version: str) -> None:
     """Record this local updater installation without requiring Git metadata."""
-    database_path = APPLICATION_ROOT / "solar_invertor_web_stats.sqlite3"
     checksum = hashlib.sha256(archive_path().read_bytes()).hexdigest().upper()
-    with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS updater_versions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                commit_hash TEXT NOT NULL,
-                commit_message TEXT,
-                commit_date TEXT,
-                source TEXT NOT NULL,
-                bundle_path TEXT,
-                build_output TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    installed_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    release_version = next_updater_version()
+    archive_name = f"solar-dashboard-updater-{release_version}-{dashboard_version}.pyz"
+    UPDATER_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    os.chown(UPDATER_ARCHIVE_DIR, uid, gid)
+    atomic_install(archive_path(), UPDATER_ARCHIVE_DIR / archive_name, 0o640, uid, gid)
+    receipt = {"version": str(release_version), "dashboard_version": dashboard_version,
+               "checksum": f"SHA-256 {checksum}",
+               "installed_at": installed_at, "bundle": archive_name}
+    installations: list[dict] = []
+    try:
+        existing = json.loads(UPDATER_RECEIPT_PATH.read_text(encoding="utf-8"))
+        installations = existing.get("installations", []) if isinstance(existing, dict) else []
+    except (OSError, ValueError):
+        pass
+    installations = [item for item in installations if isinstance(item, dict)][-49:]
+    installations.append(receipt)
+    temporary_receipt = UPDATER_RECEIPT_PATH.with_name(
+        f".{UPDATER_RECEIPT_PATH.name}.update-{os.getpid()}"
+    )
+    try:
+        temporary_receipt.write_text(
+            json.dumps({"schema": 1, "installations": installations}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        os.chmod(temporary_receipt, 0o640)
+        os.chown(temporary_receipt, uid, gid)
+        os.replace(temporary_receipt, UPDATER_RECEIPT_PATH)
+    finally:
+        temporary_receipt.unlink(missing_ok=True)
+
+    try:
+        STATS_DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(STATS_DATABASE_PATH)) as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS updater_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    commit_hash TEXT NOT NULL,
+                    commit_message TEXT,
+                    commit_date TEXT,
+                    source TEXT NOT NULL,
+                    bundle_path TEXT,
+                    build_output TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
             )
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO updater_versions
-                (commit_hash, commit_message, commit_date, source, bundle_path, build_output)
-            VALUES (?, ?, datetime('now'), 'installer', ?, ?)
-            """,
-            (f"updater-{UPDATER_VERSION}", f"Updater {UPDATER_VERSION}", archive_path().name, f"SHA-256 {checksum}"),
-        )
-        connection.commit()
-    os.chown(database_path, uid, gid)
-    print(f"Recorded Updater {UPDATER_VERSION} installation.", flush=True)
+            if LEGACY_STATS_DATABASE_PATH.is_file():
+                with closing(sqlite3.connect(LEGACY_STATS_DATABASE_PATH)) as legacy:
+                    table_exists = legacy.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'updater_versions'"
+                    ).fetchone()
+                    legacy_rows = legacy.execute(
+                        """
+                        SELECT commit_hash, commit_message, commit_date, source,
+                               bundle_path, build_output, created_at
+                        FROM updater_versions
+                        WHERE source = 'installer'
+                        """
+                    ).fetchall() if table_exists else []
+                for row in legacy_rows:
+                    connection.execute(
+                        """
+                        INSERT INTO updater_versions
+                            (commit_hash, commit_message, commit_date, source,
+                             bundle_path, build_output, created_at)
+                        SELECT ?, ?, ?, ?, ?, ?, ?
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM updater_versions
+                            WHERE commit_hash = ? AND source = ?
+                              AND COALESCE(build_output, '') = COALESCE(?, '')
+                              AND created_at = ?
+                        )
+                        """,
+                        (*row, row[0], row[3], row[5], row[6]),
+                    )
+            connection.execute(
+                """
+                INSERT INTO updater_versions
+                    (commit_hash, commit_message, commit_date, source,
+                     bundle_path, build_output, created_at)
+                VALUES (?, ?, ?, 'installer', ?, ?, ?)
+                """,
+                (f"updater-{release_version}-{dashboard_version}",
+                 f"Updater {release_version} · Dashboard {dashboard_version}",
+                 installed_at, archive_name, f"SHA-256 {checksum}", installed_at),
+            )
+            connection.commit()
+        os.chown(STATS_DATABASE_PATH.parent, uid, gid)
+        os.chown(STATS_DATABASE_PATH, uid, gid)
+    except (OSError, sqlite3.Error) as error:
+        print(f"Warning: SQLite updater history unavailable: {error}", flush=True)
+    print(f"Recorded Updater {release_version}: {archive_name}", flush=True)
 
 
-def wait_for_health() -> None:
-    """Wait briefly for the restarted local API."""
+def wait_for_health(expected_version: str) -> None:
+    """Wait for the restarted API and require the bundled dashboard version."""
     last_error = "no response"
     for _ in range(15):
         try:
-            with urllib.request.urlopen(HEALTH_URL, timeout=2) as response:
-                if response.status == 200:
-                    print(f"Dashboard API is healthy: {HEALTH_URL}", flush=True)
+            with urllib.request.urlopen(VERSION_URL, timeout=2) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                running_version = str(data.get("dashboard_version", ""))
+                if response.status == 200 and running_version == expected_version:
+                    print(
+                        f"Dashboard API is healthy: {HEALTH_URL} "
+                        f"(version {running_version})",
+                        flush=True,
+                    )
                     return
-                last_error = f"HTTP {response.status}"
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+                last_error = (
+                    f"running dashboard version {running_version or 'missing'}; "
+                    f"expected {expected_version}"
+                )
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError) as error:
             last_error = str(error)
         time.sleep(1)
     run(["systemctl", "--no-pager", "--full", "status", SERVICE_NAME], check=False)
@@ -239,13 +392,16 @@ def install() -> None:
         payload_root = Path(temporary)
         extract_payload(payload_root)
         validate_payload(payload_root)
+        expected_version = dashboard_asset_version(payload_root)
+        print(f"Bundled dashboard version: {expected_version}", flush=True)
         run(["systemctl", "stop", SERVICE_NAME], check=False)
         install_payload(payload_root, uid, gid)
-        record_installed_version(uid, gid)
+        verify_installed_payload(payload_root)
+        record_installed_version(uid, gid, expected_version)
     run(["systemctl", "daemon-reload"])
     run(["systemctl", "enable", SERVICE_NAME])
     run(["systemctl", "restart", SERVICE_NAME])
-    wait_for_health()
+    wait_for_health(expected_version)
     if shutil.which("tailscale"):
         run(["tailscale", "serve", "status"], check=False)
     print("Solar Inverter Dashboard update completed successfully.", flush=True)
@@ -256,7 +412,11 @@ def check_bundle() -> None:
         payload_root = Path(temporary)
         extract_payload(payload_root)
         validate_payload(payload_root)
-    print(f"Bundle is valid and contains {len(PAYLOAD_FILES)} application files.")
+        version = dashboard_asset_version(payload_root)
+    print(
+        f"Bundle is valid and contains {len(PAYLOAD_FILES)} application files "
+        f"(dashboard version {version})."
+    )
 
 
 def main() -> int:

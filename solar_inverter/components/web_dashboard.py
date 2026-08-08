@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import csv
 import gzip
 import json
@@ -16,14 +15,12 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from pathlib import Path
-
 from ..services import inverter_service
 from ..services.inverter_service import *
-from ..services.inverter_service_runtime import get_server_logs, get_updater_history
+from ..services.inverter_service_runtime import get_server_logs, get_updater_archive, get_updater_history
 from .api_localization import SUPPORTED_API_LANGUAGES, localize_api_status
 from .api_localization import localize_api_text, register_description, resolve_api_language
 from .dashboard_template import ASSET_VERSION, WEB_DASHBOARD, WEB_ROOT
-
 DASHBOARD_INSTANCE_ID = f"{ASSET_VERSION}-{secrets.token_hex(8)}"
 # Git executable path for Windows
 GIT_PATH = r"C:\Program Files\Git\bin\git.exe"
@@ -38,7 +35,6 @@ def check_git_available() -> tuple[bool, str]:
     if git_path:
         return True, git_path
     return False, "Git not found"
-
 def install_git() -> tuple[bool, str]:
     """Attempt to install git using winget on Windows. Returns (success, message)."""
     try:
@@ -58,37 +54,31 @@ def install_git() -> tuple[bool, str]:
         return False, "Installation timed out"
     except Exception as e:
         return False, f"Installation error: {str(e)}"
-
 DASHBOARD_IMAGE_PATHS = {
     "/assets/generator-mask.png": PROJECT_ROOT / "generator-mask.png",
     "/assets/grid.png": PROJECT_ROOT / "1258380.png",
     "/assets/inverter.svg": PROJECT_ROOT / "inverter.svg",
     "/assets/home.svg": PROJECT_ROOT / "home.svg",
 }
-
 DASHBOARD_STATIC_PATHS = {
     f"/static/{path.relative_to(WEB_ROOT).as_posix()}": path
     for path in WEB_ROOT.rglob("*")
     if path.is_file() and path.name != "index.html"
 }
-
 def web_state(language: str = "uk") -> dict[str, Any]:
     """Return a JSON-safe snapshot for the browser."""
     language = language if language in SUPPORTED_API_LANGUAGES else "uk"
     with state_lock:
         snapshot = dict(state)
         values = dict(state["values"])
-
     battery_current_value: float | None = None
     if 130 in values:
         battery_current_value = normalize(130, values[130])[3]
-
     def battery_power_with_current_direction(value: float | None) -> float | None:
         """Use positive charge and negative discharge consistently for R134."""
         if value is None or battery_current_value is None or abs(battery_current_value) < 0.3:
             return value
         return abs(value) if battery_current_value > 0 else -abs(value)
-
     meters = []
     for register, fallbacks, label, minimum, maximum, unit in METER_DEFINITIONS:
         value, source = meter_value(values, register, fallbacks)
@@ -119,6 +109,7 @@ def web_state(language: str = "uk") -> dict[str, Any]:
     for register in all_registers:
         raw = values.get(register)
         name, scale, unit, signed, group = register_metadata(register)
+        normalized_value = None
         if raw is None:
             display = "—"
         else:
@@ -137,13 +128,13 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             "description_source": register_description(register, name, unit, scale, signed, "uk"),
             "display": localize_api_text(display, language),
             "display_source": display,
+            "value": normalized_value,
             "unit": unit,
             "scale": scale,
             "signed": signed,
             "raw": raw,
             "available": raw is not None,
         })
-
     return {
         "language": language,
         "dashboard_version": ASSET_VERSION,
@@ -348,6 +339,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if request_path == "/api/version":
             body = json.dumps({"dashboard_version": ASSET_VERSION, "dashboard_instance": DASHBOARD_INSTANCE_ID}).encode("utf-8")
             self.send_content(body, "application/json; charset=utf-8")
+            return
+        if request_path == "/api/updater-history/download":
+            archive = get_updater_archive(query.get("file", [""])[0])
+            if archive is None:
+                self.send_content(b"Updater archive not found", "text/plain; charset=utf-8",
+                                  HTTPStatus.NOT_FOUND)
+                return
+            headers = {"Content-Disposition": f'attachment; filename="{archive.name}"'}
+            self.send_content(archive.read_bytes(), "application/vnd.python.pyz",
+                              extra_headers=headers, cache_control="private, no-store")
             return
         if request_path == "/api/state":
             print(f"[Web Dashboard] API /api/state - Serving state snapshot")

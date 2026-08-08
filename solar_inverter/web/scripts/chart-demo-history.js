@@ -5,9 +5,12 @@
       chartDefinitions.forEach(item => {
         const scenarioValue = scenario.values.get(item.register);
         const matchingRegister = demoRegistersByNumber.get(item.register);
-        item.value = Number.isFinite(scenarioValue)
+        const requestedValue = Number.isFinite(scenarioValue)
           ? scenarioValue
           : demoFallbackValue(item, scenario.elapsedSeconds);
+        const demoReading = matchingRegister
+          || demoRegisterReading(item, requestedValue);
+        item.value = demoReading.value;
         item.available = true;
         item.source = `R${item.register} · ${t('demoMode')}`;
         if (matchingRegister) {
@@ -26,12 +29,13 @@
     }
 
     function seedDemoHistory(period = window.chartPeriod || 'realtime') {
-      const windowSeconds = getPeriodWindowSeconds(period);
-      if (period === 'realtime') return;
       const pointCounts = {day: 288, week: 336, month: 360, year: 365};
-      const pointCount = pointCounts[period] || 288;
       const now = Date.now();
       timelineDefinitions().forEach(item => {
+        const itemPeriod = chartPeriodForItem(item, period);
+        if (itemPeriod === 'realtime') return;
+        const windowSeconds = getPeriodWindowSeconds(itemPeriod);
+        const pointCount = pointCounts[itemPeriod] || 288;
         const random = seededDemoRandom((Number(item.register) || 1) * 2654435761 + pointCount);
         const history = [];
         let previousValue = null;
@@ -47,6 +51,7 @@
             value = Math.max(value, previousValue + random() * scale * .01);
           }
           if (item.unit === '%') value = Math.max(0, Math.min(100, value));
+          value = demoRegisterReading(item, value).value;
           history.push({time: now - (windowSeconds - ratio * windowSeconds) * 1000, value});
           previousValue = value;
         }

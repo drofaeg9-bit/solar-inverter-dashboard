@@ -6,6 +6,8 @@
     ];
     let lastData = null;
     let dashboardInstance = window.__INITIAL_STATE__?.dashboard_instance || '';
+    let dashboardVersion = window.__INITIAL_STATE__?.dashboard_version || '';
+    let chartStylesheetPromise = null;
     let dashboardReloadPending = false;
     let chartDemoRunning = false;
     let chartDemoCancelRequested = false;
@@ -16,7 +18,7 @@
     let demoPvPower = 0;
     let currentView = 'dashboard';
     let lcdPageIndex = 0;
-    const lcdInformationPageCount = 26;
+    const lcdInformationPageCount = 10;
     let lcdEnterNotice = false;
     let refreshInFlight = false;
     let refreshTimer = null;
@@ -72,6 +74,14 @@
       return Number.isFinite(parsed) ? parsed : null;
     }
 
+    function registerNumericValue(register) {
+      if (!register || register.available === false) return null;
+      if (typeof register.value === 'number' && Number.isFinite(register.value)) {
+        return register.value;
+      }
+      return numericValue(register.display);
+    }
+
 
 
 
@@ -121,7 +131,7 @@
           shown: shown.length
         });
       document.querySelector('#registers').innerHTML = shown.map(item => {
-        const value = numericValue(item.display);
+        const value = registerNumericValue(item);
         const bmsFormula = item.register === 413 && item.available ? r413BmsFormula(value) : '';
         const displayValue = registerVersionDisplay(item, registers);
         const interpretation = registerInterpretation({...item, versionDisplay: displayValue});
@@ -297,12 +307,14 @@
     }
 
     function reloadDashboardForVersion(data) {
-      if (
-        dashboardReloadPending
-        || !dashboardInstance
-        || !data?.dashboard_instance
-        || data.dashboard_instance === dashboardInstance
-      ) return false;
+      if (dashboardReloadPending || !data) return false;
+      const instanceChanged = Boolean(
+        dashboardInstance && data.dashboard_instance && data.dashboard_instance !== dashboardInstance
+      );
+      const versionChanged = Boolean(
+        dashboardVersion && data.dashboard_version && data.dashboard_version !== dashboardVersion
+      );
+      if (!instanceChanged && !versionChanged) return false;
       dashboardReloadPending = true;
       pageIsActive = false;
       if (refreshTimer !== null) window.clearTimeout(refreshTimer);
@@ -310,7 +322,7 @@
       refreshTimer = null;
       versionCheckTimer = null;
       const nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set('_dashboard', data.dashboard_instance);
+      nextUrl.searchParams.set('_dashboard', data.dashboard_instance || data.dashboard_version);
       window.location.replace(nextUrl.toString());
       return true;
     }
@@ -327,6 +339,7 @@
         const data = await response.json();
         if (reloadDashboardForVersion(data)) return;
         if (data.dashboard_instance) dashboardInstance = data.dashboard_instance;
+        if (data.dashboard_version) dashboardVersion = data.dashboard_version;
       } catch (error) {
         if (error.name !== 'AbortError') console.debug('Dashboard version check failed:', error.message);
       } finally {
@@ -338,8 +351,8 @@
     function scheduleDashboardVersionCheck(delay = null) {
       if (versionCheckTimer !== null) window.clearTimeout(versionCheckTimer);
       versionCheckTimer = null;
-      if (!pageIsActive || dashboardReloadPending) return;
-      versionCheckTimer = window.setTimeout(checkDashboardVersion, delay ?? (document.hidden ? 5000 : 2000));
+      if (!pageIsActive || dashboardReloadPending || !lastData?.paused) return;
+      versionCheckTimer = window.setTimeout(checkDashboardVersion, delay ?? (document.hidden ? 30000 : 5000));
     }
 
     async function refresh() {
@@ -355,6 +368,7 @@
         const data = await response.json();
         if (reloadDashboardForVersion(data)) return;
         if (data.dashboard_instance) dashboardInstance = data.dashboard_instance;
+        if (data.dashboard_version) dashboardVersion = data.dashboard_version;
         lastData = data;
         recordChartSamples(data);
         if (!chartDemoRunning) render(data);
@@ -368,10 +382,13 @@
         refreshInFlight = false;
         refreshController = null;
         if (!lastData?.paused) {
+          if (versionCheckTimer !== null) window.clearTimeout(versionCheckTimer);
+          versionCheckTimer = null;
           scheduleRefresh();
-        } else if (refreshTimer !== null) {
-          window.clearTimeout(refreshTimer);
+        } else {
+          if (refreshTimer !== null) window.clearTimeout(refreshTimer);
           refreshTimer = null;
+          scheduleDashboardVersionCheck();
         }
       }
     }
@@ -399,7 +416,10 @@
         if (refreshTimer !== null) window.clearTimeout(refreshTimer);
         refreshTimer = null;
         refreshController?.abort();
+        scheduleDashboardVersionCheck(0);
       } else {
+        if (versionCheckTimer !== null) window.clearTimeout(versionCheckTimer);
+        versionCheckTimer = null;
         scheduleRefresh(0);
       }
     }
@@ -450,6 +470,25 @@
       return new Promise(resolve => setTimeout(resolve, milliseconds));
     }
 
+    function ensureChartStylesheet() {
+      if (chartStylesheetPromise) return chartStylesheetPromise;
+      const existing = document.querySelector('#uplot-stylesheet');
+      if (existing?.sheet) return Promise.resolve();
+      chartStylesheetPromise = new Promise((resolve, reject) => {
+        const link = existing || document.createElement('link');
+        link.id = 'uplot-stylesheet';
+        link.rel = 'stylesheet';
+        link.href = `/static/vendor/uPlot.min.css?v=${encodeURIComponent(dashboardVersion)}`;
+        link.addEventListener('load', resolve, {once: true});
+        link.addEventListener('error', () => reject(new Error('uPlot CSS')), {once: true});
+        if (!existing) document.head.append(link);
+      }).catch(error => {
+        chartStylesheetPromise = null;
+        throw error;
+      });
+      return chartStylesheetPromise;
+    }
+
     function showView(view) {
       currentView = ['dashboard', 'charts', 'lcd'].includes(view) ? view : 'dashboard';
       document.querySelector('#dashboard-view').hidden = currentView !== 'dashboard';
@@ -462,7 +501,13 @@
         button.tabIndex = active ? 0 : -1;
       });
       if (currentView === 'charts') {
-        scheduleChartsViewRender();
+        void ensureChartStylesheet().then(() => {
+          if (currentView === 'charts') scheduleChartsViewRender();
+        }).catch(error => {
+          const box = document.querySelector('#error');
+          box.textContent = t('connectionLost', {error: error.message});
+          box.classList.add('show');
+        });
       }
       if (currentView === 'lcd' && lastData) {
         renderLcd(lastData, chartDemoRunning && demoRegisterRows ? demoRegisterRows : lastData.registers);

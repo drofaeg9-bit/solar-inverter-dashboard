@@ -237,9 +237,13 @@ class DashboardAssetTests(unittest.TestCase):
 
     def test_timeline_charts_use_local_uplot_and_interactive_modal(self) -> None:
         html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
-        charts = script_source("charts.js", "chart-rendering.js", "chart-demo-history.js")
+        charts = script_source("charts.js", "chart-rendering.js", "chart-demo-history.js", "app.js")
         css = dashboard_css()
         self.assertIn('/static/vendor/uPlot.iife.min.js', html)
+        self.assertNotIn('rel="stylesheet" href="/static/vendor/uPlot.min.css', html)
+        self.assertIn("function ensureChartStylesheet()", charts)
+        self.assertIn("document.head.append(link)", charts)
+        self.assertIn("ensureChartStylesheet().then", charts)
         self.assertIn('id="chart-modal"', html)
         self.assertIn('width: 80vw', css)
         self.assertIn('height: 80vh', css)
@@ -248,8 +252,18 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("176, 177, 178, 179", charts)
         self.assertIn("184, 185, 186, 187", charts)
         self.assertIn("ENERGY_CONSUMPTION_REGISTERS.has(register)", charts)
+        self.assertIn("[184, 'day'], [185, 'month'], [186, 'year']", charts)
+        self.assertIn("function chartPeriodForItem(item", charts)
+        self.assertIn("function synchronizeChartPeriodWithSelection()", charts)
+        self.assertIn("selectedChartPeriodLabel", charts)
+        self.assertIn("trimChartHistory(history, now, item)", charts)
+        self.assertIn("chartPeriodValue", charts)
+        self.assertNotIn("selectedSummary: 'Выбрано значений: {count} · последние 2 минуты'", charts)
         self.assertIn("/^(?:k?wh)$/i.test(unit)", charts)
-        self.assertIn("if (value === null && !timelineCapable) return", charts)
+        self.assertNotIn("if (value === null && !timelineCapable) return", charts)
+        self.assertIn("const matchingItems = timelineDefinitions().filter", charts)
+        self.assertIn("const items = matchingItems;", charts)
+        self.assertIn("if (isTimelineValue(item))", charts)
         self.assertIn("const chartValue = value === null", charts)
         self.assertIn("cursor: {drag: {x: false, y: false, setScale: false}", charts)
         self.assertIn("addEventListener('wheel'", charts)
@@ -349,6 +363,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertEqual(grid_voltage["name"], "Напряжение сети, фаза A")
         self.assertEqual(grid_voltage["name_source"], "Напруга мережі, фаза A")
         self.assertEqual(grid_voltage["group"], "AC")
+        self.assertIsNone(grid_voltage["value"])
         self.assertIn("сырое значение × 0.1 V", grid_voltage["description"])
         bms_state = next(item for item in snapshot["registers"] if item["register"] == 66)
         self.assertIn("0 — поиск", bms_state["description"])
@@ -368,12 +383,16 @@ class DashboardAssetTests(unittest.TestCase):
 
         app = (WEB_ROOT / "scripts" / "app.js").read_text(encoding="utf-8")
         self.assertEqual(app.count("/api/state?lang=${encodeURIComponent(currentLanguage)}"), 2)
-        self.assertIn("data.dashboard_instance === dashboardInstance", app)
+        self.assertIn("data.dashboard_instance !== dashboardInstance", app)
         self.assertIn("function reloadDashboardForVersion(data)", app)
         self.assertIn("fetch(`/api/version?_=${Date.now()}`", app)
-        self.assertIn("nextUrl.searchParams.set('_dashboard', data.dashboard_instance)", app)
+        self.assertIn("nextUrl.searchParams.set('_dashboard', data.dashboard_instance || data.dashboard_version)", app)
         self.assertIn("window.location.replace(nextUrl.toString())", app)
-        self.assertIn("document.hidden ? 5000 : 2000", app)
+        self.assertIn("let dashboardVersion = window.__INITIAL_STATE__?.dashboard_version || ''", app)
+        self.assertIn("const versionChanged = Boolean(", app)
+        self.assertIn("!instanceChanged && !versionChanged", app)
+        self.assertIn("!lastData?.paused", app)
+        self.assertIn("document.hidden ? 30000 : 5000", app)
         self.assertIn("pageIsActive = false", app)
         self.assertIn("item.description || ''", app)
         self.assertIn('class="register-meaning"', app)
@@ -411,16 +430,174 @@ class DashboardAssetTests(unittest.TestCase):
         events = (WEB_ROOT / "scripts" / "app-events.js").read_text(encoding="utf-8")
         installer = (ROOT / "deploy" / "update_bundle_src" / "__main__.py").read_text(encoding="utf-8")
         runtime = (ROOT / "solar_inverter" / "services" / "inverter_service_runtime.py").read_text(encoding="utf-8")
+        server_source = (ROOT / "solar_inverter" / "components" / "web_dashboard.py").read_text(encoding="utf-8")
         self.assertIn('id="updater-history-button"', html)
         self.assertIn('id="updater-history-picker"', html)
         self.assertNotIn("github.com", html.lower())
         self.assertIn("fetch('/api/updater-history'", events)
         self.assertIn('UPDATER_VERSION = "4"', installer)
         self.assertIn("'installer'", installer)
+        self.assertIn('STATS_DATABASE_PATH = Path("/var/lib/solar-inverter-dashboard/stats.sqlite3")', installer)
+        self.assertIn('LEGACY_STATS_DATABASE_PATH = APPLICATION_ROOT / "solar_invertor_web_stats.sqlite3"', installer)
+        self.assertIn('UPDATER_RECEIPT_PATH = APPLICATION_ROOT / "updater_history.json"', installer)
+        self.assertIn('UPDATER_ARCHIVE_DIR = APPLICATION_ROOT / "updater_archives"', installer)
+        self.assertIn("def next_updater_version() -> int:", installer)
+        self.assertIn("base_version + len(checksums)", installer)
+        self.assertIn("legacy_rows", installer)
+        self.assertIn("WHERE NOT EXISTS", installer)
+        self.assertIn('UPDATER_RECEIPT_PATH = PROJECT_ROOT / "updater_history.json"', runtime)
+        self.assertIn('VERSION_URL = "http://127.0.0.1:8080/api/version"', installer)
+        self.assertIn("def dashboard_asset_version(payload_root: Path) -> str:", installer)
+        self.assertIn("def verify_installed_payload(payload_root: Path) -> None:", installer)
+        self.assertIn("def wait_for_health(expected_version: str) -> None:", installer)
+        self.assertIn("running_version == expected_version", installer)
+        self.assertIn("wait_for_health(expected_version)", installer)
+        self.assertIn('request_path == "/api/updater-history/download"', server_source)
+        self.assertIn('"Content-Disposition"', server_source)
+        self.assertIn("encodeURIComponent(item.archive_file)", events)
+        self.assertIn("receipt.get(\"installations\", [])", runtime)
         self.assertIn("WHERE source = 'installer'", runtime)
 
+    def test_installer_migrates_history_to_the_service_database(self) -> None:
+        import sqlite3
+        import tempfile
+        import os
+        from contextlib import closing
+        from types import SimpleNamespace
+
+        installer = runpy.run_path(str(ROOT / "deploy" / "update_bundle_src" / "__main__.py"))
+        record = installer["record_installed_version"]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legacy_path = root / "opt" / "solar_invertor_web_stats.sqlite3"
+            service_path = root / "var" / "stats.sqlite3"
+            receipt_path = root / "opt" / "updater_history.json"
+            archive_dir = root / "opt" / "updater_archives"
+            bundle_path = root / "solar-dashboard-update.pyz"
+            legacy_path.parent.mkdir(parents=True)
+            bundle_path.write_bytes(b"updater-four-test")
+            with closing(sqlite3.connect(legacy_path)) as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE updater_versions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        commit_hash TEXT NOT NULL, commit_message TEXT,
+                        commit_date TEXT, source TEXT NOT NULL,
+                        bundle_path TEXT, build_output TEXT,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO updater_versions
+                        (commit_hash, commit_message, commit_date, source,
+                         bundle_path, build_output, created_at)
+                    VALUES ('updater-4', 'Updater 4', '2026-08-08 12:00:00',
+                            'installer', 'old.pyz', 'SHA-256 OLD', '2026-08-08 12:00:00')
+                    """
+                )
+                connection.commit()
+            record.__globals__.update({
+                "STATS_DATABASE_PATH": service_path,
+                "LEGACY_STATS_DATABASE_PATH": legacy_path,
+                "UPDATER_RECEIPT_PATH": receipt_path,
+                "UPDATER_ARCHIVE_DIR": archive_dir,
+                "archive_path": lambda: bundle_path,
+                "os": SimpleNamespace(
+                    getpid=os.getpid, chmod=os.chmod, chown=lambda *_: None,
+                    replace=os.replace,
+                ),
+            })
+            record(1000, 1000, "abc123def456")
+            with closing(sqlite3.connect(service_path)) as connection:
+                rows = connection.execute(
+                    "SELECT commit_hash, source, build_output FROM updater_versions ORDER BY id"
+                ).fetchall()
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            archive_exists = (archive_dir / "solar-dashboard-updater-4-abc123def456.pyz").is_file()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0], ("updater-4", "installer", "SHA-256 OLD"))
+        self.assertEqual(rows[1][0:2], ("updater-4-abc123def456", "installer"))
+        self.assertRegex(rows[1][2], r"^SHA-256 [0-9A-F]{64}$")
+        self.assertEqual(receipt["schema"], 1)
+        self.assertEqual(receipt["installations"][0]["version"], "4")
+        self.assertEqual(receipt["installations"][0]["dashboard_version"], "abc123def456")
+        self.assertEqual(receipt["installations"][0]["checksum"], rows[1][2])
+        self.assertTrue(archive_exists)
+
+    def test_updater_history_uses_receipt_when_sqlite_history_is_missing(self) -> None:
+        import tempfile
+        from solar_inverter.services.inverter_service_runtime import get_updater_history
+
+        globals_ = get_updater_history.__globals__
+        original_database = globals_["STATS_DB_PATH"]
+        original_receipt = globals_["UPDATER_RECEIPT_PATH"]
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                receipt_path = root / "updater_history.json"
+                receipt_path.write_text(json.dumps({
+                    "schema": 1,
+                    "installations": [{
+                        "version": "4", "checksum": "SHA-256 RECEIPT",
+                        "installed_at": "2026-08-08 14:00:00",
+                    }],
+                }), encoding="utf-8")
+                globals_["STATS_DB_PATH"] = root / "empty.sqlite3"
+                globals_["UPDATER_RECEIPT_PATH"] = receipt_path
+                history = get_updater_history()
+        finally:
+            globals_["STATS_DB_PATH"] = original_database
+            globals_["UPDATER_RECEIPT_PATH"] = original_receipt
+        self.assertEqual(history, [{
+            "id": "receipt-0", "version": "4",
+            "dashboard_version": "",
+            "checksum": "SHA-256 RECEIPT", "installed_at": "2026-08-08 14:00:00",
+            "archive_file": "", "download_available": False,
+        }])
+
+    def test_updater_history_numbers_releases_and_exposes_archived_bundle(self) -> None:
+        import tempfile
+        from solar_inverter.services.inverter_service_runtime import get_updater_archive, get_updater_history
+
+        globals_ = get_updater_history.__globals__
+        originals = {name: globals_[name] for name in (
+            "STATS_DB_PATH", "UPDATER_RECEIPT_PATH", "UPDATER_ARCHIVE_DIR",
+        )}
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                archive_dir = root / "updater_archives"
+                archive_dir.mkdir()
+                archive_name = "solar-dashboard-updater-6-newbuild.pyz"
+                (archive_dir / archive_name).write_bytes(b"latest updater")
+                receipt_path = root / "updater_history.json"
+                receipt_path.write_text(json.dumps({"installations": [
+                    {"version": "4", "checksum": "SHA-256 A", "installed_at": "2026-08-08 14:00:00"},
+                    {"version": "4", "checksum": "SHA-256 B", "installed_at": "2026-08-08 15:00:00"},
+                    {"version": "6", "dashboard_version": "newbuild", "checksum": "SHA-256 C",
+                     "installed_at": "2026-08-08 16:00:00", "bundle": archive_name},
+                ]}), encoding="utf-8")
+                globals_.update({
+                    "STATS_DB_PATH": root / "empty.sqlite3",
+                    "UPDATER_RECEIPT_PATH": receipt_path,
+                    "UPDATER_ARCHIVE_DIR": archive_dir,
+                })
+                history = get_updater_history()
+                downloadable = get_updater_archive(archive_name)
+                traversal = get_updater_archive("../" + archive_name)
+        finally:
+            globals_.update(originals)
+        self.assertEqual([item["version"] for item in history], ["6", "5", "4"])
+        self.assertTrue(history[0]["download_available"])
+        self.assertEqual(history[0]["archive_file"], archive_name)
+        self.assertFalse(history[1]["download_available"])
+        self.assertEqual(downloadable, archive_dir / archive_name)
+        self.assertIsNone(traversal)
+
     def test_register_metadata_matches_ttn_v131_units_and_scaling(self) -> None:
-        from solar_inverter.services.inverter_service_core import REGISTER_CONFIG
+        from solar_inverter.services.inverter_service_core import REGISTER_CONFIG, normalize
 
         expected = {
             84: (1.0, "W", False),
@@ -443,6 +620,10 @@ class DashboardAssetTests(unittest.TestCase):
         for register, metadata in expected.items():
             with self.subTest(register=register):
                 self.assertEqual(REGISTER_CONFIG[register][1:4], metadata)
+        self.assertEqual(normalize(81, 2300)[3], 230.0)
+        self.assertEqual(normalize(82, 1235)[3], 12.35)
+        self.assertEqual(normalize(95, 65536 - 123)[3], -123.0)
+        self.assertEqual(normalize(130, 65536 - 180)[3], 18.0)
 
     def test_build_and_installer_payload_manifests_match(self) -> None:
         build = runpy.run_path(str(ROOT / "deploy" / "build_update_bundle.py"))
@@ -477,6 +658,47 @@ class DashboardAssetTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is required for JavaScript renderer tests")
 class DashboardRendererTests(unittest.TestCase):
+    def test_demo_register_values_round_trip_like_live_v131_values(self) -> None:
+        chart_path = WEB_ROOT / "scripts" / "charts.js"
+        probe = textwrap.dedent(
+            """
+            const fs = require('fs');
+            const source = fs.readFileSync(process.argv[1], 'utf8');
+            const start = source.indexOf('function demoRawValue');
+            const end = source.indexOf('function continuousDemoChartValue', start);
+            eval(source.slice(start, end));
+            const samples = [
+              {register:81, scale:.1, signed:false, requested:230.04},
+              {register:82, scale:.01, signed:false, requested:12.345},
+              {register:95, scale:1, signed:true, requested:-123},
+              {register:130, scale:.1, signed:true, requested:18.04},
+              {register:130, scale:.1, signed:true, requested:-18.04},
+              {register:134, scale:1, signed:false, requested:-936},
+              {register:67, scale:1, signed:false, requested:4.7},
+              {register:94, scale:.1, signed:false, requested:24.94}
+            ];
+            console.log(JSON.stringify(samples.map(item => demoRegisterReading(item, item.requested))));
+            """
+        )
+        result = subprocess.run(
+            [shutil.which("node") or "node", "-e", probe, str(chart_path)],
+            check=True, capture_output=True, text=True,
+        )
+        readings = json.loads(result.stdout)
+        self.assertEqual(readings, [
+            {"raw": 2300, "value": 230, "display": "230.0", "available": True},
+            {"raw": 1235, "value": 12.35, "display": "12.35", "available": True},
+            {"raw": 65413, "value": -123, "display": "-123", "available": True},
+            {"raw": 65356, "value": 18, "display": "18.0", "available": True},
+            {"raw": 180, "value": -18, "display": "-18.0", "available": True},
+            {"raw": 936, "value": -936, "display": "-936", "available": True},
+            {"raw": 5, "value": 5, "display": "5", "available": True},
+            {"raw": 249, "value": 24.9, "display": "24.9", "available": True},
+        ])
+        browser_source = script_source("app.js", "charts.js", "energy-flow.js", "lcd.js")
+        self.assertIn("function registerNumericValue(register)", browser_source)
+        self.assertGreaterEqual(browser_source.count("registerNumericValue("), 18)
+
     def test_all_tabs_use_complete_translation_catalogs(self) -> None:
         translation_path = WEB_ROOT / "scripts" / "translations.js"
         probe = textwrap.dedent(
@@ -538,7 +760,7 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("second / 120 * 100", chart_source)
         self.assertIn("[801, fanSpeed]", chart_source)
         self.assertIn("renderEnergyFlow(lastData, demoRegisterRows)", chart_source)
-        self.assertIn("const demoFanSpeed = Number(scenario.values.get(801))", chart_source)
+        self.assertIn("const demoFanSpeed = registerNumericValue(demoRowsByNumber.get(801))", chart_source)
         self.assertIn("updateInverterFanAnimation(", chart_source)
         self.assertIn("function synchronizeDemoChartDefinitions(scenario)", chart_source)
         self.assertIn("item.displayValue = registerVersionDisplay(matchingRegister", chart_source)
@@ -588,12 +810,76 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("left: 50%; right: auto; top: 64%; width: 48%; row-gap: 8px", css_source)
         self.assertIn("transform: translateY(-10px)", css_source)
         self.assertIn("transform: translate(-50%,-50%)", css_source)
+
+    def test_lcd_information_pages_use_only_explicit_v131_registers(self) -> None:
+        lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
+        translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
+        css_source = "\n".join(
+            path.read_text(encoding="utf-8") for path in (WEB_ROOT / "styles").glob("*.css")
+        )
+        expected = {
+            1: (157,), 2: (158,), 3: (137, 138), 4: (140, 139),
+            5: (409, 408), 6: (411, 415), 7: (413, 412),
+            8: (17, 18, 27, 28), 9: (161, 95), 10: (159, 160),
+        }
+        for page, registers in expected.items():
+            start = lcd.index(f"code: 'P{page}'")
+            end_marker = f"code: 'P{page + 1}'" if page < 10 else "code: 'P11'"
+            end = lcd.index(end_marker, start)
+            block = lcd[start:end]
+            for register in registers:
+                self.assertRegex(block, rf"(?:numberValue\(\[{register}\]\)|registerLabel\([^\n]*\b{register}\b|versionValue\([^\n]*\b{register}\b|interpretedValue\([^\n]*\b{register}\b)")
+        self.assertIn("registerLabel(157, t('dailyPvEnergy'))", lcd)
+        self.assertNotIn("registerLabel(403, t('bmsConnection'))", lcd[lcd.index("code: 'P1'"):lcd.index("code: 'P11'")])
+        self.assertIn("].slice(0, 11);", lcd)
+        app = (WEB_ROOT / "scripts" / "app.js").read_text(encoding="utf-8")
+        runtime = (ROOT / "solar_inverter" / "services" / "inverter_service_runtime.py").read_text(encoding="utf-8")
+        self.assertIn("const lcdInformationPageCount = 10", app)
+        self.assertIn('re.fullmatch(r"P(?:[1-9]|10)", clean_page)', runtime)
+        self.assertNotRegex(lcd + translations, r"(?i)local(?:ьной|ьної)? SQLite")
         self.assertIn("justify-items: center; color: #fff; text-align: center", css_source)
         self.assertIn("display: grid; place-items: center; width: 100%; gap: 0", css_source)
         self.assertIn("color: #fff; font-size: 18px; font-weight: 950", css_source)
         self.assertIn("justify-items: center; text-align: center; font-size: 14px", css_source)
         self.assertIn(".lcd-readouts { grid-template-columns: repeat(2,minmax(0,1fr))", css_source)
         self.assertIn(".gauge-picker { width: calc(100% - 16px)", css_source)
+
+    def test_lcd_main_screen_matches_device_layout_and_live_v131_values(self) -> None:
+        html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+        lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
+        css_source = dashboard_css()
+        for element_id in (
+            "lcd-device-display", "lcd-battery-voltage", "lcd-charge-voltage",
+            "lcd-battery-current", "lcd-soc", "lcd-grid-voltage", "lcd-frequency",
+            "lcd-ac2-voltage", "lcd-ac2-frequency", "lcd-output-voltage",
+            "lcd-output-frequency", "lcd-pv-voltage", "lcd-pv-current",
+            "lcd-pv-power", "lcd-pv-day-energy",
+        ):
+            self.assertIn(f'id="{element_id}"', html)
+        self.assertIn("container-type: inline-size; width: 100%; min-width: 0; aspect-ratio: 1.65", css_source)
+        self.assertIn(".lcd-battery-scale", css_source)
+        for symbol_id in (
+            "lcd-icon-source-square", "lcd-icon-source-wide", "lcd-icon-arrow-long",
+            "lcd-icon-arrow-compact", "lcd-icon-solar", "lcd-icon-sun",
+            "lcd-icon-battery-vertical", "lcd-icon-battery-horizontal",
+        ):
+            self.assertIn(f'id="{symbol_id}"', html)
+        self.assertIn(".lcd-battery-level-fill", css_source)
+        self.assertIn(".lcd-digits-extra-long", css_source)
+        self.assertIn("width: 19%; gap: .55cqw; overflow: hidden", css_source)
+        self.assertIn(".lcd-panel { width: 100%; min-width: 0", css_source)
+        self.assertIn("displayValue.length >= 8", lcd)
+        self.assertIn(".lcd-column-input", css_source)
+        self.assertIn(".lcd-column-output", css_source)
+        self.assertIn(".lcd-column-pv", css_source)
+        self.assertIn("const outputVoltage = numberValue([89, 537])", lcd)
+        self.assertIn("const outputFrequency = numberValue([91, 538])", lcd)
+        self.assertIn("const pvVoltage = numberValue([151, 154])", lcd)
+        self.assertIn("const pvCurrent = sumValues([152, 155])", lcd)
+        self.assertIn("const pvPower = numberValue([161]) ?? sumValues([153, 156])", lcd)
+        self.assertIn("const dailyPvEnergy = numberValue([157])", lcd)
+        self.assertIn("setMeasure('#lcd-pv-day-energy', dailyPvEnergy)", lcd)
+        self.assertIn("--lcd-soc", lcd)
 
     def test_fan_animation_keeps_one_timeline_across_data_updates(self) -> None:
         flow_path = WEB_ROOT / "scripts" / "energy-flow.js"

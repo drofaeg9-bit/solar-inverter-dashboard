@@ -8,6 +8,8 @@ from .inverter_service_core import *
 # Log buffer for UI display
 log_buffer = io.StringIO()
 log_buffer_lock = threading.Lock()
+UPDATER_RECEIPT_PATH = PROJECT_ROOT / "updater_history.json"
+UPDATER_ARCHIVE_DIR = PROJECT_ROOT / "updater_archives"
 
 class LogCapture:
     """Capture print() output to a buffer for UI display."""
@@ -441,7 +443,7 @@ def record_demo_lcd_key(
     if clean_key not in {"escape", "up", "down", "enter"}:
         raise ValueError("invalid LCD key")
     clean_page = page.strip().upper()
-    if clean_page != "LCD" and re.fullmatch(r"P(?:[1-9]|1\d|2[0-6])", clean_page) is None:
+    if clean_page != "LCD" and re.fullmatch(r"P(?:[1-9]|10)", clean_page) is None:
         raise ValueError("invalid LCD page")
     clean_demo_case = demo_case.strip()
     if re.fullmatch(r"[A-Za-z0-9_-]{1,80}", clean_demo_case) is None:
@@ -788,31 +790,76 @@ def record_updater_version(commit_hash: str, commit_message: str, commit_date: s
 
 
 def get_updater_history() -> list:
-    """Get locally installed updater versions without Git metadata."""
+    """Get installer receipts, merging SQLite and the durable local receipt."""
     global stats_error
+    history = []
     try:
         with stats_lock, closing(sqlite3.connect(STATS_DB_PATH)) as connection:
             rows = connection.execute(
                 """
-                SELECT id, commit_hash, build_output, created_at
+                SELECT id, commit_hash, build_output, created_at, bundle_path
                 FROM updater_versions
                 WHERE source = 'installer'
                 ORDER BY created_at DESC
                 """
             ).fetchall()
-        stats_error = ""
-        return [
-            {
+        for row in rows:
+            version_parts = row[1].removeprefix("updater-").split("-", 1)
+            history.append({
                 "id": row[0],
-                "version": row[1].removeprefix("updater-"),
+                "version": version_parts[0],
+                "dashboard_version": version_parts[1] if len(version_parts) > 1 else "",
                 "checksum": row[2],
                 "installed_at": row[3],
-            }
-            for row in rows
-        ]
+                "archive_file": Path(row[4]).name if row[4] else "",
+            })
+        stats_error = ""
     except (OSError, sqlite3.Error) as error:
         stats_error = str(error)
-        return []
+    try:
+        receipt = json.loads(UPDATER_RECEIPT_PATH.read_text(encoding="utf-8"))
+        installations = receipt.get("installations", []) if isinstance(receipt, dict) else []
+        history.extend(
+            {
+                "id": f"receipt-{index}",
+                "version": str(item.get("version", "4")),
+                "dashboard_version": str(item.get("dashboard_version", "")),
+                "checksum": str(item.get("checksum", "")),
+                "installed_at": str(item.get("installed_at", "")),
+                "archive_file": Path(str(item.get("bundle", ""))).name,
+            }
+            for index, item in enumerate(installations)
+            if isinstance(item, dict) and item.get("installed_at")
+        )
+    except (OSError, ValueError):
+        pass
+    unique = {}
+    for item in sorted(history, key=lambda entry: entry["installed_at"], reverse=True):
+        unique.setdefault((item["version"], item["checksum"]), item)
+    entries = list(unique.values())
+    for index, item in enumerate(reversed(entries), start=4):
+        item["version"] = str(index)
+    for item in entries:
+        archive_file = item.get("archive_file", "")
+        item["download_available"] = bool(
+            archive_file
+            and archive_file == Path(archive_file).name
+            and (UPDATER_ARCHIVE_DIR / archive_file).is_file()
+        )
+    return entries
+
+
+def get_updater_archive(archive_file: str) -> Path | None:
+    """Resolve only an archive currently advertised by updater history."""
+    if not archive_file or archive_file != Path(archive_file).name:
+        return None
+    if not any(
+        item.get("archive_file") == archive_file and item.get("download_available")
+        for item in get_updater_history()
+    ):
+        return None
+    archive_path = UPDATER_ARCHIVE_DIR / archive_file
+    return archive_path if archive_path.is_file() else None
 
 
 def visitor_was_counted(cookie_header: str) -> bool:

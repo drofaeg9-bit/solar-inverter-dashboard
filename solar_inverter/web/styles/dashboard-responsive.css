@@ -242,6 +242,8 @@
       input, select, button, .chip { min-height: 44px }
     }
     @media (max-width: 390px) {
+      .lcd-panel { padding: 8px }
+      .lcd-screen { padding: 6px; border-width: 4px; border-radius: 12px }
       .header-actions { grid-template-columns: 1fr }
       .theme-switch, .status { justify-self: stretch }
       .status { justify-content: flex-start }

@@ -452,7 +452,9 @@
       if (!item || !dialog) return;
       modalChartKey = key;
       document.querySelector('#chart-modal-title').textContent = item.label;
-      document.querySelector('#chart-modal-detail').textContent = item.detail;
+      const period = chartPeriodLabel(chartPeriodForItem(item));
+      document.querySelector('#chart-modal-detail').textContent =
+        `${item.detail} · ${t('chartPeriodValue', {period})}`;
       modalChartPlot?.destroy();
       modalChartPlot = null;
       if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');

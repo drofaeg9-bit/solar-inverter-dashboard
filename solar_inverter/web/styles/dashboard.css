@@ -689,13 +689,69 @@
       box-shadow: 0 12px 36px rgba(0,0,0,.3); transform: translateX(-50%);
     }
     .error.show { display: block }
-    .lcd-panel { max-width: 1080px; margin: 0 auto }
+    .lcd-panel { width: 100%; min-width: 0; max-width: 1080px; margin: 0 auto }
     .lcd-screen {
-      overflow: hidden; padding: clamp(16px, 3vw, 32px); border: 8px solid #263238;
+      width: 100%; min-width: 0; overflow: hidden; padding: clamp(16px, 3vw, 32px); border: 8px solid #263238;
       border-radius: 22px; color: #10241d; background: linear-gradient(145deg, #c9e3c4, #a9caa7);
       box-shadow: inset 0 0 35px rgba(24,54,40,.2), 0 22px 65px rgba(0,0,0,.35);
       font-family: "Courier New", ui-monospace, monospace; font-variant-numeric: tabular-nums;
     }
+    .lcd-device-display {
+      position: relative; isolation: isolate; container-type: inline-size; width: 100%; min-width: 0; aspect-ratio: 1.65;
+      overflow: hidden; border: 2px solid #424741; border-radius: 8px; color: #171a17;
+      background: linear-gradient(150deg,#f5f6ef,#e6ebe2); box-shadow: inset 0 0 18px rgba(35,45,35,.12);
+      font-family: "Arial Narrow","Courier New",ui-monospace,monospace; font-weight: 900;
+    }
+    .lcd-icon-definitions { position: absolute; width: 0; height: 0; overflow: hidden }
+    .lcd-icon { display: block; overflow: visible; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round }
+    .lcd-icon-solid { fill: currentColor; stroke: none }
+    .lcd-device-mode { position: absolute; z-index: 4; top: 2%; right: 2%; font-size: 1.7cqw; opacity: .58; text-transform: uppercase }
+    .lcd-battery-source { position: absolute; top: 18%; left: 3%; display: flex; align-items: center; width: 19%; gap: .55cqw; overflow: hidden }
+    .lcd-source-grid { flex: 0 0 3.4cqw; width: 3.4cqw; height: 3.4cqw }
+    .lcd-source-plus { position: relative; flex: 0 0 1.4cqw; width: 1.4cqw; height: 1.4cqw }
+    .lcd-source-plus::before, .lcd-source-plus::after { content: ""; position: absolute; background: currentColor }
+    .lcd-source-plus::before { left: 0; right: 0; top: 43%; height: .35cqw }
+    .lcd-source-plus::after { top: 0; bottom: 0; left: 43%; width: .35cqw }
+    .lcd-source-sun { flex: 0 0 3cqw; width: 3cqw; height: 3cqw }
+    .lcd-source-arrow { flex: 0 0 3.8cqw; width: 3.8cqw; height: 2.2cqw }
+    .lcd-battery-mini { flex: 0 0 3.7cqw; width: 3.7cqw; height: 2.5cqw }
+    .lcd-battery-top { position: absolute; top: 4%; left: 24%; width: 37%; height: 23%; text-align: center; border-top: .8cqw solid; border-bottom: .45cqw solid }
+    .lcd-battery-top::before, .lcd-battery-top::after { content: ""; position: absolute; top: -.8cqw; width: 5cqw; height: .8cqw; background: currentColor; transform: skewX(-42deg) }
+    .lcd-battery-top::before { left: -2cqw } .lcd-battery-top::after { right: -2cqw; transform: skewX(42deg) }
+    .lcd-tag { position: absolute; left: 1cqw; bottom: .6cqw; padding: .1cqw .6cqw; color: #eef2e9; background: #171a17; font-size: 1.7cqw; line-height: 1.3 }
+    .lcd-measure { display: flex; align-items: baseline; justify-content: center; max-width: 100%; gap: .45cqw; white-space: nowrap }
+    .lcd-digits { display: inline-block; min-width: 0; max-width: 100%; letter-spacing: -.11em; line-height: .88 }
+    .lcd-digits-long { font-size: .84em }
+    .lcd-digits-extra-long { font-size: .68em }
+    .lcd-unit { font-family: Arial,sans-serif; font-size: .32em; font-weight: 950; letter-spacing: 0 }
+    .lcd-battery-main { height: 100%; font-size: 11cqw }
+    .lcd-battery-side { position: absolute; top: 4%; left: 62%; width: 22%; display: grid; justify-items: center; gap: .4cqw; overflow: hidden; font-size: 5.2cqw }
+    .lcd-state-caption { max-width: 100%; overflow: hidden; font: 950 1.5cqw/1 Arial,sans-serif; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap }
+    .lcd-battery-scale { position: absolute; top: 29%; left: 24%; width: 39%; height: 7%; display: grid; grid-template-columns: repeat(4,1fr) 3.3cqw 5cqw; align-items: center; gap: .35cqw; font: 950 1.7cqw/1 Arial,sans-serif; text-align: center }
+    .lcd-battery-scale > span { padding: .45cqw .2cqw; color: #eef2e9; background: #171a17; clip-path: polygon(0 0,85% 0,100% 100%,12% 100%) }
+    .lcd-battery-level-icon { width: 3.3cqw; height: 4.9cqw }
+    .lcd-battery-level-fill { fill: currentColor; stroke: none; transform: scaleY(var(--lcd-soc-scale,0)); transform-box: fill-box; transform-origin: center bottom }
+    .lcd-battery-scale em { font-style: normal; font-size: 2cqw }
+    .lcd-power-path { position: absolute; z-index: 0; top: 41%; left: 10%; width: 80%; height: 14%; border-top: .35cqw solid; opacity: .75 }
+    .lcd-power-path::before, .lcd-power-path::after { content: ""; position: absolute; top: -.35cqw; height: 7cqw; border-left: .35cqw solid }
+    .lcd-power-path::before { left: 26% } .lcd-power-path::after { left: 65% }
+    .lcd-power-path .lcd-icon { position: absolute; top: -1.5cqw; width: 3.5cqw; height: 2.5cqw }
+    .lcd-path-left { left: 27% } .lcd-path-mid { left: 65% }
+    .lcd-column { position: absolute; z-index: 1; top: 43%; bottom: 6%; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-width: 0; gap: .3cqw; overflow: hidden; opacity: .52; text-align: center }
+    .lcd-column.active { opacity: 1 }
+    .lcd-column strong { display: block; width: 100%; overflow: hidden; font: 950 1.7cqw/1 Arial,sans-serif; text-overflow: ellipsis; white-space: nowrap }
+    .lcd-column .lcd-measure { font-size: 4.6cqw; line-height: .9 }
+    .lcd-column .lcd-measure-large { margin-top: .3cqw; font-size: 8.3cqw }
+    .lcd-column-icon { flex: 0 0 4.6cqw; width: 5.2cqw; height: 4.6cqw }
+    .lcd-column-input { left: 2%; width: 29% }
+    .lcd-column-output { left: 35%; width: 30% }
+    .lcd-column-pv { right: 2%; width: 29% }
+    .lcd-solar-panel { width: 5.2cqw }
+    .lcd-output-arrow { width: 3.6cqw; height: 2.5cqw; margin-top: 1cqw; opacity: .3 }
+    .lcd-output-arrow.active { opacity: 1; animation: lcd-pulse 1.2s ease-in-out infinite }
+    .lcd-day-energy { position: absolute; bottom: 1.5%; left: 50%; display: flex; align-items: center; justify-content: center; width: 31%; gap: 1.4cqw; overflow: hidden; font-size: 4.5cqw; transform: translateX(-50%) }
+    .lcd-day-energy > span:first-child { padding: .15cqw .8cqw; color: #eef2e9; background: #171a17; font: 950 1.7cqw/1.2 Arial,sans-serif }
+    .lcd-hidden-values { display: none }
     .lcd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 2px solid rgba(16,36,29,.25) }
     .lcd-head h2 { font: 900 clamp(18px,3vw,28px)/1.1 inherit; letter-spacing: .08em }
     .lcd-subtitle { margin-top: 4px; opacity: .68; font-size: 12px }
@@ -811,6 +867,11 @@
     .updater-history-item strong { color: var(--accent); font-size: 15px }
     .updater-history-item span { color: var(--text); font-size: 12px }
     .updater-history-item small { color: var(--muted); overflow-wrap: anywhere }
+    .updater-history-download {
+      justify-self: start; margin-top: 3px; padding: 6px 10px; border: 1px solid var(--ui-border);
+      border-radius: 8px; color: var(--accent); background: var(--control); text-decoration: none; font-size: 12px;
+    }
+    .updater-history-download[aria-disabled="true"] { color: var(--muted); opacity: .65; pointer-events: none }
     .chart-empty {
       display: grid; place-items: center; min-height: 340px; color: var(--muted);
       border: 1px dashed rgba(148,163,184,.22); border-radius: 18px; text-align: center; padding: 24px;

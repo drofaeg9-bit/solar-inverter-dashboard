@@ -75,13 +75,13 @@
         .find(register => register?.available);
       const numberValue = numbers => {
         const register = firstRegister(numbers);
-        return register ? numericValue(register.display) : null;
+        return registerNumericValue(register);
       };
       const summedValue = numbers => {
         const values = numbers
           .map(number => byNumber.get(number))
           .filter(register => register?.available)
-          .map(register => numericValue(register.display))
+          .map(register => registerNumericValue(register))
           .filter(Number.isFinite);
         return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
       };
@@ -188,12 +188,12 @@
       const inverterAcModeSource = firstRegister([530, 321, 16644]);
       const inverterChargeModeSource = firstRegister([324, 16645]);
       const inverterStateSource = firstRegister([325, 67]);
-      const gridVoltage = gridVoltageSource ? numericValue(gridVoltageSource.display) : null;
-      const measuredGridCurrent = gridCurrentSource ? numericValue(gridCurrentSource.display) : null;
-      const measuredGridPower = gridPowerSource ? numericValue(gridPowerSource.display) : null;
-      const measuredGeneratorVoltage = generatorVoltageSource ? numericValue(generatorVoltageSource.display) : null;
-      const measuredGeneratorCurrent = generatorCurrentSource ? numericValue(generatorCurrentSource.display) : null;
-      const measuredGeneratorPower = generatorPowerSource ? numericValue(generatorPowerSource.display) : null;
+      const gridVoltage = registerNumericValue(gridVoltageSource);
+      const measuredGridCurrent = registerNumericValue(gridCurrentSource);
+      const measuredGridPower = registerNumericValue(gridPowerSource);
+      const measuredGeneratorVoltage = registerNumericValue(generatorVoltageSource);
+      const measuredGeneratorCurrent = registerNumericValue(generatorCurrentSource);
+      const measuredGeneratorPower = registerNumericValue(generatorPowerSource);
       const pvVoltage = chartDemoRunning && Number.isFinite(demoPvVoltage)
         ? demoPvVoltage
         : numberValue([151, 154]);
@@ -206,17 +206,17 @@
         : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .1 && Number.isFinite(pvPower)
           ? Math.abs(pvPower / pvVoltage)
           : null;
-      const loadPowerReading = loadPowerSource ? numericValue(loadPowerSource.display) : null;
+      const loadPowerReading = registerNumericValue(loadPowerSource);
       const measuredLoadPower = Number.isFinite(loadPowerReading) ? loadPowerReading : null;
-      const inverterLoad = inverterLoadSource ? numericValue(inverterLoadSource.display) : null;
-      const inverterFanSpeed = inverterFanSpeedSource ? numericValue(inverterFanSpeedSource.display) : null;
-      const outputVoltage = outputVoltageSource ? numericValue(outputVoltageSource.display) : null;
-      const outputCurrent = outputCurrentSource ? numericValue(outputCurrentSource.display) : null;
-      const batteryVoltage = batteryVoltageSource ? numericValue(batteryVoltageSource.display) : null;
-      const batteryCurrentReading = batteryCurrentSource ? numericValue(batteryCurrentSource.display) : null;
+      const inverterLoad = registerNumericValue(inverterLoadSource);
+      const inverterFanSpeed = registerNumericValue(inverterFanSpeedSource);
+      const outputVoltage = registerNumericValue(outputVoltageSource);
+      const outputCurrent = registerNumericValue(outputCurrentSource);
+      const batteryVoltage = registerNumericValue(batteryVoltageSource);
+      const batteryCurrentReading = registerNumericValue(batteryCurrentSource);
       const batteryCurrent = Number.isFinite(batteryCurrentReading) ? batteryCurrentReading : null;
-      const batterySoc = batterySocSource ? numericValue(batterySocSource.display) : null;
-      const batteryPowerReading = batteryPowerSource ? numericValue(batteryPowerSource.display) : null;
+      const batterySoc = registerNumericValue(batterySocSource);
+      const batteryPowerReading = registerNumericValue(batteryPowerSource);
       const calculatedBatteryPower = Number.isFinite(batteryVoltage) && Number.isFinite(batteryCurrent)
         ? batteryVoltage * batteryCurrent
         : null;

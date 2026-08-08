@@ -6,6 +6,35 @@
       176, 177, 178, 179,
       184, 185, 186, 187
     ]);
+    const ENERGY_PERIOD_BY_REGISTER = new Map([
+      [176, 'day'], [177, 'month'], [178, 'year'],
+      [184, 'day'], [185, 'month'], [186, 'year']
+    ]);
+
+    function chartPeriodForItem(item, fallback = window.chartPeriod || 'realtime') {
+      return ENERGY_PERIOD_BY_REGISTER.get(Number(item?.register)) || fallback;
+    }
+
+    function chartPeriodLabel(period) {
+      const keys = {realtime: 'periodRealtime', day: 'periodDay', week: 'periodWeek', month: 'periodMonth', year: 'periodYear'};
+      return t(keys[period] || keys.realtime);
+    }
+
+    function selectedChartPeriodLabel(items) {
+      const periods = new Set(items.map(item => chartPeriodForItem(item)));
+      return periods.size === 1 ? chartPeriodLabel([...periods][0]) : t('periodMixed');
+    }
+
+    function synchronizeChartPeriodWithSelection() {
+      const selected = [...chartSelections].map(key => chartDefinitions.get(key)).filter(isTimelineValue);
+      if (selected.length !== 1) return;
+      const naturalPeriod = ENERGY_PERIOD_BY_REGISTER.get(Number(selected[0].register));
+      if (!naturalPeriod || naturalPeriod === window.chartPeriod) return;
+      const selector = document.querySelector('#chart-period-select');
+      if (selector) selector.value = naturalPeriod;
+      window.chartPeriod = naturalPeriod;
+      refreshChartsWithPeriod(naturalPeriod);
+    }
     const chartCanvasLayouts = new WeakMap();
     const visibleChartCanvases = new Set();
     const chartResizeObserver = typeof ResizeObserver === 'function'
@@ -79,10 +108,7 @@
         });
       });
       data.registers.forEach(register => {
-        const value = numericValue(register.display);
-        const timelineCapable = ENERGY_CONSUMPTION_REGISTERS.has(Number(register.register))
-          && /^(?:k?wh)$/i.test(String(register.unit || '').trim());
-        if (value === null && !timelineCapable) return;
+        const value = registerNumericValue(register);
         const bmsFormula = register.register === 413 && register.available ? r413BmsFormula(value) : '';
         const displayValue = registerVersionDisplay(register, data.registers);
         const decodedMeaning = registerInterpretation({...register, versionDisplay: displayValue});
@@ -105,6 +131,7 @@
           maximum: isPercentage ? 100 : null,
           available: register.available,
           category: String(register.group || ''),
+          period: ENERGY_PERIOD_BY_REGISTER.get(Number(register.register)) || '',
           interpretation,
           source: register.available
             ? `R${register.register}${bmsFormula ? ` · ${bmsFormula}` : ''}`
@@ -120,7 +147,7 @@
       );
       const noSelection = dashboardSelections.size === 0 && chartSelections.size === 0;
       const allGaugesSelected = chartDefinitions.size > 0 && [...chartDefinitions.keys()].every(key =>
-        dashboardSelections.has(key) && chartSelections.has(key)
+        dashboardSelections.has(key)
       );
       const setDisabled = (selector, disabled) => {
         const button = document.querySelector(selector);
@@ -164,8 +191,8 @@
       const matchingItems = [...chartDefinitions.values()].filter(item =>
         `${item.label} ${item.detail} ${item.interpretation || ''} ${item.unit}`.toLowerCase().includes(query)
       );
-      const items = matchingItems.slice(0, VALUE_LIST_RENDER_LIMIT);
-      const hiddenCount = matchingItems.length - items.length;
+      const items = matchingItems;
+      const hiddenCount = 0;
       const signature = `${currentLanguage}|${query}|${items.map(item =>
         `${item.key}:${item.label}:${item.detail}:${item.interpretation || ''}:${item.unit}:${dashboardSelections.has(item.key)}`).join('|')}`;
       if (host.dataset.signature === signature) {
@@ -199,10 +226,12 @@
       }, 0));
     }
     function selectAllGaugeSelections() {
-      chartDefinitions.forEach((_item, key) => {
-        if (!dashboardSelections.has(key) || !chartSelections.has(key)) chartHistory.set(key, []);
+      chartDefinitions.forEach((item, key) => {
         dashboardSelections.add(key);
-        chartSelections.add(key);
+        if (isTimelineValue(item)) {
+          if (!chartSelections.has(key)) chartHistory.set(key, []);
+          chartSelections.add(key);
+        }
       });
       renderGaugeSelectionChanges();
     }
@@ -240,6 +269,7 @@
       const oldSignature = definitionSignature(chartDefinitions);
       const nextSignature = definitionSignature(next);
       chartDefinitions = next;
+      synchronizeChartPeriodWithSelection();
       if (oldSignature !== nextSignature) {
         renderChartValueList();
         renderGaugePickerList();
@@ -253,7 +283,10 @@
       const selected = [...chartSelections].filter(key => isTimelineValue(chartDefinitions.get(key)));
       document.querySelector('#chart-demo-button').disabled = false;
       document.querySelector('#chart-selection-count').textContent =
-        selected.length ? t('selectedSummary', {count: selected.length}) : t('noValuesSelected');
+        selected.length ? t('selectedSummary', {
+          count: selected.length,
+          period: selectedChartPeriodLabel(selected.map(key => chartDefinitions.get(key)))
+        }) : t('noValuesSelected');
 
       if (!selected.length) {
         chartPage = 0;
@@ -269,7 +302,7 @@
       const pageItems = selected.slice(pageStart, pageStart + CHARTS_PER_PAGE);
       const signature = `${currentLanguage}|${chartPage}|${selected.length}|${pageItems.map(key => {
         const item = chartDefinitions.get(key);
-        return `${key}:${item.label}:${item.detail}:${item.interpretation || ''}:${item.unit}`;
+        return `${key}:${item.label}:${item.detail}:${item.interpretation || ''}:${item.unit}:${chartPeriodForItem(item)}`;
       }).join('|')}`;
       if (grid.dataset.signature === signature) {
         scheduleVisibleChartDraw();
@@ -285,12 +318,13 @@
         const item = chartDefinitions.get(key);
         const index = pageStart + pageIndex;
         const colour = dashboardGaugeColour(item) || colours[index % colours.length];
-        return `<article class="chart-card" style="--accent:${colour}" data-open-chart="${key}" role="button" tabindex="0" aria-label="${t('chartAria', {label: item.label})}">
+        const period = chartPeriodLabel(chartPeriodForItem(item));
+        return `<article class="chart-card" style="--accent:${colour}" data-open-chart="${key}" role="button" tabindex="0" aria-label="${t('chartAria', {label: item.label, period})}">
           <div class="chart-card-head">
             <h3 title="${item.label}">${item.label}</h3>
             <div class="chart-latest" id="latest-${key}">—</div>
           </div>
-          <div class="muted">${item.detail}</div>
+          <div class="muted">${item.detail} · ${t('chartPeriodValue', {period})}</div>
           ${item.interpretation ? `<div class="chart-interpretation">${item.interpretation}</div>` : ''}
           <div class="chart-host" id="chart-${key}" data-chart-key="${key}" data-chart-colour="${colour}" aria-hidden="true"></div>
         </article>`;
@@ -323,7 +357,7 @@
         if (!item || item.available === false || !Number.isFinite(item.value)) return;
         const history = chartHistory.get(key) || [];
         history.push({time: now, value: item.value});
-        trimChartHistory(history, now);
+        trimChartHistory(history, now, item);
         chartHistory.set(key, history);
       });
       if (!document.querySelector('#charts-view').hidden) drawAllCharts();
@@ -455,7 +489,7 @@
           [68, gridAvailable ? 0x0262 : 0x0220],
           [69, gridAvailable ? 0x0233 : 0x0330],
           [70, 0], [71, 0], [72, 0], [73, 0], [74, 0],
-          [75, 65535], [76, 65535], [77, 1], [78, 8224], [79, 65535], [80, 1],
+          [75, 0], [76, 0], [77, 1], [78, 8224], [79, 0], [80, 1],
           [81, gridVoltage], [82, gridVoltage > 0 ? gridPower / gridVoltage : 0],
           [83, gridFrequency], [84, gridPower],
           [85, generatorVoltage], [86, generatorCurrent], [87, generatorVoltage > 0 ? 50 : 0],
@@ -542,9 +576,17 @@
     }
     function demoRawValue(register, value) {
       const scale = Number(register.scale) || 1;
-      let raw = Math.round(value / scale);
-      if (register.signed && raw < 0) raw += 65536;
-      return Math.max(0, Math.min(65534, raw));
+      const registerNumber = Number(register.register);
+      const protocolValue = registerNumber === 134 ? Math.abs(value) : value;
+      let base = Math.round(protocolValue / scale);
+      if (registerNumber === 130) base = -base;
+      base = register.signed
+        ? Math.max(-32768, Math.min(32767, base))
+        : Math.max(0, Math.min(65533, base));
+      let raw = base < 0 ? base + 65536 : base;
+      // V1.31 reserves 0xFFFE and 0xFFFF for unsupported/no-data.
+      if (raw === 65534 || raw === 65535) raw = 0;
+      return raw;
     }
     function demoDisplayValue(value, scale) {
       if (scale === .01) return value.toFixed(2);
@@ -552,13 +594,23 @@
       if (scale === 1) return Math.round(value).toString();
       return Number(value.toFixed(3)).toString();
     }
+    function demoRegisterReading(register, requestedValue) {
+      const scale = Number(register.scale) || 1;
+      const raw = demoRawValue(register, requestedValue);
+      let base = register.signed && raw >= 32768 ? raw - 65536 : raw;
+      if (Number(register.register) === 130) base = -base;
+      let value = base * scale;
+      if (Number(register.register) === 134 && requestedValue < 0) value = -value;
+      value = Number(value.toFixed(6));
+      return {raw, value, display: demoDisplayValue(value, scale), available: true};
+    }
     function continuousDemoChartValue(item, history) {
       const value = Number(item?.value);
       const previous = history.at(-1)?.value;
       if (!Number.isFinite(value) || !Number.isFinite(previous)) return value;
       if (!/^(?:k?wh)$/i.test(String(item.unit || ''))) return value;
       const scale = Math.max(.001, Number(item.scale) || .1);
-      return Math.max(value, previous + scale * .01);
+      return demoRegisterReading(item, Math.max(value, previous + scale * .01)).value;
     }
     function demoFallbackValue(register, elapsedSeconds) {
       const registerNumber = Number(register.register) || 0;
@@ -588,27 +640,28 @@
     }
     function applyDemoEnergyFrame(scenario) {
       demoFlowCase = scenario.caseKey;
-      demoGeneratorPower = scenario.generatorPower;
-      demoPvVoltage = scenario.pvVoltage;
-      demoPvPower = scenario.pvPower;
       demoRegisterRows = lastData ? lastData.registers.map(register => {
         const scenarioValue = scenario.values.get(register.register);
         const value = Number.isFinite(scenarioValue)
           ? scenarioValue
           : demoFallbackValue(register, scenario.elapsedSeconds);
-        const display = demoDisplayValue(value, Number(register.scale) || 1);
+        const reading = demoRegisterReading(register, value);
         return {
           ...register,
-          display,
-          raw: demoRawValue(register, value),
-          available: true
+          ...reading
         };
       }) : [];
+      const demoRowsByNumber = new Map(
+        demoRegisterRows.map(register => [Number(register.register), register])
+      );
+      demoGeneratorPower = registerNumericValue(demoRowsByNumber.get(88)) ?? 0;
+      demoPvVoltage = registerNumericValue(demoRowsByNumber.get(151)) ?? 0;
+      demoPvPower = registerNumericValue(demoRowsByNumber.get(161)) ?? 0;
       if (lastData) {
         if (!document.querySelector('#dashboard-view').hidden) {
           renderEnergyFlow(lastData, demoRegisterRows);
         } else {
-          const demoFanSpeed = Number(scenario.values.get(801));
+          const demoFanSpeed = registerNumericValue(demoRowsByNumber.get(801));
           updateInverterFanAnimation(
             document.querySelector('#energy-inverter-fan-row'),
             Number.isFinite(demoFanSpeed) ? Math.max(0, Math.min(100, demoFanSpeed)) : 0,
@@ -620,8 +673,9 @@
         }
       }
     }
-    function trimChartHistory(history, currentTime) {
-      const oldestAllowed = currentTime - chartWindowMilliseconds;
+    function trimChartHistory(history, currentTime, item = null) {
+      const windowMilliseconds = getPeriodWindowSeconds(chartPeriodForItem(item)) * 1000;
+      const oldestAllowed = currentTime - windowMilliseconds;
       while (history.length && history[0].time < oldestAllowed) history.shift();
     }
 
@@ -647,7 +701,7 @@
       // Trim existing history to new window
       const now = Date.now();
       chartHistory.forEach((history, key) => {
-        trimChartHistory(history, now);
+        trimChartHistory(history, now, chartDefinitions.get(key));
       });
 
       // If demo is running, regenerate data for new period
@@ -663,6 +717,7 @@
 
       modalChartPlot?.destroy();
       modalChartPlot = null;
+      renderChartCards();
       drawAllCharts();
     }
 
@@ -763,7 +818,7 @@
             const value = continuousDemoChartValue(item, history);
             item.value = value;
             history.push({time: now, value});
-            trimChartHistory(history, now);
+            trimChartHistory(history, now, item);
             chartHistory.set(key, history);
           });
           meterKeys.forEach(key => {
@@ -773,7 +828,7 @@
             const value = continuousDemoChartValue(item, history);
             item.value = value;
             history.push({time: now, value});
-            trimChartHistory(history, now);
+            trimChartHistory(history, now, item);
             chartHistory.set(key, history);
           });
           const elapsed = Math.min(

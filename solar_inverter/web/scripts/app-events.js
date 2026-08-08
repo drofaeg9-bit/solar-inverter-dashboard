@@ -121,6 +121,7 @@
       }
       saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
       saveSelections('inverter-chart-values-v2', chartSelections);
+      synchronizeChartPeriodWithSelection();
       renderDashboardValues();
       renderChartCards();
       renderGaugePickerList();
@@ -132,10 +133,13 @@
       const checkbox = event.target.closest('input[data-picker-value-key]');
       if (!checkbox) return;
       const key = checkbox.dataset.pickerValueKey;
+      const item = chartDefinitions.get(key);
       if (checkbox.checked) {
         dashboardSelections.add(key);
-        chartSelections.add(key);
-        chartHistory.set(key, []);
+        if (isTimelineValue(item)) {
+          chartSelections.add(key);
+          chartHistory.set(key, []);
+        }
       } else {
         dashboardSelections.delete(key);
         chartSelections.delete(key);
@@ -143,6 +147,7 @@
       }
       saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
       saveSelections('inverter-chart-values-v2', chartSelections);
+      synchronizeChartPeriodWithSelection();
       renderDashboardValues();
       renderChartCards();
       renderChartValueList();
@@ -215,11 +220,25 @@
           const time = Number.isNaN(installedAt.valueOf()) ? item.installed_at : installedAt.toLocaleString(locale);
           const version = document.createElement('strong');
           version.textContent = t('updaterVersion', {version: item.version});
+          const dashboardBuild = document.createElement('span');
+          dashboardBuild.textContent = item.dashboard_version
+            ? t('dashboardBuild', {version: item.dashboard_version})
+            : t('dashboardBuildUnknown');
           const date = document.createElement('span');
           date.textContent = t('updaterInstalledAt', {date: time});
           const checksum = document.createElement('small');
           checksum.textContent = item.checksum || '';
-          card.append(version, date, checksum);
+          const download = document.createElement('a');
+          download.className = 'updater-history-download';
+          if (item.download_available) {
+            download.href = `/api/updater-history/download?file=${encodeURIComponent(item.archive_file)}`;
+            download.textContent = t('downloadUpdater');
+            download.setAttribute('download', item.archive_file);
+          } else {
+            download.textContent = t('updaterArchiveUnavailable');
+            download.setAttribute('aria-disabled', 'true');
+          }
+          card.append(version, dashboardBuild, date, checksum, download);
           list.appendChild(card);
         });
       } catch (error) {
