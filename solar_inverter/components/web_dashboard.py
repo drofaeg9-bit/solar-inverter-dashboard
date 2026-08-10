@@ -56,48 +56,50 @@ def install_git() -> tuple[bool, str]:
 
 
 def github_update_status() -> dict[str, Any]:
-    """Fetch the configured GitHub remote and describe the installed checkout."""
-    is_available, git_path = check_git_available()
-    if not is_available:
-        return {"available": False, "error": "Git is not installed"}
-    if not (PROJECT_ROOT / ".git").is_dir():
-        return {"available": False, "error": "This installation is not a Git checkout"}
-
-    def git_output(*arguments: str) -> str:
-        result = subprocess.run(
-            [git_path, *arguments], cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=12
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "Git command failed")
-        return result.stdout.strip()
-
+    """Compare a bundled source commit with GitHub without requiring .git locally."""
     try:
-        git_output("fetch", "--quiet", "--prune", "origin")
-        try:
-            branch = git_output("symbolic-ref", "--short", "refs/remotes/origin/HEAD").removeprefix("origin/")
-        except RuntimeError:
-            branch = "main"
-        remote_revision = f"origin/{branch}"
-        local_hash, local_subject, local_date = git_output(
-            "log", "-1", "--format=%H%x1f%s%x1f%cI", "HEAD"
-        ).split("\x1f", 2)
-        remote_hash, remote_subject, remote_date = git_output(
-            "log", "-1", "--format=%H%x1f%s%x1f%cI", remote_revision
-        ).split("\x1f", 2)
-        ahead, behind = (
-            int(value)
-            for value in git_output("rev-list", "--left-right", "--count", f"HEAD...{remote_revision}").split()
+        metadata = json.loads(
+            (PROJECT_ROOT / ".solar-dashboard-upstream.json").read_text(encoding="utf-8")
         )
+        repository = str(metadata["repository"])
+        branch = str(metadata.get("branch") or "main")
+        local_hash = str(metadata["commit"])
+        if len(local_hash) != 40 or any(character not in "0123456789abcdef" for character in local_hash.lower()):
+            raise ValueError("The bundled source commit is unavailable")
+
+        def github_api(path: str) -> dict[str, Any]:
+            request = urllib.request.Request(
+                f"https://api.github.com/repos/{repository}/{path}",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "solar-inverter-dashboard"},
+            )
+            with urllib.request.urlopen(request, timeout=12) as response:
+                return json.loads(response.read().decode("utf-8"))
+
+        latest = github_api(f"commits/{branch}")
+        remote_hash = str(latest["sha"])
+        remote_commit = latest["commit"]
+        ahead = 0
+        behind = 0
+        if local_hash != remote_hash:
+            comparison = github_api(f"compare/{local_hash}...{branch}")
+            ahead = int(comparison.get("behind_by", 0))
+            behind = int(comparison.get("ahead_by", 0))
         return {
             "available": True,
             "dashboard_version": ASSET_VERSION,
             "branch": branch,
-            "local": {"hash": local_hash, "subject": local_subject, "date": local_date},
-            "remote": {"hash": remote_hash, "subject": remote_subject, "date": remote_date},
+            "local": {
+                "hash": local_hash, "subject": str(metadata.get("message") or "Bundled update"),
+                "date": str(metadata.get("committed_at") or ""),
+            },
+            "remote": {
+                "hash": remote_hash, "subject": str(remote_commit.get("message", "")).split("\n", 1)[0],
+                "date": str(remote_commit.get("author", {}).get("date", "")),
+            },
             "ahead": ahead,
             "behind": behind,
         }
-    except (RuntimeError, subprocess.TimeoutExpired, ValueError) as error:
+    except (KeyError, OSError, ValueError, urllib.error.URLError, urllib.error.HTTPError) as error:
         return {"available": False, "error": str(error)}
 DASHBOARD_IMAGE_PATHS = {
     "/assets/generator-mask.png": PROJECT_ROOT / "generator-mask.png",
