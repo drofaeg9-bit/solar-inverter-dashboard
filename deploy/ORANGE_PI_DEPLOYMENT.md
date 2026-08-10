@@ -21,7 +21,7 @@ ssh orangepi@ORANGE_PI_IP
 sudo python3 ~/solar-dashboard-update.pyz
 ```
 
-The updater validates its embedded Python files before installation, creates the restricted service account when necessary, installs missing `mbpoll` or timezone data through `apt-get`, updates only the required files under `/opt/solar_assistant`, installs the systemd unit, restarts the service, and checks `http://127.0.0.1:8080/api/state`.
+The updater validates its embedded Python files before installation, creates the restricted service account when necessary, installs missing `git`, `mbpoll`, or timezone data through `apt-get`, updates only the required files under `/opt/solar_assistant`, installs the systemd unit, restarts the service, and checks `http://127.0.0.1:8080/api/state`.
 
 It does not replace the statistics database, register logs, Tailscale configuration, Home Assistant integration, Android project, or documentation. To inspect a copied archive without changing the Orange Pi, run:
 
@@ -179,7 +179,31 @@ Then test the selected `https://tailsweb.<your-tailnet>.ts.net` URL from another
 - the header shows current update cycles;
 - Modbus readings do not report `mbpoll not found`, `Permission denied`, or a missing `/dev/ttyUSB0`.
 
-## 9. Install a later version
+## 9. Check or install a later GitHub version
+
+When the dashboard was installed from a Git checkout, use the copied updater archive
+to fetch GitHub and compare the installed dashboard build with the latest commit:
+
+```bash
+sudo python3 ~/solar-dashboard-update.pyz --github-status
+```
+
+This only fetches Git metadata and prints the local dashboard asset version, local
+commit, latest GitHub commit, and whether updates are available. It does not restart
+or modify the dashboard.
+
+To install available commits, use the explicit fast-forward updater command:
+
+```bash
+sudo python3 ~/solar-dashboard-update.pyz --github-update
+```
+
+The command refuses to overwrite local commits or a diverged checkout. It validates
+the updated Python entry point, restarts the service, and confirms the running
+dashboard asset version through the local API. GitHub CLI is not required on the
+Orange Pi; the updater uses the `git` package installed during setup.
+
+### Manual update alternative
 
 First commit and push the new version from the development computer as described in step 1. Then run this on the Orange Pi:
 

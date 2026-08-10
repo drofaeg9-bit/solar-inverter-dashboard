@@ -176,7 +176,42 @@
         const response = await fetch('/api/updater-history', {cache: 'no-store'});
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-        if (!data.history?.length) {
+        const github = data.github_status;
+        if (github?.available) {
+          const card = document.createElement('article');
+          card.className = 'updater-history-item';
+          const title = document.createElement('strong');
+          title.textContent = t('githubStatusTitle');
+          const dashboard = document.createElement('span');
+          dashboard.textContent = t('githubStatusDashboard', {version: github.dashboard_version});
+          const local = document.createElement('span');
+          local.textContent = t('githubStatusLocal', {
+            hash: github.local.hash.slice(0, 7), subject: github.local.subject
+          });
+          const remote = document.createElement('span');
+          remote.textContent = t('githubStatusRemote', {
+            hash: github.remote.hash.slice(0, 7), subject: github.remote.subject
+          });
+          const result = document.createElement('small');
+          if (github.ahead === 0 && github.behind === 0) {
+            result.textContent = t('githubStatusUpToDate');
+          } else if (github.ahead === 0) {
+            result.textContent = t('githubStatusUpdateAvailable', {count: github.behind});
+          } else if (github.behind === 0) {
+            result.textContent = t('githubStatusLocalAhead', {count: github.ahead});
+          } else {
+            result.textContent = t('githubStatusDiverged', {ahead: github.ahead, behind: github.behind});
+          }
+          card.append(title, dashboard, local, remote, result);
+          list.appendChild(card);
+        } else if (github?.error) {
+          const unavailable = document.createElement('div');
+          unavailable.className = 'muted';
+          unavailable.style.padding = '12px';
+          unavailable.textContent = t('githubStatusUnavailable', {error: github.error});
+          list.appendChild(unavailable);
+        }
+        if (!data.history?.length && !list.childElementCount) {
           const empty = document.createElement('div');
           empty.className = 'muted';
           empty.style.padding = '12px';

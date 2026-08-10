@@ -8,6 +8,7 @@ import subprocess
 import sqlite3
 import tempfile
 import zipapp
+import json
 from pathlib import Path
 from contextlib import closing
 
@@ -16,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_MAIN = PROJECT_ROOT / "deploy" / "update_bundle_src" / "__main__.py"
 OUTPUT = PROJECT_ROOT / "deploy" / "solar-dashboard-update.pyz"
 STATS_DB_PATH = PROJECT_ROOT / "solar_invertor_web_stats.sqlite3"
+UPSTREAM_VERSION_PAYLOAD = ".solar-dashboard-upstream.json"
 PAYLOAD_FILES = (
     "solar_invertor_web.py",
     "favicon.png",
@@ -152,6 +154,22 @@ def get_current_commit_info() -> tuple[str, str, str]:
         return "unknown", "Manual build", ""
 
 
+def get_github_repository() -> str:
+    """Return the origin GitHub owner/repository for the archive metadata."""
+    try:
+        remote = subprocess.run(
+            [shutil.which("git") or "git", "remote", "get-url", "origin"],
+            cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip().removesuffix(".git")
+        if remote.startswith("https://github.com/"):
+            return remote.removeprefix("https://github.com/")
+        if remote.startswith("git@github.com:"):
+            return remote.removeprefix("git@github.com:")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "santaes/solar-inverter-dashboard"
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="solar-dashboard-bundle-") as temporary:
         bundle_root = Path(temporary)
@@ -163,6 +181,18 @@ def main() -> None:
             target = bundle_root / "payload" / relative_name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+        commit, message, committed_at = get_current_commit_info()
+        metadata_path = bundle_root / "payload" / UPSTREAM_VERSION_PAYLOAD
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "repository": get_github_repository(), "branch": "main", "commit": commit,
+                    "message": message, "committed_at": committed_at,
+                },
+                ensure_ascii=False,
+            ) + "\n",
+            encoding="utf-8",
+        )
         zipapp.create_archive(
             bundle_root,
             OUTPUT,

@@ -53,6 +53,52 @@ def install_git() -> tuple[bool, str]:
         return False, "Installation timed out"
     except Exception as e:
         return False, f"Installation error: {str(e)}"
+
+
+def github_update_status() -> dict[str, Any]:
+    """Fetch the configured GitHub remote and describe the installed checkout."""
+    is_available, git_path = check_git_available()
+    if not is_available:
+        return {"available": False, "error": "Git is not installed"}
+    if not (PROJECT_ROOT / ".git").is_dir():
+        return {"available": False, "error": "This installation is not a Git checkout"}
+
+    def git_output(*arguments: str) -> str:
+        result = subprocess.run(
+            [git_path, *arguments], cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=12
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Git command failed")
+        return result.stdout.strip()
+
+    try:
+        git_output("fetch", "--quiet", "--prune", "origin")
+        try:
+            branch = git_output("symbolic-ref", "--short", "refs/remotes/origin/HEAD").removeprefix("origin/")
+        except RuntimeError:
+            branch = "main"
+        remote_revision = f"origin/{branch}"
+        local_hash, local_subject, local_date = git_output(
+            "log", "-1", "--format=%H%x1f%s%x1f%cI", "HEAD"
+        ).split("\x1f", 2)
+        remote_hash, remote_subject, remote_date = git_output(
+            "log", "-1", "--format=%H%x1f%s%x1f%cI", remote_revision
+        ).split("\x1f", 2)
+        ahead, behind = (
+            int(value)
+            for value in git_output("rev-list", "--left-right", "--count", f"HEAD...{remote_revision}").split()
+        )
+        return {
+            "available": True,
+            "dashboard_version": ASSET_VERSION,
+            "branch": branch,
+            "local": {"hash": local_hash, "subject": local_subject, "date": local_date},
+            "remote": {"hash": remote_hash, "subject": remote_subject, "date": remote_date},
+            "ahead": ahead,
+            "behind": behind,
+        }
+    except (RuntimeError, subprocess.TimeoutExpired, ValueError) as error:
+        return {"available": False, "error": str(error)}
 DASHBOARD_IMAGE_PATHS = {
     "/assets/generator-mask.png": PROJECT_ROOT / "generator-mask.png",
     "/assets/grid.png": PROJECT_ROOT / "1258380.png",
@@ -471,10 +517,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.send_content(body, "application/json; charset=utf-8", HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if request_path == "/api/updater-history":
-            print("[Web Dashboard] API /api/updater-history - Fetching local updater history")
+            print("[Web Dashboard] API /api/updater-history - Fetching updater history and GitHub status")
             try:
                 history = get_updater_history()
-                body = json.dumps({"history": history}, ensure_ascii=False).encode("utf-8")
+                github_status = github_update_status()
+                body = json.dumps(
+                    {"history": history, "github_status": github_status}, ensure_ascii=False
+                ).encode("utf-8")
                 self.send_content(body, "application/json; charset=utf-8")
             except Exception as e:
                 print(f"[Web Dashboard] Updater history error: {e}")

@@ -27,6 +27,7 @@ STATS_DATABASE_PATH = Path("/var/lib/solar-inverter-dashboard/stats.sqlite3")
 LEGACY_STATS_DATABASE_PATH = APPLICATION_ROOT / "solar_invertor_web_stats.sqlite3"
 UPDATER_RECEIPT_PATH = APPLICATION_ROOT / "updater_history.json"
 UPDATER_ARCHIVE_DIR = APPLICATION_ROOT / "updater_archives"
+UPSTREAM_VERSION_PAYLOAD = ".solar-dashboard-upstream.json"
 SERVICE_NAME = "solar-inverter-dashboard.service"
 SERVICE_TARGET = Path("/etc/systemd/system") / SERVICE_NAME
 SERVICE_USER = "solar-dashboard"
@@ -34,8 +35,11 @@ SERVICE_GROUP = "solar-dashboard"
 HEALTH_URL = "http://127.0.0.1:8080/api/state"
 VERSION_URL = "http://127.0.0.1:8080/api/version"
 UPDATER_VERSION = "4"
+DEFAULT_GIT_REMOTE = "origin"
+DEFAULT_GIT_BRANCH = "main"
 
 PAYLOAD_FILES = (
+    UPSTREAM_VERSION_PAYLOAD,
     "solar_invertor_web.py",
     "favicon.png",
     "generator-mask.png",
@@ -94,6 +98,82 @@ def run(command: list[str], *, check: bool = True) -> subprocess.CompletedProces
     """Run a command and echo it for an auditable update log."""
     print("+", " ".join(command), flush=True)
     return subprocess.run(command, check=check, text=True)
+
+
+def run_as_service_user(command: list[str], *, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
+    """Run a repository command as the non-privileged dashboard account."""
+    full_command = ["runuser", "-u", SERVICE_USER, "--", *command]
+    print("+", " ".join(full_command), flush=True)
+    return subprocess.run(
+        full_command,
+        check=True,
+        text=True,
+        capture_output=capture_output,
+    )
+
+
+def git_output(arguments: list[str]) -> str:
+    """Return output from Git in the installed repository as the service user."""
+    result = run_as_service_user(
+        ["git", "-C", str(APPLICATION_ROOT), *arguments], capture_output=True
+    )
+    return result.stdout.strip()
+
+
+def require_git_repository() -> None:
+    """Ensure the updater can safely compare this installation with GitHub."""
+    if shutil.which("git") is None:
+        raise RuntimeError("git is required; install it with: apt-get install -y git")
+    if not (APPLICATION_ROOT / ".git").exists():
+        raise RuntimeError(
+            f"{APPLICATION_ROOT} is not a Git checkout; use the bundled updater instead"
+        )
+
+
+def github_branch() -> str:
+    """Use the origin default branch, falling back to the project's main branch."""
+    try:
+        remote_head = git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+    except subprocess.CalledProcessError:
+        return DEFAULT_GIT_BRANCH
+    remote_prefix = f"{DEFAULT_GIT_REMOTE}/"
+    return remote_head.removeprefix(remote_prefix) or DEFAULT_GIT_BRANCH
+
+
+def git_commit_details(revision: str) -> tuple[str, str, str]:
+    """Return a revision's full hash, subject and ISO-8601 commit time."""
+    values = git_output(["log", "-1", "--format=%H%x1f%s%x1f%cI", revision]).split("\x1f")
+    if len(values) != 3:
+        raise RuntimeError(f"Could not read commit information for {revision}")
+    return values[0], values[1], values[2]
+
+
+def github_status() -> tuple[str, str, int, int]:
+    """Fetch origin and print the local/remote dashboard versions and commits."""
+    require_git_repository()
+    run_as_service_user(["git", "-C", str(APPLICATION_ROOT), "fetch", "--prune", DEFAULT_GIT_REMOTE])
+    branch = github_branch()
+    remote_revision = f"{DEFAULT_GIT_REMOTE}/{branch}"
+    local_hash, local_subject, local_date = git_commit_details("HEAD")
+    remote_hash, remote_subject, remote_date = git_commit_details(remote_revision)
+    counts = git_output(["rev-list", "--left-right", "--count", f"HEAD...{remote_revision}"])
+    try:
+        ahead, behind = (int(value) for value in counts.split())
+    except ValueError as error:
+        raise RuntimeError(f"Could not compare HEAD with {remote_revision}") from error
+
+    print(f"Local dashboard version: {dashboard_asset_version(APPLICATION_ROOT)}", flush=True)
+    print(f"Local commit: {local_hash} ({local_date}) - {local_subject}", flush=True)
+    print(f"GitHub {branch}: {remote_hash} ({remote_date}) - {remote_subject}", flush=True)
+    if ahead == 0 and behind == 0:
+        print("GitHub status: up to date.", flush=True)
+    elif ahead == 0:
+        print(f"GitHub status: {behind} commit(s) available to install.", flush=True)
+    elif behind == 0:
+        print(f"GitHub status: local checkout is {ahead} commit(s) ahead of GitHub.", flush=True)
+    else:
+        print(f"GitHub status: diverged ({ahead} ahead, {behind} behind); update refused.", flush=True)
+    return branch, remote_hash, ahead, behind
 
 
 def archive_path() -> Path:
@@ -160,6 +240,8 @@ def ensure_runtime() -> None:
     if shutil.which("systemctl") is None:
         raise RuntimeError("systemd is required but systemctl was not found")
     packages: list[str] = []
+    if shutil.which("git") is None:
+        packages.append("git")
     if shutil.which("mbpoll") is None:
         packages.append("mbpoll")
     if not Path("/usr/share/zoneinfo/Europe/Madrid").is_file():
@@ -441,17 +523,74 @@ def check_bundle() -> None:
     )
 
 
+def update_from_github() -> None:
+    """Fast-forward the installed checkout to GitHub and restart only on success."""
+    require_root()
+    ensure_service_account()
+    branch, remote_hash, ahead, behind = github_status()
+    if ahead:
+        raise RuntimeError(
+            "The local checkout has commits not on GitHub; refusing to overwrite it. "
+            "Resolve the divergence, then run --github-update again."
+        )
+    if not behind:
+        print("No GitHub update to install.", flush=True)
+        return
+
+    run_as_service_user([
+        "git", "-C", str(APPLICATION_ROOT), "pull", "--ff-only", DEFAULT_GIT_REMOTE, branch
+    ])
+    installed_hash, _, _ = git_commit_details("HEAD")
+    if installed_hash != remote_hash:
+        raise RuntimeError(
+            f"GitHub update verification failed: expected {remote_hash}, found {installed_hash}"
+        )
+    run_as_service_user([
+        "python3", "-m", "py_compile", str(APPLICATION_ROOT / "solar_invertor_web.py")
+    ])
+    atomic_install(
+        APPLICATION_ROOT / SERVICE_PAYLOAD,
+        SERVICE_TARGET,
+        0o644,
+        0,
+        0,
+    )
+    expected_version = dashboard_asset_version(APPLICATION_ROOT)
+    run(["systemctl", "daemon-reload"])
+    run(["systemctl", "restart", SERVICE_NAME])
+    wait_for_health(expected_version)
+    print(
+        f"Installed GitHub commit {installed_hash} (dashboard version {expected_version}).",
+        flush=True,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument(
         "--check",
         action="store_true",
         help="validate the archive without installing or changing the system",
+    )
+    action.add_argument(
+        "--github-status",
+        action="store_true",
+        help="fetch GitHub and show local/remote commits and dashboard versions",
+    )
+    action.add_argument(
+        "--github-update",
+        action="store_true",
+        help="fast-forward the installed Git checkout from GitHub and restart the dashboard",
     )
     arguments = parser.parse_args()
     try:
         if arguments.check:
             check_bundle()
+        elif arguments.github_status:
+            github_status()
+        elif arguments.github_update:
+            update_from_github()
         else:
             install()
         return 0

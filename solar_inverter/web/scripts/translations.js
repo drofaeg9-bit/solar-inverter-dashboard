@@ -1,5 +1,6 @@
     const UI_TRANSLATIONS = {
       uk: {
+        githubStatusTitle: 'GitHub version', githubStatusDashboard: 'Dashboard version: {version}', githubStatusLocal: 'Local commit: {hash} - {subject}', githubStatusRemote: 'Latest GitHub commit: {hash} - {subject}', githubStatusUpToDate: 'Dashboard is up to date', githubStatusUpdateAvailable: 'Updates available: {count}', githubStatusLocalAhead: 'Local commits not on GitHub: {count}', githubStatusDiverged: 'Histories have diverged: +{ahead} / -{behind}', githubStatusUnavailable: 'GitHub status unavailable: {error}',
         appTitle: 'Вебпанель сонячного інвертора',
         waitingInverter: 'Очікування даних інвертора…',
         themeAria: 'Увімкнути світлу тему',
@@ -133,6 +134,7 @@
         browserLabel: 'браузер', viewportLabel: 'розмір вікна'
       },
       ru: {
+        githubStatusTitle: 'GitHub version', githubStatusDashboard: 'Dashboard version: {version}', githubStatusLocal: 'Local commit: {hash} - {subject}', githubStatusRemote: 'Latest GitHub commit: {hash} - {subject}', githubStatusUpToDate: 'Dashboard is up to date', githubStatusUpdateAvailable: 'Updates available: {count}', githubStatusLocalAhead: 'Local commits not on GitHub: {count}', githubStatusDiverged: 'Histories have diverged: +{ahead} / -{behind}', githubStatusUnavailable: 'GitHub status unavailable: {error}',
         appTitle: 'Веб-панель солнечного инвертора',
         waitingInverter: 'Ожидание данных инвертора…',
         themeAria: 'Включить светлую тему',
@@ -264,6 +266,7 @@
         browserLabel: 'браузер', viewportLabel: 'размер окна'
       },
       en: {
+        githubStatusTitle: 'GitHub version', githubStatusDashboard: 'Dashboard version: {version}', githubStatusLocal: 'Local commit: {hash} - {subject}', githubStatusRemote: 'Latest GitHub commit: {hash} - {subject}', githubStatusUpToDate: 'Dashboard is up to date', githubStatusUpdateAvailable: 'Updates available: {count}', githubStatusLocalAhead: 'Local commits not on GitHub: {count}', githubStatusDiverged: 'Histories have diverged: +{ahead} / -{behind}', githubStatusUnavailable: 'GitHub status unavailable: {error}',
         appTitle: 'Solar Inverter Web',
         waitingInverter: 'Waiting for inverter data…',
         themeAria: 'Use light theme',
