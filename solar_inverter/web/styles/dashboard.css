@@ -682,6 +682,13 @@
     tbody tr.unavailable .register-live-value { opacity: .48 }
     .register-meaning { min-width: 280px; max-width: 42rem; color: var(--muted); font-size: 11px; line-height: 1.4 }
     td:nth-child(1), td:nth-child(5), td:nth-child(6) { white-space: nowrap }
+    .register-value-editor { display: flex; align-items: center; gap: 6px; min-width: 210px }
+    .register-value-editor input { width: 92px; min-width: 0; padding: 6px 8px }
+    .register-value-editor button, .register-action { min-height: 30px; padding: 5px 8px; font-size: 12px }
+    #registers input, #registers textarea { width: 100%; min-width: 90px; box-sizing: border-box; padding: 6px 8px }
+    #registers textarea { min-height: 58px; resize: vertical }
+    .register-edit-value { min-width: 180px; white-space: nowrap }
+    .register-edit-value input { width: 78px !important }
     .error {
       display: none; position: fixed; z-index: 1000; left: 50%; bottom: max(8px, env(safe-area-inset-bottom));
       width: min(720px, calc(100% - 16px)); margin: 0; color: #fecdd3;
@@ -787,10 +794,7 @@
     .lcd-key:active { transform: translateY(2px); box-shadow: inset 0 -2px rgba(0,0,0,.2), 0 1px 0 #101915 }
     .lcd-controls-note { margin-top: 10px; font: 600 11px/1.4 system-ui,sans-serif; opacity: .68 }
     @keyframes lcd-pulse { 50% { transform: translateX(3px); opacity: .55 } }
-    .charts-layout {
-      display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px;
-      align-items: start;
-    }
+    .charts-layout { display: block }
     .chart-selector { position: sticky; top: 14px; max-height: calc(100vh - 28px) }
     .chart-selector input[type="search"] { width: 100%; margin: 14px 0 10px }
     .chart-selector-actions { display: flex; gap: 8px; margin-bottom: 10px }
@@ -820,6 +824,13 @@
     }
     .charts-main { min-width: 0 }
     .charts-head { margin-bottom: 14px }
+    .chart-selection-panel { margin: 0 0 14px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel) }
+    .chart-selection-panel h3 { margin: 0; font-size: 14px }
+    .chart-selection-panel input[type="search"] { width: min(360px, 100%); margin: 10px 0 }
+    .chart-selection-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px; max-height: 240px; overflow: auto }
+    .chart-selection-option { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 9px; cursor: pointer }
+    .chart-selection-option input { width: 15px; min-height: 15px; margin: 2px 0 0; accent-color: var(--cyan) }
+    .chart-selection-option small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px }
     .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px }
     .chart-card {
       min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 18px;

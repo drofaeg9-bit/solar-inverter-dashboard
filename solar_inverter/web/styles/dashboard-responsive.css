@@ -239,6 +239,8 @@
         grid-column: 2; grid-row: 1;
         justify-self: end; text-align: right; font-weight: 750;
       }
+      .register-list-actions { margin-top: 12px }
+      .register-list-actions button { width: 100%; min-height: 44px }
       input, select, button, .chip { min-height: 44px }
     }
     @media (max-width: 390px) {

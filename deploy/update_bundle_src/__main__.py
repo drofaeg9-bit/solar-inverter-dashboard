@@ -69,6 +69,8 @@ PAYLOAD_FILES = (
     "solar_inverter/services/__init__.py",
     "solar_inverter/services/inverter_service.py",
     "solar_inverter/services/inverter_service_core.py",
+    "solar_inverter/services/register_profile_12ku.py",
+    "solar_inverter/services/chart_history.py",
     "solar_inverter/services/inverter_service_runtime.py",
 )
 SERVICE_PAYLOAD = "deploy/solar-inverter-dashboard.service"

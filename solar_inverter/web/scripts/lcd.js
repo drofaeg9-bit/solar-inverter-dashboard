@@ -41,14 +41,17 @@
 
       const gridVoltage = numberValue([81, 433]);
       const gridCurrent = numberValue([82, 434]);
-      const measuredGridPower = numberValue([84, 437, 436]);
+      const measuredGridPower = numberValue([84, 436]);
       const frequency = numberValue([83, 435]);
       const outputCurrent = numberValue([90, 539]);
-      const outputVoltage = numberValue([89, 537]);
+      const outputVoltage = numberValue([537, 89]);
       const outputFrequency = numberValue([91, 538]);
       const secondaryOutputVoltage = numberValue([537, 89]);
       const secondaryOutputFrequency = numberValue([538, 91]);
-      const pvVoltage = numberValue([151, 154]);
+      const pv1Power = numberValue([153]);
+      const pv2Power = numberValue([156]);
+      const pvVoltage = numberValue([609]) ?? (Number.isFinite(pv2Power) && (!Number.isFinite(pv1Power) || pv2Power > pv1Power)
+        ? numberValue([154, 151]) : numberValue([151, 154]));
       const pvCurrent = sumValues([152, 155]);
       const pvPower = numberValue([161]) ?? sumValues([153, 156]);
       const dailyPvEnergy = numberValue([157]);
@@ -70,10 +73,9 @@
       const currentLimit = numberValue([413]);
       const lowSocThreshold = numberValue([415]);
       const statusRegister = firstRegister([67, 325]);
-      const terminalStateSource = firstRegister([68]);
       const flowStateSource = firstRegister([69]);
       const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online);
-      const terminalState = liveMeasurementsFresh ? decodeEnergyTerminalState(terminalStateSource) : null;
+      const terminalState = null;
       const flowState = liveMeasurementsFresh ? decodeEnergyFlowState(flowStateSource) : null;
       const inverterState = liveMeasurementsFresh ? decodeBoundedRegister(statusRegister, 10) : null;
       const flowSuppressed = [0, 1, 7, 8, 10].includes(inverterState);

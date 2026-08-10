@@ -70,9 +70,16 @@ def web_state(language: str = "uk") -> dict[str, Any]:
     with state_lock:
         snapshot = dict(state)
         values = dict(state["values"])
+    def effective_value(register: int) -> float | None:
+        manual_value = manual_register_value(register)
+        if manual_value is not None:
+            return manual_value
+        if register not in values:
+            return None
+        return normalize(register, values[register])[3]
+
     battery_current_value: float | None = None
-    if 130 in values:
-        battery_current_value = normalize(130, values[130])[3]
+    battery_current_value = effective_value(130)
     def battery_power_with_current_direction(value: float | None) -> float | None:
         """Use positive charge and negative discharge consistently for R134."""
         if value is None or battery_current_value is None or abs(battery_current_value) < 0.3:
@@ -80,14 +87,20 @@ def web_state(language: str = "uk") -> dict[str, Any]:
         return abs(value) if battery_current_value > 0 else -abs(value)
     meters = []
     for register, fallbacks, label, minimum, maximum, unit in METER_DEFINITIONS:
-        value, source = meter_value(values, register, fallbacks)
+        value = None
+        source = ""
+        for candidate in [register, *fallbacks]:
+            value = effective_value(candidate)
+            if value is not None:
+                source = f"R{candidate}" + (" (manual)" if manual_register_value(candidate) is not None else "")
+                break
         metadata_override = register_override(register)
         label = str(metadata_override.get("name", label))
         unit = str(metadata_override.get("unit", unit))
         if register == 134:
             value = battery_power_with_current_direction(value)
         elif register == 133:
-            value = effective_battery_soc(value, values.get(68))
+            value = effective_battery_soc(value, None)
         available = value is not None
         if value is None:
             value = 0.0
@@ -105,12 +118,19 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             "available": available,
         })
     registers = []
-    all_registers = sorted(set(KNOWN_REGISTERS) | set(values))
+    all_registers = KNOWN_REGISTERS
     for register in all_registers:
         raw = values.get(register)
         name, scale, unit, signed, group = register_metadata(register)
-        normalized_value = None
-        if raw is None:
+        edit = manual_register_edit(register)
+        name = str(edit.get("name", name))
+        unit = str(edit.get("unit", unit))
+        group = str(edit.get("group", group))
+        manual_value = manual_register_value(register)
+        normalized_value = manual_value
+        if manual_value is not None:
+            display = f"{manual_value:g}"
+        elif raw is None:
             display = "—"
         else:
             name, display, unit, normalized_value, group = normalize(register, raw)
@@ -124,19 +144,21 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             "group_source": group,
             "name": localize_api_text(name, language),
             "name_source": name,
-            "description": register_description(register, name, unit, scale, signed, language),
-            "description_source": register_description(register, name, unit, scale, signed, "uk"),
+            "description": str(edit.get("description", register_description(register, name, unit, scale, signed, language))),
+            "description_source": str(edit.get("description", register_description(register, name, unit, scale, signed, "uk"))),
             "display": localize_api_text(display, language),
             "display_source": display,
             "value": normalized_value,
             "unit": unit,
             "scale": scale,
             "signed": signed,
+            "read_only": True, "maintenance": register in MAINTENANCE_REGISTERS, "word_format": "h_l" if REGISTER_WORD_FORMAT.get(register) else "word",
             "raw": raw,
-            "available": raw is not None,
+            "available": manual_value is not None or raw is not None,
+            "manual": manual_value is not None,
+            "edited": bool(edit),
         })
-    return {
-        "language": language,
+    return {"language": language,
         "dashboard_version": ASSET_VERSION,
         "dashboard_instance": DASHBOARD_INSTANCE_ID,
         "online": bool(snapshot["online"]),
@@ -371,9 +393,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if request_path == "/api/historical":
             period = query.get("period", ["realtime"])[0]
             print(f"[Web Dashboard] API /api/historical - Period: {period}")
-            # TODO: Implement actual historical data storage and retrieval
-            # For now, return empty data structure
-            body = json.dumps({"points": [], "period": period}, ensure_ascii=False).encode("utf-8")
+            body = json.dumps(get_chart_history(period), ensure_ascii=False).encode("utf-8")
             self.send_content(body, "application/json; charset=utf-8")
             return
         if request_path == "/api/git/commits":
@@ -506,6 +526,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def do_POST(self) -> None:
+        if self.path == "/api/manual-register-value":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                register = int(payload.get("register"))
+                clear = bool(payload.get("clear"))
+                fields = payload.get("fields")
+                if fields is not None and not isinstance(fields, dict):
+                    raise ValueError("fields must be an object")
+                result = (
+                    set_manual_register_edit(register, fields, clear_value=clear)
+                    if fields is not None
+                    else set_manual_register_value(register, None if clear else payload.get("value"))
+                )
+                body = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                self.send_content(body, "application/json; charset=utf-8")
+            except (TypeError, ValueError, OSError, json.JSONDecodeError) as error:
+                body = json.dumps({"error": str(error)}, ensure_ascii=False).encode("utf-8")
+                self.send_content(
+                    body, "application/json; charset=utf-8", HTTPStatus.BAD_REQUEST
+                )
+            return
+
         if self.path == "/api/register-map":
             try:
                 length = int(self.headers.get("Content-Length", "0"))

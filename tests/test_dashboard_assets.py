@@ -51,6 +51,17 @@ def inverter_service_source() -> str:
 
 
 class DashboardAssetTests(unittest.TestCase):
+    def test_api_localization_repairs_legacy_utf8_and_chart_history_is_packaged(self) -> None:
+        from solar_inverter.components.api_localization import repair_legacy_text
+
+        self.assertEqual(
+            repair_legacy_text("\u00d0\u00a0\u00d0\u00b5\u00d0\u00b3\u00d1\u0096\u00d1\u0081\u00d1\u0082\u00d1\u0080"),
+            "\u0420\u0435\u0433\u0456\u0441\u0442\u0440",
+        )
+        self.assertEqual(repair_legacy_text("\u00e2\u20ac\u201d"), "\u2014")
+        for manifest in (ROOT / "deploy" / "build_update_bundle.py", ROOT / "deploy" / "update_bundle_src" / "__main__.py"):
+            self.assertIn("solar_inverter/services/chart_history.py", manifest.read_text(encoding="utf-8"))
+
     def test_light_theme_is_dimmed_and_keeps_readable_contrast(self) -> None:
         css = dashboard_css()
         self.assertIn("--bg: #eef2f4", css)
@@ -97,6 +108,8 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("requestAnimationFrame(() => window.setTimeout", charts)
         self.assertIn("requestAnimationFrame(() => window.setTimeout(drawAllCharts, 0))", app)
         self.assertIn("window.requestIdleCallback(renderPendingRegisters, {timeout: 750})", app)
+        self.assertIn("const REGISTER_RENDER_LIMIT = 80", app)
+        self.assertIn("const visible = shown.slice(0, registerRenderLimit)", app)
         self.assertIn("content-visibility: auto", css)
         self.assertNotIn("canvas.clientWidth", charts)
         self.assertNotIn("canvas.clientHeight", charts)
@@ -128,6 +141,12 @@ class DashboardAssetTests(unittest.TestCase):
         service_source = (
             ROOT / "solar_inverter" / "services" / "inverter_service_core.py"
         ).read_text(encoding="utf-8")
+        chart_history = (
+            ROOT / "solar_inverter" / "services" / "chart_history.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CHART_HISTORY_RAW_RETENTION_SECONDS = 48 * 60 * 60", chart_history)
+        self.assertIn("CHART_HISTORY_AGGREGATE_RETENTION_SECONDS = 90 * 24 * 60 * 60", chart_history)
+        self.assertIn("CREATE TABLE IF NOT EXISTS chart_history_daily", chart_history)
         service_module = ast.parse(service_source)
         known_registers: set[int] = set()
         for node in service_module.body:
@@ -150,7 +169,6 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("readSeconds: data.read_seconds.toFixed(2)", app)
         self.assertIn("const configuredSeconds = (requestIntervals[data.poll_rate_index] ?? 2000) / 1000", app)
         self.assertIn("renderCycleStatus(lastData)", app)
-        self.assertIn("const VALUE_LIST_RENDER_LIMIT = 80", charts)
         self.assertIn("const CHARTS_PER_PAGE = 12", charts)
         self.assertIn("selected.slice(pageStart, pageStart + CHARTS_PER_PAGE)", charts)
         self.assertIn("function scheduleChartsViewRender()", charts)
@@ -160,6 +178,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn('role="tabpanel" aria-labelledby="dashboard-tab"', html)
         self.assertIn('aria-controls="charts-view"', html)
         self.assertIn('data-i18n="lcdUpKey"', html)
+        self.assertIn('id="register-load-more"', html)
         self.assertIn("button.tabIndex = active ? 0 : -1", app)
         self.assertIn("['ArrowLeft', 'ArrowRight', 'Home', 'End']", app)
         gauges = (WEB_ROOT / "scripts" / "gauges.js").read_text(encoding="utf-8")
@@ -197,6 +216,61 @@ class DashboardAssetTests(unittest.TestCase):
             html,
         )
         self.assertIn(".flow-generator .flow-line-mobile { stroke-linecap: round }", css)
+
+    def test_gauges_and_graphs_use_energy_flow_component_colours(self) -> None:
+        gauges_path = WEB_ROOT / "scripts" / "gauges.js"
+        probe = textwrap.dedent(
+            """
+            const fs = require('fs');
+            const source = fs.readFileSync(process.argv[1], 'utf8');
+            eval(source + `
+              const expected = new Map([
+                [81, 'var(--flow-grid-colour)'],
+                [85, 'var(--flow-generator-colour)'],
+                [92, 'var(--flow-home-colour)'],
+                [94, 'var(--flow-inverter-colour)'],
+                [129, 'var(--flow-battery-colour)'],
+                [151, 'var(--flow-solar-colour)'],
+                [164, 'var(--flow-battery-colour)'],
+                [172, 'var(--flow-inverter-colour)'],
+                [176, 'var(--flow-home-colour)'],
+                [184, 'var(--flow-grid-colour)'],
+                [448, 'var(--flow-grid-colour)'],
+                [541, 'var(--flow-home-colour)'],
+                [818, 'var(--flow-inverter-colour)'],
+                [823, 'var(--flow-solar-colour)'],
+                [16651, 'var(--flow-battery-colour)'],
+                [16655, 'var(--flow-grid-colour)']
+              ]);
+              const matches = [...expected].every(([register, colour]) => {
+                const item = {register, key: 'register-' + register};
+                return registerEnergyFlowColour(register) === colour
+                  && dashboardGaugeColour(item) === colour
+                  && chartColour(item) === colour;
+              });
+              console.log(JSON.stringify({
+                matches,
+                customSolar: diagramGaugeColour({register: 20000, label: 'Solar custom input'}),
+                customUnknown: diagramGaugeColour({register: 20001, label: 'Custom counter'})
+              }));
+            `);
+            """
+        )
+        result = subprocess.run(
+            [shutil.which("node") or "node", "-e", probe, str(gauges_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "matches": True,
+                "customSolar": "var(--flow-solar-colour)",
+                "customUnknown": None,
+            },
+        )
 
     def test_disabled_buttons_use_localized_unavailable_hints(self) -> None:
         css = dashboard_css()
@@ -252,18 +326,22 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("176, 177, 178, 179", charts)
         self.assertIn("184, 185, 186, 187", charts)
         self.assertIn("ENERGY_CONSUMPTION_REGISTERS.has(register)", charts)
-        self.assertIn("[184, 'day'], [185, 'month'], [186, 'year']", charts)
+        self.assertIn("[179, 'lifetime']", charts)
+        self.assertIn("[187, 'lifetime']", charts)
         self.assertIn("function chartPeriodForItem(item", charts)
-        self.assertIn("function synchronizeChartPeriodWithSelection()", charts)
+        self.assertNotIn("chart-period-select", html)
+        self.assertNotIn("refreshChartsWithPeriod", charts)
+        self.assertIn("async function hydrateChartHistory()", charts)
+        self.assertIn("/api/historical?period=${encodeURIComponent(period)}", charts)
         self.assertIn("selectedChartPeriodLabel", charts)
         self.assertIn("trimChartHistory(history, now, item)", charts)
         self.assertIn("chartPeriodValue", charts)
         self.assertNotIn("selectedSummary: 'Выбрано значений: {count} · последние 2 минуты'", charts)
         self.assertIn("/^(?:k?wh)$/i.test(unit)", charts)
         self.assertNotIn("if (value === null && !timelineCapable) return", charts)
-        self.assertIn("const matchingItems = timelineDefinitions().filter", charts)
-        self.assertIn("const items = matchingItems;", charts)
-        self.assertIn("timelineDefinitions().forEach(item =>", charts)
+        self.assertIn("function synchronizeTimelineCharts()", charts)
+        self.assertIn("const timelineKeys = new Set(timelineDefinitions().map(item => item.key))", charts)
+        self.assertIn("const selected = timelineDefinitions().map(item => item.key)", charts)
         self.assertIn("const chartValue = value === null", charts)
         self.assertIn("cursor: {drag: {x: false, y: false, setScale: false}", charts)
         self.assertIn("addEventListener('wheel'", charts)
@@ -285,30 +363,17 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("previous + scale * .01", charts)
         self.assertIn("chart-point-tooltip", charts)
 
-    def test_chart_and_dashboard_gauge_selections_are_independent(self) -> None:
+    def test_all_energy_charts_are_automatic_and_dashboard_gauges_remain_optional(self) -> None:
         charts = (WEB_ROOT / "scripts" / "charts.js").read_text(encoding="utf-8")
         events = (WEB_ROOT / "scripts" / "app-events.js").read_text(encoding="utf-8")
-        translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
+        html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
 
-        select_gauges = charts[charts.index("function selectAllGaugeSelections"):
-                               charts.index("function selectAllChartSelections")]
-        select_charts = charts[charts.index("function selectAllChartSelections"):
-                               charts.index("function clearDashboardSelections")]
-        chart_handler = events[events.index("#chart-value-list"):
-                               events.index("#gauge-picker-search")]
-        gauge_handler = events[events.index("#gauge-picker-list"):
-                               events.index("[data-close-gauge-picker]")]
-        remove_handler = events[events.index("button[data-remove-dashboard]"):
-                                events.index("window.addEventListener('resize'")]
-
-        self.assertNotIn("chartSelections", select_gauges)
-        self.assertNotIn("dashboardSelections", select_charts)
-        self.assertNotIn("dashboardSelections", chart_handler)
-        self.assertNotIn("chartSelections", gauge_handler)
-        self.assertNotIn("chartSelections", remove_handler)
-        self.assertIn("chartSelection: 'Графік'", translations)
-        self.assertIn("chartSelection: 'График'", translations)
-        self.assertIn("chartSelection: 'Chart'", translations)
+        self.assertIn("function synchronizeTimelineCharts()", charts)
+        self.assertIn("const selected = timelineDefinitions().map(item => item.key)", charts)
+        self.assertNotIn("renderChartValueList", charts)
+        self.assertNotIn("#chart-value-list", events)
+        self.assertNotIn("chart-selector", html)
+        self.assertNotIn("chart-select-all", html)
 
     def test_energy_flow_uses_physical_live_grid_and_generator_registers(self) -> None:
         flow = (WEB_ROOT / "scripts" / "energy-flow.js").read_text(encoding="utf-8")
@@ -316,10 +381,12 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("firstRegister([85])", flow)
         self.assertIn("firstRegister([86])", flow)
         self.assertIn("firstRegister([88])", flow)
-        self.assertIn("firstRegister([68])", flow)
         self.assertIn("firstRegister([69])", flow)
         self.assertIn("firstRegister([67, 325])", flow)
-        self.assertIn("firstRegister([70, 322])", flow)
+        self.assertNotIn("firstRegister([68])", flow)
+        self.assertNotIn("firstRegister([70, 322])", flow)
+        self.assertIn("firstRegister([84, 436])", flow)
+        self.assertIn("firstRegister([161, 153, 156])", flow)
         self.assertIn("const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online)", flow)
         self.assertIn("grid: raw & 0x03", flow)
         self.assertIn("generator: (raw >> 2) & 0x03", flow)
@@ -666,7 +733,7 @@ class DashboardAssetTests(unittest.TestCase):
         from solar_inverter.services.inverter_service_core import REGISTER_CONFIG, normalize
 
         expected = {
-            84: (1.0, "W", False),
+            84: (1.0, "W", True),
             88: (1.0, "W", False),
             92: (1.0, "W", False),
             93: (1.0, "VA", False),
@@ -690,6 +757,41 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertEqual(normalize(82, 1235)[3], 12.35)
         self.assertEqual(normalize(95, 65536 - 123)[3], -123.0)
         self.assertEqual(normalize(130, 65536 - 180)[3], 18.0)
+
+    def test_ttn_12ku_u30_embedded_workbook_profile(self) -> None:
+        from solar_inverter.services.inverter_service_core import (
+            FAST_BLOCKS,
+            KNOWN_REGISTERS,
+            REGISTER_CONFIG,
+        )
+        from solar_inverter.services.register_profile_12ku import REGISTER_BY_NUMBER, REGISTER_PROFILE
+
+        self.assertEqual(len(REGISTER_PROFILE), 696)
+        self.assertEqual(KNOWN_REGISTERS, [row[0] for row in REGISTER_PROFILE])
+        self.assertEqual(REGISTER_BY_NUMBER[58][2], "Model ID / Protocol ID B")
+        self.assertEqual(REGISTER_BY_NUMBER[16651][5:7], (0.1, "V"))
+        self.assertEqual(REGISTER_CONFIG[142][1:3], (0.01, "Ah"))
+        self.assertEqual(REGISTER_CONFIG[143][1:3], (0.01, "Ah"))
+        self.assertEqual(REGISTER_CONFIG[157][1:3], (0.01, "kWh"))
+        self.assertEqual(REGISTER_CONFIG[187][1:3], (0.01, "kWh"))
+        self.assertEqual(
+            REGISTER_BY_NUMBER[68][2:5],
+            ("Состояние силовых клемм", "только чтение", "uint16_t"),
+        )
+        self.assertEqual(REGISTER_BY_NUMBER[70][2], "Статус топологии / single")
+        self.assertEqual(REGISTER_BY_NUMBER[437][2], "Reserved после мощности сети A")
+        self.assertIn((1, 120), FAST_BLOCKS)
+
+    def test_12ku_cards_prioritize_measured_output_voltage(self) -> None:
+        from solar_inverter.services.inverter_service_core import METER_DEFINITIONS
+
+        output_voltage = next(item for item in METER_DEFINITIONS if item[0] == 537)
+        self.assertEqual(output_voltage[1], [89])
+        lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
+        flow = (WEB_ROOT / "scripts" / "energy-flow.js").read_text(encoding="utf-8")
+        self.assertIn("numberValue([537, 89])", lcd)
+        self.assertIn("firstRegister([537, 89])", flow)
+        self.assertNotIn("numberValue([84, 437, 436])", lcd)
 
     def test_build_and_installer_payload_manifests_match(self) -> None:
         build = runpy.run_path(str(ROOT / "deploy" / "build_update_bundle.py"))
@@ -820,15 +922,12 @@ class DashboardRendererTests(unittest.TestCase):
     def test_lcd_uses_canonical_state_registers_for_connections_and_flow(self) -> None:
         lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
         self.assertIn("firstRegister([67, 325])", lcd)
-        self.assertIn("firstRegister([68])", lcd)
         self.assertIn("firstRegister([69])", lcd)
-        self.assertIn("decodeEnergyTerminalState(terminalStateSource)", lcd)
+        self.assertNotIn("firstRegister([68])", lcd)
+        self.assertIn("const terminalState = null", lcd)
         self.assertIn("decodeEnergyFlowState(flowStateSource)", lcd)
-        self.assertIn("terminalState.grid !== 0", lcd)
         self.assertIn("flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid", lcd)
-        self.assertIn("terminalState.pv1 !== 0 || terminalState.pv2 !== 0", lcd)
         self.assertIn("flowState.inverterToMainOutput || flowState.inverterToSecondaryOutput", lcd)
-        self.assertIn("terminalState?.battery === 4", lcd)
 
     def test_all_tabs_use_complete_translation_catalogs(self) -> None:
         translation_path = WEB_ROOT / "scripts" / "translations.js"
@@ -904,8 +1003,10 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("registerInterpretation(statusRegister) || localizeDataText(statusRegister.display)", lcd_source)
         self.assertIn("const isPercentage = register.unit === '%'", chart_source)
         self.assertIn("isPercentage ? Math.max(0, Math.min(100, value)) : value", chart_source)
-        self.assertIn("function seedDemoHistory(period", chart_source)
-        self.assertIn("const pointCounts = {day: 288, week: 336, month: 360, year: 365}", chart_source)
+        self.assertIn("function seedDemoHistory()", chart_source)
+        self.assertIn("const pointCounts = {day: 288, week: 336, month: 360, year: 365, lifetime: 365}", chart_source)
+        self.assertIn("const demoWindowSeconds = Number.isFinite(windowSeconds) ? windowSeconds : 315360000", chart_source)
+        self.assertNotIn("displaySeconds", chart_source)
         self.assertIn("previousValue + random() * scale * .01", chart_source)
         self.assertIn("Math.max(0, Math.min(100, inverterFanSpeed))", flow_source)
         self.assertIn("reading(normalizedFanSpeed, '%', 1)", flow_source)
@@ -1003,9 +1104,9 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn(".lcd-column-input", css_source)
         self.assertIn(".lcd-column-output", css_source)
         self.assertIn(".lcd-column-pv", css_source)
-        self.assertIn("const outputVoltage = numberValue([89, 537])", lcd)
+        self.assertIn("const outputVoltage = numberValue([537, 89])", lcd)
         self.assertIn("const outputFrequency = numberValue([91, 538])", lcd)
-        self.assertIn("const pvVoltage = numberValue([151, 154])", lcd)
+        self.assertIn("const pvVoltage = numberValue([609])", lcd)
         self.assertIn("const pvCurrent = sumValues([152, 155])", lcd)
         self.assertIn("const pvPower = numberValue([161]) ?? sumValues([153, 156])", lcd)
         self.assertIn("const dailyPvEnergy = numberValue([157])", lcd)

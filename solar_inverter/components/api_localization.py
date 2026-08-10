@@ -98,6 +98,23 @@ with DATA_TRANSLATIONS_PATH.open(encoding="utf-8") as translation_file:
     DATA_TRANSLATIONS: dict[str, dict[str, str]] = json.load(translation_file)
 
 
+def repair_legacy_text(value: Any) -> Any:
+    """Repair text that was decoded as Latin-1 before older source revisions."""
+    if not isinstance(value, str) or not any(marker in value for marker in ("Ð", "Ñ", "â€")):
+        return value
+    for legacy_encoding in ("cp1252", "latin-1"):
+        try:
+            return value.encode(legacy_encoding).decode("utf-8")
+        except UnicodeError:
+            continue
+    return value
+
+
+for _translations in REGISTER_DESCRIPTION_TRANSLATIONS.values():
+    for _language, _text in _translations.items():
+        _translations[_language] = repair_legacy_text(_text)
+
+
 def resolve_api_language(explicit: str = "", accept_language: str = "") -> str:
     """Resolve an API language from ?lang first, then Accept-Language."""
     requested = explicit.strip().lower().replace("_", "-").split("-", 1)[0]
@@ -124,6 +141,7 @@ def resolve_api_language(explicit: str = "", accept_language: str = "") -> str:
 
 def localize_api_text(value: Any, language: str) -> Any:
     """Translate known user-facing API text while preserving raw values."""
+    value = repair_legacy_text(value)
     if language == "uk" or not isinstance(value, str) or not value:
         return value
     translation = DATA_TRANSLATIONS.get(value, {}).get(language)
@@ -157,20 +175,20 @@ def register_description(
     if 1 <= register <= 10:
         first_character = (register - 1) * 2 + 1
         last_character = first_character + 1
-        return {
+        return repair_legacy_text({
             "uk": f"Слово серійного номера: ASCII-символи {first_character}–{last_character}. R1–R10 з’єднуються по старшому, потім молодшому байту в повний ідентифікатор; 0x00 означає порожнє доповнення або кінець.",
             "ru": f"Слово серийного номера: ASCII-символы {first_character}–{last_character}. R1–R10 объединяются по старшему, затем младшему байту в полный идентификатор; 0x00 означает пустое заполнение или конец.",
             "en": f"Serial-number word containing ASCII characters {first_character}–{last_character}. Join R1–R10 high byte then low byte to form the full identifier; 0x00 is padding or the end.",
-        }[language]
+        }[language])
     specific = REGISTER_DESCRIPTION_TRANSLATIONS.get(register, {}).get(language)
     if specific:
-        return specific
+        return repair_legacy_text(specific)
     if name == "Резерв":
-        return {
+        return repair_legacy_text({
             "uk": "Поле зарезервовано картою V1.31; його значення не слід інтерпретувати.",
             "ru": "Поле зарезервировано картой V1.31; его значение не следует интерпретировать.",
             "en": "Reserved by the V1.31 map; do not interpret its value.",
-        }[language]
+        }[language])
     localized_name = str(localize_api_text(name, language))
     if unit:
         sign_note = {
@@ -178,13 +196,13 @@ def register_description(
             "ru": " со знаком" if signed else "",
             "en": " signed" if signed else "",
         }[language]
-        return {
+        return repair_legacy_text({
             "uk": f"Вимірюване значення «{localized_name}»{sign_note}; API = сире значення × {scale:g} {unit}.",
             "ru": f"Измеряемое значение «{localized_name}»{sign_note}; API = сырое значение × {scale:g} {unit}.",
             "en": f"Measured value “{localized_name}”{sign_note}; API = raw value × {scale:g} {unit}.",
-        }[language]
-    return {
+        }[language])
+    return repair_legacy_text({
         "uk": f"Поле «{localized_name}» з карти Modbus V1.31; поточний код розшифровується нижче, якщо таблиця значень визначена.",
         "ru": f"Поле «{localized_name}» из карты Modbus V1.31; текущий код расшифровывается ниже, если таблица значений определена.",
         "en": f"“{localized_name}” field from the V1.31 Modbus map; the current code is decoded below when a value table is defined.",
-    }[language]
+    }[language])

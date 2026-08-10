@@ -1,22 +1,22 @@
-    const VALUE_LIST_RENDER_LIMIT = 80;
     const CHARTS_PER_PAGE = 12;
     let chartPage = 0;
     let chartsViewRenderPending = false;
+    const hydratedChartHistoryPeriods = new Set();
     const ENERGY_CONSUMPTION_REGISTERS = new Set([
       176, 177, 178, 179,
       184, 185, 186, 187
     ]);
     const ENERGY_PERIOD_BY_REGISTER = new Map([
-      [176, 'day'], [177, 'month'], [178, 'year'],
-      [184, 'day'], [185, 'month'], [186, 'year']
+      [176, 'day'], [177, 'month'], [178, 'year'], [179, 'lifetime'],
+      [184, 'day'], [185, 'month'], [186, 'year'], [187, 'lifetime']
     ]);
 
-    function chartPeriodForItem(item, fallback = window.chartPeriod || 'realtime') {
-      return ENERGY_PERIOD_BY_REGISTER.get(Number(item?.register)) || fallback;
+    function chartPeriodForItem(item) {
+      return ENERGY_PERIOD_BY_REGISTER.get(Number(item?.register)) || 'realtime';
     }
 
     function chartPeriodLabel(period) {
-      const keys = {realtime: 'periodRealtime', day: 'periodDay', week: 'periodWeek', month: 'periodMonth', year: 'periodYear'};
+      const keys = {realtime: 'periodRealtime', day: 'periodDay', week: 'periodWeek', month: 'periodMonth', year: 'periodYear', lifetime: 'periodLifetime'};
       return t(keys[period] || keys.realtime);
     }
 
@@ -25,16 +25,6 @@
       return periods.size === 1 ? chartPeriodLabel([...periods][0]) : t('periodMixed');
     }
 
-    function synchronizeChartPeriodWithSelection() {
-      const selected = [...chartSelections].map(key => chartDefinitions.get(key)).filter(isTimelineValue);
-      if (selected.length !== 1) return;
-      const naturalPeriod = ENERGY_PERIOD_BY_REGISTER.get(Number(selected[0].register));
-      if (!naturalPeriod || naturalPeriod === window.chartPeriod) return;
-      const selector = document.querySelector('#chart-period-select');
-      if (selector) selector.value = naturalPeriod;
-      window.chartPeriod = naturalPeriod;
-      refreshChartsWithPeriod(naturalPeriod);
-    }
     const chartCanvasLayouts = new WeakMap();
     const visibleChartCanvases = new Set();
     const chartResizeObserver = typeof ResizeObserver === 'function'
@@ -141,10 +131,6 @@
       return definitions;
     }
     function updateGaugeSelectionActions() {
-      const timelineItems = timelineDefinitions();
-      const allChartsSelected = timelineItems.length > 0 && timelineItems.every(item =>
-        chartSelections.has(item.key)
-      );
       const allGaugesSelected = chartDefinitions.size > 0 && [...chartDefinitions.keys()].every(key =>
         dashboardSelections.has(key)
       );
@@ -153,35 +139,7 @@
         if (button.disabled !== disabled) button.disabled = disabled;
       };
       setDisabled('#select-all-gauges', chartDefinitions.size === 0 || allGaugesSelected);
-      setDisabled('#chart-select-all', timelineItems.length === 0 || allChartsSelected);
       setDisabled('#clear-all-gauges', dashboardSelections.size === 0);
-      setDisabled('#chart-clear-all', chartSelections.size === 0);
-    }
-    function renderChartValueList() {
-      if (document.querySelector('#charts-view').hidden) return;
-      const host = document.querySelector('#chart-value-list');
-      const query = document.querySelector('#chart-search').value.trim().toLowerCase();
-      const matchingItems = timelineDefinitions().filter(item =>
-        `${item.label} ${item.detail} ${item.interpretation || ''} ${item.unit}`.toLowerCase().includes(query)
-      );
-      const items = matchingItems.slice(0, VALUE_LIST_RENDER_LIMIT);
-      const hiddenCount = matchingItems.length - items.length;
-      const signature = `${currentLanguage}|${query}|${items.map(item =>
-        `${item.key}:${item.label}:${item.detail}:${item.interpretation || ''}:${item.unit}:${chartSelections.has(item.key)}`).join('|')}`;
-      if (host.dataset.signature === signature) {
-        updateGaugeSelectionActions();
-        return;
-      }
-      host.dataset.signature = signature;
-      host.innerHTML = items.map(item => `<div class="value-option">
-        <div class="value-name">${item.label}<small>${item.detail}${item.interpretation ? `<br>${item.interpretation}` : ''}</small></div>
-        <div class="value-targets">
-          <label><input type="checkbox" data-value-key="${item.key}" ${chartSelections.has(item.key) ? 'checked' : ''}> ${t('chartSelection')}</label>
-        </div>
-      </div>`).join('') + (hiddenCount > 0
-        ? `<div class="value-list-limit">${t('moreValuesAvailable', {count: hiddenCount})}</div>`
-        : '');
-      updateGaugeSelectionActions();
     }
     function renderGaugePickerList() {
       if (!document.querySelector('#gauge-picker').open) return;
@@ -215,10 +173,8 @@
       requestAnimationFrame(() => window.setTimeout(() => {
         gaugeSelectionRenderPending = false;
         saveSelections('inverter-dashboard-gauges-v2', dashboardSelections);
-        saveSelections('inverter-chart-values-v2', chartSelections);
         if (!document.querySelector('#dashboard-view').hidden) renderDashboardValues();
         if (!document.querySelector('#charts-view').hidden) {
-          renderChartValueList();
           renderChartCards();
         }
         if (document.querySelector('#gauge-picker').open) renderGaugePickerList();
@@ -228,21 +184,44 @@
       chartDefinitions.forEach((_item, key) => dashboardSelections.add(key));
       renderGaugeSelectionChanges();
     }
-    function selectAllChartSelections() {
-      timelineDefinitions().forEach(item => {
-        if (!chartSelections.has(item.key)) chartHistory.set(item.key, []);
-        chartSelections.add(item.key);
-      });
-      renderGaugeSelectionChanges();
-    }
     function clearDashboardSelections() {
       dashboardSelections.clear();
       renderGaugeSelectionChanges();
     }
-    function clearChartSelections() {
-      chartSelections.clear();
-      chartHistory.clear();
-      renderGaugeSelectionChanges();
+    function synchronizeTimelineCharts() {
+      const timelineKeys = new Set(timelineDefinitions().map(item => item.key));
+      chartSelections.forEach(key => {
+        if (timelineKeys.has(key)) return;
+        chartSelections.delete(key);
+        chartHistory.delete(key);
+      });
+    }
+
+    function renderChartSelectionList() {
+      const host = document.querySelector('#chart-selection-list');
+      if (!host) return;
+      const query = document.querySelector('#chart-selection-search').value.trim().toLowerCase();
+      const items = timelineDefinitions().filter(item =>
+        `${item.label} ${item.detail} ${item.unit}`.toLowerCase().includes(query)
+      );
+      host.innerHTML = items.map(item => `<label class="chart-selection-option">
+        <input type="checkbox" data-chart-selection-key="${item.key}" ${chartSelections.has(item.key) ? 'checked' : ''}>
+        <span>${item.label}<small>${item.detail}${item.unit ? ` · ${item.unit}` : ''}</small></span>
+      </label>`).join('') || `<div class="chart-empty">${t('noData')}</div>`;
+    }
+
+    function setChartSelection(key, selected) {
+      if (!timelineDefinitions().some(item => item.key === key)) return;
+      if (selected) {
+        chartSelections.add(key);
+        if (!chartHistory.has(key)) chartHistory.set(key, []);
+      } else {
+        chartSelections.delete(key);
+        chartHistory.delete(key);
+      }
+      saveSelections('inverter-chart-values-v3', chartSelections);
+      renderChartSelectionList();
+      renderChartCards();
     }
     function openGaugePicker() {
       const picker = document.querySelector('#gauge-picker');
@@ -264,9 +243,9 @@
       const oldSignature = definitionSignature(chartDefinitions);
       const nextSignature = definitionSignature(next);
       chartDefinitions = next;
-      synchronizeChartPeriodWithSelection();
+      synchronizeTimelineCharts();
+      renderChartSelectionList();
       if (oldSignature !== nextSignature) {
-        renderChartValueList();
         renderGaugePickerList();
         renderChartCards();
       }
@@ -275,10 +254,12 @@
     function renderChartCards() {
       if (document.querySelector('#charts-view').hidden) return;
       const grid = document.querySelector('#chart-grid');
-      const selected = [...chartSelections].filter(key => isTimelineValue(chartDefinitions.get(key)));
+      const selected = timelineDefinitions()
+        .map(item => item.key)
+        .filter(key => chartSelections.has(key));
       document.querySelector('#chart-demo-button').disabled = false;
       document.querySelector('#chart-selection-count').textContent =
-        selected.length ? t('selectedSummary', {
+        selected.length ? t('chartCount', {
           count: selected.length,
           period: selectedChartPeriodLabel(selected.map(key => chartDefinitions.get(key)))
         }) : t('noValuesSelected');
@@ -336,9 +317,36 @@
       requestAnimationFrame(() => window.setTimeout(() => {
         chartsViewRenderPending = false;
         if (document.querySelector('#charts-view').hidden) return;
-        renderChartValueList();
+        renderChartSelectionList();
         renderChartCards();
+        void hydrateChartHistory();
       }, 0));
+    }
+
+    async function hydrateChartHistory() {
+      if (chartDemoRunning) return;
+      const periods = [...new Set(timelineDefinitions().map(chartPeriodForItem))]
+        .filter(period => !hydratedChartHistoryPeriods.has(period));
+      if (!periods.length) return;
+      await Promise.all(periods.map(async period => {
+        try {
+          const response = await fetch(`/api/historical?period=${encodeURIComponent(period)}`, {cache: 'no-store'});
+          if (!response.ok) return;
+          const data = await response.json();
+          if (!Array.isArray(data.points)) return;
+          timelineDefinitions().filter(item => chartPeriodForItem(item) === period).forEach(item => {
+            const history = data.points.flatMap(point => Number.isFinite(Number(point?.[item.register]))
+              && Number.isFinite(Number(point?.time))
+              ? [{time: Number(point.time), value: Number(point[item.register])}]
+              : []);
+            if (history.length) chartHistory.set(item.key, history);
+          });
+          hydratedChartHistoryPeriods.add(period);
+        } catch (error) {
+          console.debug('Chart history unavailable:', error.message);
+        }
+      }));
+      if (!document.querySelector('#charts-view').hidden) scheduleVisibleChartDraw();
     }
     function recordChartSamples(data) {
       updateChartDefinitions(data);
@@ -706,6 +714,7 @@
         'week': 604800,
         'month': 2592000,
         'year': 31536000,
+        'lifetime': Number.POSITIVE_INFINITY,
         '24h': 86400,
         '7d': 604800,
         '30d': 2592000
@@ -713,59 +722,6 @@
       return periodMap[period] || 120;
     }
 
-    function refreshChartsWithPeriod(period) {
-      const newWindowSeconds = getPeriodWindowSeconds(period);
-      chartWindowSeconds = newWindowSeconds;
-      chartWindowMilliseconds = newWindowSeconds * 1000;
-
-      // Trim existing history to new window
-      const now = Date.now();
-      chartHistory.forEach((history, key) => {
-        trimChartHistory(history, now, chartDefinitions.get(key));
-      });
-
-      // If demo is running, regenerate data for new period
-      if (chartDemoRunning) {
-        const scenario = realisticDemoScenario(0);
-        applyDemoEnergyFrame(scenario);
-        synchronizeDemoChartDefinitions(scenario);
-        seedDemoHistory(period);
-      } else {
-        // For real data, fetch historical data from backend
-        fetchHistoricalData(period);
-      }
-
-      modalChartPlot?.destroy();
-      modalChartPlot = null;
-      renderChartCards();
-      drawAllCharts();
-    }
-
-    async function fetchHistoricalData(period) {
-      try {
-        const response = await fetch(`/api/historical?period=${period}`);
-        if (!response.ok) return;
-        const data = await response.json();
-        // Process historical data and populate chartHistory
-        if (data.points && Array.isArray(data.points)) {
-          const now = Date.now();
-          chartSelections.forEach(key => {
-            const item = chartDefinitions.get(key);
-            if (!item) return;
-            const register = item.register;
-            const history = [];
-            data.points.forEach(point => {
-              if (point[register] !== undefined) {
-                history.push({time: point.time, value: point[register]});
-              }
-            });
-            chartHistory.set(key, history);
-          });
-        }
-      } catch (error) {
-        console.error('Failed to fetch historical data:', error);
-      }
-    }
     function formatChartTime(timestamp) {
       const locale = currentLanguage === 'uk' ? 'uk-UA' : currentLanguage === 'ru' ? 'ru-RU' : 'en-GB';
       return new Date(timestamp).toLocaleTimeString(locale, {
@@ -800,19 +756,16 @@
       applyDemoEnergyFrame(initialScenario);
       if (lastData) render(lastData);
       synchronizeDemoChartDefinitions(initialScenario);
-      seedDemoHistory(window.chartPeriod || 'realtime');
+      seedDemoHistory();
       if (!document.querySelector('#dashboard-view').hidden) renderDashboardValues();
       drawAllCharts();
 
       try {
         const demoStartedAt = Date.now();
-        const period = window.chartPeriod || 'realtime';
-        const periodSeconds = getPeriodWindowSeconds(period);
-        const demoDuration = period === 'realtime' ? chartWindowMilliseconds : Math.min(chartWindowMilliseconds, 60000); // Limit non-realtime demos to 60s for UX
+        const demoDuration = 120000;
 
         while (Date.now() - demoStartedAt < demoDuration) {
           const elapsedBeforeWait = Math.floor((Date.now() - demoStartedAt) / 1000);
-          const displaySeconds = period === 'realtime' ? chartWindowSeconds : periodSeconds;
           setButtonState(t('stopDemo', {
             elapsed: elapsedBeforeWait,
             seconds: Math.floor(demoDuration / 1000),
@@ -824,10 +777,7 @@
           if (chartDemoCancelRequested) break;
 
           const now = Date.now();
-          const elapsedSeconds = Math.min(
-            displaySeconds - .001,
-            (now - demoStartedAt) / 1000
-          );
+          const elapsedSeconds = Math.min(119.999, (now - demoStartedAt) / 1000);
           const scenario = realisticDemoScenario(elapsedSeconds);
           applyDemoEnergyFrame(scenario);
           synchronizeDemoChartDefinitions(scenario);
@@ -852,7 +802,7 @@
             chartHistory.set(key, history);
           });
           const elapsed = Math.min(
-            displaySeconds,
+            Math.floor(demoDuration / 1000),
             Math.floor((now - demoStartedAt) / 1000)
           );
           setButtonState(t('stopDemo', {

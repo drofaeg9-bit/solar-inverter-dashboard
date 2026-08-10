@@ -19,6 +19,12 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, TextIO
+
+from .register_profile_12ku import (
+    MAINTENANCE_REGISTERS,
+    REGISTER_PROFILE,
+    REGISTER_NUMBERS,
+)
 from zoneinfo import ZoneInfo
 
 DEVICE = "/dev/ttyUSB0"
@@ -48,6 +54,12 @@ REGISTER_MAP_PATH = (
     else STATS_DB_PATH.with_name("register_map_overrides.csv")
 )
 REGISTER_MAP_MAX_BYTES = 1024 * 1024
+_manual_register_values_path_setting = os.environ.get("INVERTER_MANUAL_REGISTER_VALUES")
+MANUAL_REGISTER_VALUES_PATH = (
+    Path(_manual_register_values_path_setting)
+    if _manual_register_values_path_setting
+    else STATS_DB_PATH.with_name("manual_register_values.json")
+)
 stats_lock = threading.Lock()
 stats_error = ""
 site_visit_total = 0
@@ -160,7 +172,9 @@ KNOWN_REGISTERS = [
 # duplicate channels, and diagnostics are distributed across cycles below so
 # fast mode does not spend most of its time starting mbpoll subprocesses.
 FAST_BLOCKS = [
-    (65, 31),
+    # Keep all low-address telemetry available to the meter panel every cycle.
+    # 120 words is within the Modbus 125-register limit for a single request.
+    (1, 120),
     (129, 62),
     (321, 30),
     (401, 19),
@@ -176,8 +190,8 @@ FAST_AUXILIARY_BLOCK_GROUPS = [
 fast_auxiliary_group_index = 0
 
 # Public R-numbers are one-based references. The inverter's Modbus PDU addresses
-# are zero-based, so R89 is protocol address 0x0058. Metadata below follows the
-# TTN/JSD Solar external Modbus map V1.31 used by compatible inverter models.
+# are zero-based, so R89 is protocol address 0x0058.  This is the TTN 12KU
+# single / U3.0 profile, not a cross-model V1.31 profile.
 # name, scale, unit, signed, group
 REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     **{
@@ -215,7 +229,7 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     81: ("Напруга мережі, фаза A", 0.1, "V", False, "AC"),
     82: ("Струм мережі, фаза A", 0.01, "A", False, "AC"),
     83: ("Частота мережі, фаза A", 0.01, "Hz", False, "AC"),
-    84: ("Потужність мережі, фаза A", 1.0, "W", False, "Потужність"),
+    84: ("Потужність мережі, фаза A", 1.0, "W", True, "Потужність"),
     85: ("Напруга генератора, фаза A", 0.1, "V", False, "Генератор"),
     86: ("Струм генератора, фаза A", 0.01, "A", False, "Генератор"),
     87: ("Частота генератора, фаза A", 0.01, "Hz", False, "Генератор"),
@@ -242,8 +256,8 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     139: ("SOC від BMS", 1.0, "%", False, "BMS"),
     140: ("Температура акумулятора BMS", 0.1, "°C", True, "Температура"),
     141: ("Точка постійної напруги BMS", 0.1, "V", False, "BMS"),
-    142: ("Номінальна ємність BMS", 0.1, "Ah", False, "BMS"),
-    143: ("Поточна ємність BMS", 0.1, "Ah", False, "BMS"),
+    142: ("Номінальна ємність BMS", 0.01, "Ah", False, "BMS"),
+    143: ("Поточна ємність BMS", 0.01, "Ah", False, "BMS"),
     144: ("Стан зв’язку BMS", 1.0, "", False, "BMS"),
     145: ("Стан мережі літієвої батареї", 1.0, "", False, "BMS"),
     146: ("Код несправності BMS", 1.0, "", False, "BMS"),
@@ -257,37 +271,37 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     154: ("Напруга PV2", 0.1, "V", False, "PV"),
     155: ("Струм PV2", 0.01, "A", False, "PV"),
     156: ("Потужність PV2", 1.0, "W", False, "PV"),
-    157: ("Енергія PV за сьогодні", 0.1, "kWh", False, "PV"),
-    158: ("Загальна енергія PV", 0.1, "kWh", False, "PV"),
+    157: ("Енергія PV за сьогодні", 0.01, "kWh", False, "PV"),
+    158: ("Загальна енергія PV", 0.01, "kWh", False, "PV"),
     159: ("Струм заряджання від PV1", 0.1, "A", False, "PV"),
     160: ("Струм заряджання від PV2", 0.1, "A", False, "PV"),
     161: ("Загальна потужність PV", 1.0, "W", False, "PV"),
-    162: ("Енергія PV за місяць", 0.1, "kWh", False, "PV"),
-    163: ("Енергія PV за рік", 0.1, "kWh", False, "PV"),
-    164: ("Енергія заряджання за день", 0.1, "kWh", False, "Енергія"),
-    165: ("Енергія заряджання за місяць", 0.1, "kWh", False, "Енергія"),
-    166: ("Енергія заряджання за рік", 0.1, "kWh", False, "Енергія"),
-    167: ("Загальна енергія заряджання", 0.1, "kWh", False, "Енергія"),
-    168: ("Енергія розряджання за день", 0.1, "kWh", False, "Енергія"),
-    169: ("Енергія розряджання за місяць", 0.1, "kWh", False, "Енергія"),
-    170: ("Енергія розряджання за рік", 0.1, "kWh", False, "Енергія"),
-    171: ("Загальна енергія розряджання", 0.1, "kWh", False, "Енергія"),
-    172: ("Енергія інвертування за день", 0.1, "kWh", False, "Енергія"),
-    173: ("Енергія інвертування за місяць", 0.1, "kWh", False, "Енергія"),
-    174: ("Енергія інвертування за рік", 0.1, "kWh", False, "Енергія"),
-    175: ("Загальна енергія інвертування", 0.1, "kWh", False, "Енергія"),
-    176: ("Енергія навантаження за день", 0.1, "kWh", False, "Енергія"),
-    177: ("Енергія навантаження за місяць", 0.1, "kWh", False, "Енергія"),
-    178: ("Енергія навантаження за рік", 0.1, "kWh", False, "Енергія"),
-    179: ("Загальна енергія навантаження", 0.1, "kWh", False, "Енергія"),
-    180: ("Енергія віддачі в мережу за день", 0.1, "kWh", False, "Енергія"),
-    181: ("Енергія віддачі в мережу за місяць", 0.1, "kWh", False, "Енергія"),
-    182: ("Енергія віддачі в мережу за рік", 0.1, "kWh", False, "Енергія"),
-    183: ("Загальна енергія віддачі в мережу", 0.1, "kWh", False, "Енергія"),
-    184: ("Енергія споживання з мережі за день", 0.1, "kWh", False, "Енергія"),
-    185: ("Енергія споживання з мережі за місяць", 0.1, "kWh", False, "Енергія"),
-    186: ("Енергія споживання з мережі за рік", 0.1, "kWh", False, "Енергія"),
-    187: ("Загальна енергія споживання з мережі", 0.1, "kWh", False, "Енергія"),
+    162: ("Енергія PV за місяць", 0.01, "kWh", False, "PV"),
+    163: ("Енергія PV за рік", 0.01, "kWh", False, "PV"),
+    164: ("Енергія заряджання за день", 0.01, "kWh", False, "Енергія"),
+    165: ("Енергія заряджання за місяць", 0.01, "kWh", False, "Енергія"),
+    166: ("Енергія заряджання за рік", 0.01, "kWh", False, "Енергія"),
+    167: ("Загальна енергія заряджання", 0.01, "kWh", False, "Енергія"),
+    168: ("Енергія розряджання за день", 0.01, "kWh", False, "Енергія"),
+    169: ("Енергія розряджання за місяць", 0.01, "kWh", False, "Енергія"),
+    170: ("Енергія розряджання за рік", 0.01, "kWh", False, "Енергія"),
+    171: ("Загальна енергія розряджання", 0.01, "kWh", False, "Енергія"),
+    172: ("Енергія інвертування за день", 0.01, "kWh", False, "Енергія"),
+    173: ("Енергія інвертування за місяць", 0.01, "kWh", False, "Енергія"),
+    174: ("Енергія інвертування за рік", 0.01, "kWh", False, "Енергія"),
+    175: ("Загальна енергія інвертування", 0.01, "kWh", False, "Енергія"),
+    176: ("Енергія навантаження за день", 0.01, "kWh", False, "Енергія"),
+    177: ("Енергія навантаження за місяць", 0.01, "kWh", False, "Енергія"),
+    178: ("Енергія навантаження за рік", 0.01, "kWh", False, "Енергія"),
+    179: ("Загальна енергія навантаження", 0.01, "kWh", False, "Енергія"),
+    180: ("Енергія віддачі в мережу за день", 0.01, "kWh", False, "Енергія"),
+    181: ("Енергія віддачі в мережу за місяць", 0.01, "kWh", False, "Енергія"),
+    182: ("Енергія віддачі в мережу за рік", 0.01, "kWh", False, "Енергія"),
+    183: ("Загальна енергія віддачі в мережу", 0.01, "kWh", False, "Енергія"),
+    184: ("Енергія споживання з мережі за день", 0.01, "kWh", False, "Енергія"),
+    185: ("Енергія споживання з мережі за місяць", 0.01, "kWh", False, "Енергія"),
+    186: ("Енергія споживання з мережі за рік", 0.01, "kWh", False, "Енергія"),
+    187: ("Загальна енергія споживання з мережі", 0.01, "kWh", False, "Енергія"),
     188: ("Потужність навантаження на виході, фаза A", 1.0, "W", False, "Потужність"),
     189: ("Потужність навантаження на виході, фаза B", 1.0, "W", False, "Потужність"),
     190: ("Потужність навантаження на виході, фаза C", 1.0, "W", False, "Потужність"),
@@ -389,10 +403,44 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
 
 }
 
+# The embedded workbook is the catalog authority.  Existing Ukrainian labels
+# above are retained where available; the remaining maintenance rows use the
+# workbook wording until a dedicated localized label is supplied.  Values stay
+# read-only: access metadata is intentionally not used to create write calls.
+REGISTER_ACCESS: dict[int, str] = {
+    register: access
+    for register, _group, _name, access, _type, _scale, _unit, _has_hl
+    in REGISTER_PROFILE
+}
+REGISTER_WORD_FORMAT: dict[int, bool] = {
+    register: has_hl
+    for register, _group, _name, _access, _type, _scale, _unit, has_hl
+    in REGISTER_PROFILE
+}
+for register, group, name, _access, data_type, scale, unit, _has_hl in REGISTER_PROFILE:
+    profile_scale = 0.01 if scale == 10.0 and unit == "Wh" else scale
+    profile_unit = "kWh" if scale == 10.0 and unit == "Wh" else unit
+    if profile_unit in {"bitfield", "enum", "raw"}:
+        profile_unit = ""
+    existing = REGISTER_CONFIG.get(register)
+    label = existing[0] if existing else (name or f"Регістр {register}")
+    label_group = existing[4] if existing else group
+    REGISTER_CONFIG[register] = (
+        label, profile_scale, profile_unit or (existing[2] if existing else ""),
+        existing[3] if existing else data_type.lower().startswith("int"), label_group
+    )
+
+# Show every physical register from the 12KU workbook.  Fast mode continues to
+# use only the operational blocks above; Compatible mode deliberately reads the
+# full catalog on demand.
+KNOWN_REGISTERS = list(REGISTER_NUMBERS)
+
 REGISTER_MAP_COLUMNS = ("register", "name", "unit", "scale", "display")
 register_map_lock = threading.RLock()
 register_map_overrides: dict[int, dict[str, Any]] = {}
 register_map_error = ""
+manual_register_values_lock = threading.RLock()
+manual_register_values: dict[int, dict[str, Any]] = {}
 
 
 def _safe_register_map_text(value: str, field: str, maximum: int) -> str:
@@ -561,14 +609,128 @@ def register_map_status() -> dict[str, Any]:
         }
 
 
+def manual_register_value(register: int) -> float | None:
+    """Return the persisted dashboard value, when it replaces live Modbus data."""
+    with manual_register_values_lock:
+        value = manual_register_values.get(register, {}).get("value")
+        return float(value) if value is not None else None
+
+
+def manual_register_edit(register: int) -> dict[str, Any]:
+    """Return saved presentation and value overrides for one register."""
+    with manual_register_values_lock:
+        return dict(manual_register_values.get(register, {}))
+
+
+def set_manual_register_value(register: int, value: Any | None) -> dict[str, Any]:
+    """Persist one display-unit register value without writing to Modbus."""
+    return set_manual_register_edit(register, {"value": value} if value is not None else {}, clear_value=value is None)
+
+
+def set_manual_register_edit(
+    register: int, changes: dict[str, Any], *, clear_value: bool = False
+) -> dict[str, Any]:
+    """Persist editable dashboard fields without ever writing to Modbus."""
+    if register not in KNOWN_REGISTERS:
+        raise ValueError(f"unknown register R{register}")
+    allowed_fields = {"group": 100, "name": 200, "description": 500, "unit": 30}
+    cleaned: dict[str, Any] = {}
+    for field, maximum in allowed_fields.items():
+        if field not in changes:
+            continue
+        value = str(changes[field] or "").strip()
+        if len(value) > maximum:
+            raise ValueError(f"{field} is longer than {maximum} characters")
+        if any(ord(character) < 32 and character not in "\t" for character in value):
+            raise ValueError(f"{field} contains a control character")
+        cleaned[field] = value
+    if "value" in changes and changes["value"] is not None:
+        try:
+            numeric_value = float(changes["value"])
+        except (TypeError, ValueError) as error:
+            raise ValueError("value must be a number") from error
+        if not math.isfinite(numeric_value) or abs(numeric_value) > 1_000_000_000:
+            raise ValueError("value must be a finite number no greater than 1000000000")
+        cleaned["value"] = numeric_value
+
+    with manual_register_values_lock:
+        updated = dict(manual_register_values)
+        entry = dict(updated.get(register, {}))
+        entry.update(cleaned)
+        if clear_value:
+            entry.pop("value", None)
+        if entry:
+            updated[register] = entry
+        else:
+            updated.pop(register, None)
+        temporary_path = MANUAL_REGISTER_VALUES_PATH.with_suffix(
+            MANUAL_REGISTER_VALUES_PATH.suffix + ".tmp"
+        )
+        try:
+            MANUAL_REGISTER_VALUES_PATH.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path.write_text(
+                json.dumps({str(key): item for key, item in updated.items()}, indent=2),
+                encoding="utf-8",
+            )
+            os.replace(temporary_path, MANUAL_REGISTER_VALUES_PATH)
+        except OSError:
+            if temporary_path.exists():
+                temporary_path.unlink(missing_ok=True)
+            raise
+        manual_register_values.clear()
+        manual_register_values.update(updated)
+    return {"ok": True, "register": register, "edit": manual_register_edit(register)}
+
+
+def load_manual_register_values() -> None:
+    """Load saved dashboard overrides without preventing service startup."""
+    if not MANUAL_REGISTER_VALUES_PATH.exists():
+        return
+    try:
+        payload = json.loads(MANUAL_REGISTER_VALUES_PATH.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("manual value file must contain an object")
+        parsed: dict[int, dict[str, Any]] = {}
+        for register_text, value in payload.items():
+            register = int(register_text)
+            if register not in KNOWN_REGISTERS:
+                continue
+            # Older files stored a bare numeric value; keep them compatible.
+            entry = {"value": value} if not isinstance(value, dict) else value
+            value_override = entry.get("value")
+            cleaned: dict[str, Any] = {}
+            if value_override is not None:
+                numeric_value = float(value_override)
+                if not math.isfinite(numeric_value) or abs(numeric_value) > 1_000_000_000:
+                    raise ValueError(f"invalid value for R{register}")
+                cleaned["value"] = numeric_value
+            for field, maximum in {"group": 100, "name": 200, "description": 500, "unit": 30}.items():
+                if field in entry:
+                    text = str(entry[field] or "").strip()
+                    if len(text) > maximum:
+                        raise ValueError(f"invalid {field} for R{register}")
+                    cleaned[field] = text
+            if cleaned:
+                parsed[register] = cleaned
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+        print(f"[Manual register values] Could not load saved values: {error}")
+        return
+    with manual_register_values_lock:
+        manual_register_values.clear()
+        manual_register_values.update(parsed)
+
+
 load_register_map()
+load_manual_register_values()
 
 METER_DEFINITIONS = [
     (81, [433], "Напруга мережі", 0.0, 300.0, "V"),
     (82, [434], "Струм мережі", 0.0, 100.0, "A"),
     (84, [150, 436], "Потужність мережі", 0.0, 15000.0, "W"),
     (83, [435], "Частота мережі", 45.0, 55.0, "Hz"),
-    (89, [537], "Вихідна напруга AC", 0.0, 300.0, "V"),
+    # R537 is the measured output voltage for the 12KU U3.0.  R89 is a
+    # simplified/nominal reading and is used only while R537 is unavailable.
+    (537, [89], "Вихідна напруга AC", 0.0, 300.0, "V"),
     (92, [], "Активна потужність навантаження", 0.0, 12000.0, "W"),
     (93, [], "Повна потужність навантаження", 0.0, 15000.0, "VA"),
     (90, [], "Вихідний струм AC", 0.0, 100.0, "A"),

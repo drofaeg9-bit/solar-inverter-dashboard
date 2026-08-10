@@ -25,10 +25,18 @@
       document.querySelector('#register-map-file').click());
     document.querySelector('#register-map-file').addEventListener('change', event =>
       void uploadRegisterMap(event.currentTarget.files?.[0]));
-    document.querySelector('#search').addEventListener('input', () =>
+    document.querySelector('#search').addEventListener('input', () => {
+      registerRenderLimit = REGISTER_RENDER_LIMIT;
       demoRegisterRows
         ? renderRegisters(demoRegisterRows)
-        : lastData && renderRegisters(lastData.registers));
+        : lastData && renderRegisters(lastData.registers);
+    });
+    document.querySelector('#register-load-more').addEventListener('click', () => {
+      registerRenderLimit += REGISTER_RENDER_LIMIT;
+      demoRegisterRows
+        ? renderRegisters(demoRegisterRows)
+        : lastData && renderRegisters(lastData.registers);
+    });
     document.querySelector('.view-tabs').addEventListener('click', event => {
       const tab = event.target.closest('.view-tab[data-view]');
       if (tab) showView(tab.dataset.view);
@@ -76,9 +84,6 @@
       const button = event.target.closest('button[data-language]');
       if (button) applyLanguage(button.dataset.language);
     });
-    document.querySelector('#chart-search').addEventListener('input', renderChartValueList);
-    document.querySelector('#chart-select-all').addEventListener('click', selectAllChartSelections);
-    document.querySelector('#chart-clear-all').addEventListener('click', clearChartSelections);
     document.querySelector('#chart-grid').addEventListener('click', event => {
       const pageButton = event.target.closest('button[data-chart-page]');
       if (pageButton && !pageButton.disabled) {
@@ -95,6 +100,11 @@
         openChartModal(card.dataset.openChart);
       }
     });
+    document.querySelector('#chart-selection-search').addEventListener('input', renderChartSelectionList);
+    document.querySelector('#chart-selection-list').addEventListener('change', event => {
+      const input = event.target.closest('[data-chart-selection-key]');
+      if (input) setChartSelection(input.dataset.chartSelectionKey, input.checked);
+    });
     document.querySelector('#chart-modal-close').addEventListener('click', closeChartModal);
     document.querySelector('#chart-modal-reset').addEventListener('click', () => resetChartZoom());
     document.querySelector('#chart-modal').addEventListener('click', event => {
@@ -106,22 +116,6 @@
       modalChartKey = '';
     });
     document.querySelector('#dashboard-clear-gauges').addEventListener('click', clearDashboardSelections);
-    document.querySelector('#chart-value-list').addEventListener('change', event => {
-      const checkbox = event.target.closest('input[data-value-key]');
-      if (!checkbox) return;
-      const key = checkbox.dataset.valueKey;
-      if (checkbox.checked) {
-        chartSelections.add(key);
-        chartHistory.set(key, []);
-      } else {
-        chartSelections.delete(key);
-        chartHistory.delete(key);
-      }
-      saveSelections('inverter-chart-values-v2', chartSelections);
-      synchronizeChartPeriodWithSelection();
-      renderChartCards();
-      updateGaugeSelectionActions();
-    });
     document.querySelector('#gauge-picker-search').addEventListener('input', renderGaugePickerList);
     document.querySelector('#select-all-gauges').addEventListener('click', selectAllGaugeSelections);
     document.querySelector('#clear-all-gauges').addEventListener('click', clearDashboardSelections);
@@ -142,14 +136,6 @@
       document.querySelector('#gauge-picker').close());
     document.querySelector('#gauge-picker').addEventListener('click', event => {
       if (event.target === event.currentTarget) event.currentTarget.close();
-    });
-    document.querySelector('#chart-period-select').addEventListener('change', event => {
-      const period = event.target.value;
-      window.chartPeriod = period;
-      // Trigger chart refresh with new period
-      if (typeof refreshChartsWithPeriod === 'function') {
-        refreshChartsWithPeriod(period);
-      }
     });
     document.querySelector('#settings-button').addEventListener('click', () => {
       const picker = document.querySelector('#settings-picker');

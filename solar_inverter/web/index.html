@@ -235,6 +235,9 @@
           <tbody id="registers"></tbody>
         </table>
       </div>
+      <div class="register-list-actions" id="register-list-actions" hidden>
+        <button type="button" id="register-load-more"></button>
+      </div>
     </section>
     </section>
 
@@ -335,38 +338,24 @@
     </section>
 
     <section id="charts-view" role="tabpanel" aria-labelledby="charts-tab" tabindex="0" hidden>
-      <div class="charts-layout">
-        <aside class="panel chart-selector">
-          <h2 data-i18n="availableValues">Споживання енергії</h2>
-          <div class="muted" data-i18n="selectionHelp">Виберіть лічильники споживання лише для графіків.</div>
-          <input id="chart-search" type="search" placeholder="Пошук значень…" aria-label="Пошук значень графіка" data-i18n-placeholder="searchValues" data-i18n-aria="searchChartValues">
-          <div class="chart-selector-actions">
-            <button id="chart-select-all" type="button" data-i18n="selectAllGauges" data-disabled-reason="selectUnavailable" disabled>Вибрати всі</button>
-            <button id="chart-clear-all" class="clear-selection" type="button" data-i18n="clearAllGauges" data-disabled-reason="clearUnavailable" disabled>Очистити всі</button>
-          </div>
-          <div class="value-list" id="chart-value-list"></div>
-        </aside>
-        <div class="charts-main">
+      <div class="charts-main">
           <div class="panel-head charts-head">
             <div>
               <h2 data-i18n="liveCharts">Графіки в реальному часі</h2>
               <span class="muted" id="chart-selection-count" aria-live="polite">Значення не вибрано</span>
             </div>
             <div style="display: flex; gap: 8px; align-items: center;">
-              <select id="chart-period-select" style="padding: 8px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--panel); color: var(--text);">
-                <option value="realtime" data-i18n="periodRealtime">Реальний час (2 хв)</option>
-                <option value="day" data-i18n="periodDay">День</option>
-                <option value="week" data-i18n="periodWeek">Тиждень</option>
-                <option value="month" data-i18n="periodMonth">Місяць</option>
-                <option value="year" data-i18n="periodYear">Рік</option>
-              </select>
               <button id="chart-demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
             </div>
           </div>
+          <section class="chart-selection-panel" aria-label="Graphs to display">
+            <h3>Graphs to display</h3>
+            <input id="chart-selection-search" type="search" placeholder="Search values…" data-i18n-placeholder="searchValues" aria-label="Search graphs">
+            <div class="chart-selection-list" id="chart-selection-list"></div>
+          </section>
           <div class="chart-grid" id="chart-grid">
-            <div class="chart-empty">Виберіть значення зі списку, щоб запустити графіки в реальному часі.</div>
+            <div class="chart-empty">Очікування даних енергетичних лічильників…</div>
           </div>
-        </div>
       </div>
     </section>
 

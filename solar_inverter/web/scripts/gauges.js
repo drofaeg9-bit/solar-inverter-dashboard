@@ -29,7 +29,48 @@
       saveMap('inverter-dashboard-gauge-ranges-v2', dashboardGaugeRanges);
       return range;
     }
+    const ENERGY_FLOW_COLOUR_RULES = Object.freeze([
+      {
+        colour: 'var(--flow-solar-colour)',
+        ranges: [[151, 163], [817, 817], [823, 823]]
+      },
+      {
+        colour: 'var(--flow-generator-colour)',
+        ranges: [[85, 88]]
+      },
+      {
+        colour: 'var(--flow-battery-colour)',
+        ranges: [
+          [66, 66], [129, 149], [164, 171], [337, 350], [375, 386],
+          [401, 419], [16645, 16654]
+        ]
+      },
+      {
+        colour: 'var(--flow-grid-colour)',
+        ranges: [[81, 84], [95, 95], [150, 150], [180, 187], [433, 455], [16655, 16656]]
+      },
+      {
+        colour: 'var(--flow-home-colour)',
+        ranges: [[89, 93], [176, 179], [188, 190], [537, 542]]
+      },
+      {
+        colour: 'var(--flow-inverter-colour)',
+        ranges: [
+          [67, 74], [94, 94], [172, 175], [321, 325], [529, 530],
+          [545, 545], [801, 802], [818, 822], [16641, 16644]
+        ]
+      }
+    ]);
+    function registerEnergyFlowColour(register) {
+      const registerNumber = Number(register);
+      if (!Number.isInteger(registerNumber)) return null;
+      const rule = ENERGY_FLOW_COLOUR_RULES.find(({ranges}) =>
+        ranges.some(([first, last]) => registerNumber >= first && registerNumber <= last));
+      return rule?.colour || null;
+    }
     function diagramGaugeColour(item) {
+      const registerColour = registerEnergyFlowColour(item.register);
+      if (registerColour) return registerColour;
       const text = `${item.category || ''} ${item.label || ''} ${item.detail || ''}`.toLocaleLowerCase();
       if (/(pv|solar|соняч|солнеч)/u.test(text)) return 'var(--flow-solar-colour)';
       if (/(генератор|generator)/u.test(text)) return 'var(--flow-generator-colour)';

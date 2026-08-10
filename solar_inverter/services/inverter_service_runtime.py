@@ -4,6 +4,7 @@ import io
 import sys
 import threading
 from .inverter_service_core import *
+from .chart_history import get_chart_history, initialise_chart_history, record_chart_history
 
 # Log buffer for UI display
 log_buffer = io.StringIO()
@@ -683,6 +684,7 @@ def poll_worker() -> None:
         record_register_changes(log_values, log_cycle_id)
         if fresh:
             record_solar_energy(fresh)
+            record_chart_history(fresh)
             print(f"[Poll Worker] Solar energy recorded")
         cycle_work_duration = time.monotonic() - started
         sleep_time = max(0.0, poll_rate - cycle_work_duration)
@@ -756,6 +758,7 @@ def initialise_statistics() -> None:
                 ).fetchone()[0]
             )
             connection.commit()
+        initialise_chart_history()
         stats_error = ""
     except (OSError, sqlite3.Error) as error:
         stats_error = str(error)

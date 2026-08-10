@@ -213,22 +213,20 @@
       };
 
       const gridVoltageSource = firstRegister([81, 433]);
-      const terminalStateSource = firstRegister([68]);
       const flowStateSource = firstRegister([69]);
       const simplifiedStateSource = firstRegister([67, 325]);
-      const parallelStateSource = firstRegister([70, 322]);
       const gridCurrentSource = firstRegister([82, 434]);
-      const gridPowerSource = firstRegister([84, 150, 436]);
+      const gridPowerSource = firstRegister([84, 436]);
       const gridModeSource = firstRegister([67, 325]);
       const generatorVoltageSource = firstRegister([85]);
       const generatorCurrentSource = firstRegister([86]);
       const generatorPowerSource = firstRegister([88]);
-      const pvVoltageSource = firstRegister([151, 154]);
-      const pvPowerSource = firstRegister([153, 156]);
+      const pvVoltageSource = firstRegister([609, 151, 154]);
+      const pvPowerSource = firstRegister([161, 153, 156]);
       const loadPowerSource = firstRegister([92, 541, 188]);
       const inverterLoadSource = firstRegister([94]);
       const inverterFanSpeedSource = firstRegister([801]);
-      const outputVoltageSource = firstRegister([89, 537]);
+      const outputVoltageSource = firstRegister([537, 89]);
       const outputCurrentSource = firstRegister([90, 539]);
       const batteryVoltageSource = firstRegister([129, 137, 404, 342]);
       const batteryCurrentSource = firstRegister([130]);
@@ -244,18 +242,18 @@
       const measuredGeneratorVoltage = registerNumericValue(generatorVoltageSource);
       const measuredGeneratorCurrent = registerNumericValue(generatorCurrentSource);
       const measuredGeneratorPower = registerNumericValue(generatorPowerSource);
+      const pv1Power = numberValue([153]);
+      const pv2Power = numberValue([156]);
+      const producingPvVoltage = Number.isFinite(pv2Power) && (!Number.isFinite(pv1Power) || pv2Power > pv1Power)
+        ? numberValue([154, 151]) : numberValue([151, 154]);
       const pvVoltage = chartDemoRunning && Number.isFinite(demoPvVoltage)
-        ? demoPvVoltage
-        : numberValue([151, 154]);
+        ? demoPvVoltage : numberValue([609]) ?? producingPvVoltage;
       const pvPower = chartDemoRunning && Number.isFinite(demoPvPower)
-        ? demoPvPower
-        : summedValue([153, 156]);
+        ? demoPvPower : numberValue([161]) ?? summedValue([153, 156]);
       const measuredPvCurrent = summedValue([152, 155]);
       const pvCurrent = Number.isFinite(measuredPvCurrent)
         ? Math.abs(measuredPvCurrent)
-        : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .1 && Number.isFinite(pvPower)
-          ? Math.abs(pvPower / pvVoltage)
-          : null;
+        : null;
       const loadPowerReading = registerNumericValue(loadPowerSource);
       const measuredLoadPower = Number.isFinite(loadPowerReading) ? loadPowerReading : null;
       const inverterLoad = registerNumericValue(inverterLoadSource);
@@ -283,10 +281,10 @@
           : 0
         : Number.isFinite(batteryPowerReading) ? batteryPowerReading : calculatedBatteryPower;
       const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online);
-      const terminalState = liveMeasurementsFresh ? decodeEnergyTerminalState(terminalStateSource) : null;
+      const terminalState = null;
       const energyFlowState = liveMeasurementsFresh ? decodeEnergyFlowState(flowStateSource) : null;
       const inverterState = decodeBoundedRegister(inverterStateSource, 10);
-      const parallelState = decodeBoundedRegister(parallelStateSource, 4);
+      const parallelState = 0;
       const flowSuppressedByState = [0, 1, 7, 8, 10].includes(inverterState);
       const batteryConnected = liveMeasurementsFresh && (terminalState ? terminalState.battery !== 0 : (
         Number.isFinite(batteryVoltage) || Number.isFinite(batterySoc)
@@ -319,9 +317,9 @@
       const solarDataVisible = liveMeasurementsFresh && pvConnected;
       const pvReceiving = false;
       const gridVoltagePresent = Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .5;
-      // R81 is physical mains input. R89 is inverter/load output and remains
-      // available while the house is powered from PV or battery. R68 determines
-      // whether the physical grid terminal is actually connected.
+      // R81 is the physical mains input. Output voltage is deliberately kept
+      // separate (R537, then R89); this single-inverter profile does not infer
+      // a grid connection from terminal-state or parallel-operation registers.
       const gridTerminalConnected = terminalState ? terminalState.grid !== 0 : gridVoltagePresent;
       const gridAvailable = liveMeasurementsFresh && gridTerminalConnected;
       const gridNormal = terminalState ? terminalState.grid === 2 : gridAvailable;
@@ -465,30 +463,28 @@
       if (statusElement) {
         statusElement.title = [
           inverterStateSource && `R${inverterStateSource.register}: ${registerInterpretation(inverterStateSource) || inverterStateSource.display}`,
-          terminalStateSource && `R${terminalStateSource.register}: ${registerInterpretation(terminalStateSource) || terminalStateSource.display}`,
           flowStateSource && `R${flowStateSource.register}: ${registerInterpretation(flowStateSource) || flowStateSource.display}`,
-          parallelStateSource && `R${parallelStateSource.register}: ${registerInterpretation(parallelStateSource) || parallelStateSource.display}`
         ].filter(Boolean).join('\n');
       }
       setText('#energy-solar-registers', chartDemoRunning
         ? t('demoMode')
         : registerText([pvVoltageSource, pvPowerSource], [151, 153, 154, 156]));
       setText('#energy-inverter-registers', registerText(
-        [inverterLoadSource, inverterFanSpeedSource, inverterStateSource, terminalStateSource, flowStateSource, parallelStateSource, inverterPrioritySource, inverterChargeModeSource],
+        [inverterLoadSource, inverterFanSpeedSource, inverterStateSource, flowStateSource, inverterPrioritySource, inverterChargeModeSource],
         [94, 801, 67, 68, 69, 70, 529, 324]
       ));
       setText('#energy-home-registers', registerText(
-        [outputCurrentSource, loadPowerSource, outputVoltageSource, terminalStateSource, flowStateSource],
+        [outputCurrentSource, loadPowerSource, outputVoltageSource, flowStateSource],
         [90, 92, 537, 68, 69]
       ));
       setText('#energy-battery-registers', registerText(
-        [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource, terminalStateSource, flowStateSource],
+        [batteryVoltageSource, batteryCurrentSource, batteryPowerSources, batterySocSource, flowStateSource],
         [129, 130, 134, 133, 68, 69]
       ));
-      setText('#energy-grid-registers', registerText([gridRegisterSources, terminalStateSource, flowStateSource], [84, 82, 68, 69]));
+      setText('#energy-grid-registers', registerText([gridRegisterSources, flowStateSource], [84, 82, 69]));
       setText('#energy-generator-registers', chartDemoRunning
         ? t('demoMode')
-        : registerText([generatorVoltageSource, generatorCurrentSource, generatorPowerSource, terminalStateSource, flowStateSource], [85, 86, 88, 68, 69]));
+        : registerText([generatorVoltageSource, generatorCurrentSource, generatorPowerSource, flowStateSource], [85, 86, 88, 69]));
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-solar-node',
         active: pvActive,

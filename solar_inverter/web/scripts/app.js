@@ -60,14 +60,11 @@
         // Gauge appearance remains stable for the current page when storage is unavailable.
       }
     }
-    const chartSelections = savedSelections('inverter-chart-values-v2');
+    const chartSelections = savedSelections('inverter-chart-values-v3');
     const dashboardSelections = savedSelections('inverter-dashboard-gauges-v2');
     const chartHistory = new Map();
     const dashboardGaugeRanges = savedMap('inverter-dashboard-gauge-ranges-v2');
     const dashboardGaugeColours = savedMap('inverter-dashboard-gauge-colours-v2');
-    let chartWindowSeconds = 120;
-    let chartWindowMilliseconds = chartWindowSeconds * 1000;
-    window.chartPeriod = 'realtime';
 
     function numericValue(value) {
       const parsed = Number.parseFloat(value);
@@ -118,6 +115,35 @@
 
 
 
+    const REGISTER_RENDER_LIMIT = 80;
+    let registerRenderLimit = REGISTER_RENDER_LIMIT;
+    let editingRegister = null;
+
+    function registerActionLabel(action) {
+      const labels = {
+        edit: {uk: 'Редагувати', ru: 'Изменить', en: 'Edit'},
+        save: {uk: 'Зберегти', ru: 'Сохранить', en: 'Save'},
+        cancel: {uk: 'Скасувати', ru: 'Отмена', en: 'Cancel'},
+        live: {uk: 'З Modbus', ru: 'Из Modbus', en: 'Use live'}
+      };
+      return labels[action][currentLanguage] || labels[action].uk;
+    }
+
+    async function saveManualRegisterValue(register, value, clear = false) {
+      const payload = value && typeof value === 'object'
+        ? {register, fields: value, clear}
+        : {register, value, clear};
+      const response = await fetch('/api/manual-register-value', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to save register value');
+      editingRegister = null;
+      await refresh();
+    }
+
     function renderRegisters(registers) {
       const query = document.querySelector('#search').value.trim().toLowerCase();
       const shown = registers.filter(item =>
@@ -130,18 +156,106 @@
           waiting: registers.length - available,
           shown: shown.length
         });
-      document.querySelector('#registers').innerHTML = shown.map(item => {
+      const visible = shown.slice(0, registerRenderLimit);
+      document.querySelector('#registers').innerHTML = visible.map(item => {
         const value = registerNumericValue(item);
         const bmsFormula = item.register === 413 && item.available ? r413BmsFormula(value) : '';
         const displayValue = registerVersionDisplay(item, registers);
         const interpretation = registerInterpretation({...item, versionDisplay: displayValue});
-        const descriptions = [...new Set([item.description, interpretation].filter(Boolean))];
+        const accessNote = item.maintenance ? t('registerMaintenanceReadOnly') : t('registerReadOnly');
+        const descriptions = [...new Set([item.description, interpretation, accessNote].filter(Boolean))];
         return `<tr class="${item.available ? '' : 'unavailable'}">
           <td>R${item.register}</td><td>${localizeApiField(item, 'group')}</td><td>${localizeApiField(item, 'name')}</td>
           <td class="register-meaning">${descriptions.join(' · ') || '—'}</td>
           <td class="register-live-value">${localizeDataText(displayValue)} ${item.unit}${bmsFormula ? `<br><small>${bmsFormula}</small>` : ''}</td><td>${item.raw ?? '—'}</td></tr>`;
       }).join('');
+      visible.forEach(item => {
+        const row = document.querySelector(`#registers tr:nth-child(${visible.indexOf(item) + 1})`);
+        if (!row) return;
+        const cell = document.createElement('td');
+        if (editingRegister === item.register) {
+          const field = (column, name, value, multiline = false) => {
+            const control = document.createElement(multiline ? 'textarea' : 'input');
+            if (!multiline) control.type = 'text';
+            control.value = value || '';
+            control.dataset.registerField = name;
+            control.dataset.register = String(item.register);
+            control.setAttribute('aria-label', `${name} for R${item.register}`);
+            row.cells[column].replaceChildren(control);
+          };
+          field(1, 'group', localizeApiField(item, 'group'));
+          field(2, 'name', localizeApiField(item, 'name'));
+          field(3, 'description', item.description || '', true);
+          field(4, 'value', registerNumericValue(item));
+          const valueControls = row.cells[4];
+          valueControls.className = 'register-edit-value';
+          const valueInput = valueControls.querySelector('[data-register-field="value"]');
+          if (valueInput) valueInput.type = 'number';
+          const unitInput = document.createElement('input');
+          unitInput.type = 'text'; unitInput.value = item.unit || ''; unitInput.placeholder = 'unit';
+          unitInput.dataset.registerField = 'unit'; unitInput.dataset.register = String(item.register);
+          unitInput.setAttribute('aria-label', `unit for R${item.register}`);
+          valueControls.append(' ', unitInput);
+          const editor = document.createElement('div');
+          editor.className = 'register-value-editor';
+          const save = document.createElement('button');
+          save.type = 'button'; save.dataset.registerSave = String(item.register);
+          save.textContent = registerActionLabel('save');
+          const cancel = document.createElement('button');
+          cancel.type = 'button'; cancel.dataset.registerCancel = String(item.register);
+          cancel.textContent = registerActionLabel('cancel');
+          editor.append(save, cancel);
+          if (item.manual) {
+            const live = document.createElement('button');
+            live.type = 'button'; live.dataset.registerLive = String(item.register);
+            live.textContent = registerActionLabel('live');
+            editor.append(live);
+          }
+          cell.append(editor);
+        } else {
+          const edit = document.createElement('button');
+          edit.type = 'button'; edit.className = 'register-action';
+          edit.dataset.registerEdit = String(item.register);
+          edit.textContent = registerActionLabel('edit');
+          cell.append(edit);
+        }
+        row.append(cell);
+      });
+      const remaining = shown.length - visible.length;
+      const listActions = document.querySelector('#register-list-actions');
+      listActions.hidden = remaining <= 0;
+      document.querySelector('#register-load-more').textContent = t('loadMoreRegisters', {count: remaining});
     }
+
+    document.querySelector('#registers').addEventListener('click', event => {
+      const editButton = event.target.closest('[data-register-edit]');
+      if (editButton) {
+        editingRegister = Number(editButton.dataset.registerEdit);
+        renderRegisters(lastData?.registers || []);
+        document.querySelector(`[data-register="${editingRegister}"][data-register-field="group"]`)?.focus();
+        return;
+      }
+      const saveButton = event.target.closest('[data-register-save]');
+      if (saveButton) {
+        const register = Number(saveButton.dataset.registerSave);
+        const fields = {};
+        document.querySelectorAll(`[data-register="${register}"][data-register-field]`).forEach(input => {
+          fields[input.dataset.registerField] = input.value;
+        });
+        const clearValue = !String(fields.value || '').trim();
+        if (clearValue) delete fields.value;
+        void saveManualRegisterValue(register, fields, clearValue);
+        return;
+      }
+      const cancelButton = event.target.closest('[data-register-cancel]');
+      if (cancelButton) {
+        editingRegister = null;
+        renderRegisters(lastData?.registers || []);
+        return;
+      }
+      const liveButton = event.target.closest('[data-register-live]');
+      if (liveButton) void saveManualRegisterValue(Number(liveButton.dataset.registerLive), null, true);
+    });
 
     let pendingRegisterRows = null;
     let registerRenderPending = false;
@@ -627,7 +741,6 @@
       if (lastData) {
         document.querySelector('#gauges').innerHTML = '';
         render(lastData);
-        renderChartValueList();
         renderGaugePickerList();
         renderChartCards();
         renderDashboardValues();

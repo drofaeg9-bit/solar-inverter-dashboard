@@ -4,7 +4,7 @@ from typing import Any
 
 
 def effective_battery_soc(value: float | None, terminal_raw: Any) -> float | None:
-    """Return display SOC consistent with the R68 battery terminal state."""
+    """Preserve SOC unless an explicitly supplied terminal-state value says full."""
     try:
         battery_state = (int(terminal_raw) >> 8) & 0x07
     except (TypeError, ValueError):

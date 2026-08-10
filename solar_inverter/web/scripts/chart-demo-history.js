@@ -28,13 +28,14 @@
       };
     }
 
-    function seedDemoHistory(period = window.chartPeriod || 'realtime') {
-      const pointCounts = {day: 288, week: 336, month: 360, year: 365};
+    function seedDemoHistory() {
+      const pointCounts = {day: 288, week: 336, month: 360, year: 365, lifetime: 365};
       const now = Date.now();
       timelineDefinitions().forEach(item => {
-        const itemPeriod = chartPeriodForItem(item, period);
+        const itemPeriod = chartPeriodForItem(item);
         if (itemPeriod === 'realtime') return;
         const windowSeconds = getPeriodWindowSeconds(itemPeriod);
+        const demoWindowSeconds = Number.isFinite(windowSeconds) ? windowSeconds : 315360000;
         const pointCount = pointCounts[itemPeriod] || 288;
         const random = seededDemoRandom((Number(item.register) || 1) * 2654435761 + pointCount);
         const history = [];
@@ -52,7 +53,7 @@
           }
           if (item.unit === '%') value = Math.max(0, Math.min(100, value));
           value = demoRegisterReading(item, value).value;
-          history.push({time: now - (windowSeconds - ratio * windowSeconds) * 1000, value});
+          history.push({time: now - (demoWindowSeconds - ratio * demoWindowSeconds) * 1000, value});
           previousValue = value;
         }
         chartHistory.set(item.key, history);

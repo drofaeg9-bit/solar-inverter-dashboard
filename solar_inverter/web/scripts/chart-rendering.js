@@ -19,16 +19,17 @@
       ];
     }
 
-    function chartPointTime(timestampSeconds) {
+    function chartPointTime(timestampSeconds, item) {
       const locale = currentLanguage === 'uk' ? 'uk-UA' : currentLanguage === 'ru' ? 'ru-RU' : 'en-GB';
-      const longPeriod = chartWindowSeconds > 86400;
+      const windowSeconds = getPeriodWindowSeconds(chartPeriodForItem(item));
+      const longPeriod = windowSeconds > 86400;
       return new Date(timestampSeconds * 1000).toLocaleString(locale, {
         timeZone: 'Europe/Madrid',
         month: longPeriod ? 'short' : undefined,
         day: longPeriod ? '2-digit' : undefined,
-        hour: longPeriod && chartWindowSeconds > 2592000 ? undefined : '2-digit',
-        minute: longPeriod && chartWindowSeconds > 2592000 ? undefined : '2-digit',
-        second: chartWindowSeconds <= 3600 ? '2-digit' : undefined
+        hour: longPeriod && windowSeconds > 2592000 ? undefined : '2-digit',
+        minute: longPeriod && windowSeconds > 2592000 ? undefined : '2-digit',
+        second: windowSeconds <= 3600 ? '2-digit' : undefined
       });
     }
 
@@ -78,7 +79,7 @@
               return;
             }
             tooltip.hidden = false;
-            tooltip.textContent = `${chartPointTime(plot.data[0][index])} · ${Number(plot.data[1][index].toFixed(2))} ${item.unit || ''}`.trim();
+            tooltip.textContent = `${chartPointTime(plot.data[0][index], item)} · ${Number(plot.data[1][index].toFixed(2))} ${item.unit || ''}`.trim();
             const left = Math.min(plot.bbox.width - tooltip.offsetWidth - 8, Math.max(8, plot.cursor.left + 12));
             const top = Math.min(plot.bbox.height - tooltip.offsetHeight - 8, Math.max(8, plot.cursor.top + 12));
             tooltip.style.transform = `translate(${left}px,${top}px)`;
@@ -87,7 +88,8 @@
       };
     }
 
-    function chartWheelZoomPlugin() {
+    function chartWheelZoomPlugin(item) {
+      const windowSeconds = getPeriodWindowSeconds(chartPeriodForItem(item));
       let cleanup = () => {};
       return {
         hooks: {
@@ -148,7 +150,7 @@
               }
               const factor = Math.exp(event.deltaY * .0015);
               const anchor = plot.posToVal(event.offsetX, 'x');
-              const nextRange = Math.max(minimumRange(), Math.min(chartWindowSeconds, range * factor));
+              const nextRange = Math.max(minimumRange(), Math.min(windowSeconds, range * factor));
               const ratio = (anchor - scale.min) / range;
               const minimum = anchor - nextRange * ratio;
               const nextScale = constrainedTimeScale(plot, minimum, minimum + nextRange);
@@ -374,7 +376,7 @@
           {},
           {label: item.label, value: (_plot, value) => value == null ? '—' : `${Number(value.toFixed(2))} ${item.unit || ''}`.trim(), stroke: colour, width: 2.5, points: {show: false}}
         ],
-        plugins: [chartTooltipPlugin(item), chartWheelZoomPlugin()]
+        plugins: [chartTooltipPlugin(item), chartWheelZoomPlugin(item)]
       };
     }
 
