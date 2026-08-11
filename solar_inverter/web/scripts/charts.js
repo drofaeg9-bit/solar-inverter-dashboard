@@ -686,8 +686,7 @@
           const demoFanSpeed = registerNumericValue(demoRowsByNumber.get(801));
           updateInverterFanAnimation(
             document.querySelector('#energy-inverter-fan-row'),
-            Number.isFinite(demoFanSpeed) ? Math.max(0, Math.min(100, demoFanSpeed)) : 0,
-            true
+            Number.isFinite(demoFanSpeed) ? Math.max(0, Math.min(100, demoFanSpeed)) : 0
           );
         }
         if (!document.querySelector('#lcd-view').hidden) {

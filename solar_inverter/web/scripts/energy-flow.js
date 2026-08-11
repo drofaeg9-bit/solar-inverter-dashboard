@@ -4,8 +4,8 @@
     let inverterFanTargetRate = 0;
     let inverterFanRateFrame = null;
     let inverterFanRateFrameTime = null;
-    const INVERTER_FAN_MAX_ROTATION_MS = 225;
-    const INVERTER_FAN_MAX_AIR_SPEED_KMH = 45;
+    const INVERTER_FAN_MAX_ROTATION_MS = 750;
+    const INVERTER_FAN_MAX_AIR_SPEED_KMH = 300;
     const INVERTER_FAN_RATE_SMOOTHING_MS = 280;
     const FLOW_CARD_MAX_VALUES = 3;
     const FLOW_CARD_CONFIG = Object.freeze({
@@ -30,8 +30,13 @@
       const config = FLOW_CARD_CONFIG[cardKey];
       if (!config) return [];
       const saved = flowCardSelections()[cardKey];
-      const selected = Array.isArray(saved) ? saved.map(Number).filter(register => config.registers.includes(register)) : [];
-      return selected.length ? selected.slice(0, FLOW_CARD_MAX_VALUES) : config.defaults;
+      if (Array.isArray(saved)) {
+        return saved
+          .map(Number)
+          .filter(register => config.registers.includes(register))
+          .slice(0, FLOW_CARD_MAX_VALUES);
+      }
+      return config.defaults;
     }
     function saveFlowCardSelection(cardKey, selection) {
       const saved = flowCardSelections();
@@ -48,6 +53,33 @@
       const unit = String(register.unit || '').trim();
       return `${Number(value.toFixed(unit === 'A' || unit === 'V' || unit === '%' ? 1 : 2))}${unit ? ` ${unit}` : ''}`;
     }
+    function flowCardStateLabel(register) {
+      const raw = Number(register?.raw);
+      if (!register?.available || !Number.isInteger(raw) || raw < 0 || raw >= 65535) return '';
+      const enumLabels = {
+        67: ['ON', 'INIT', 'STBY', 'GRID', 'PV', 'BATT', 'GEN', 'FAULT', 'OFF', 'TEST', 'UPD'],
+        325: ['ON', 'INIT', 'STBY', 'GRID', 'PV', 'BATT', 'GEN', 'FAULT', 'OFF', 'TEST', 'UPD'],
+        529: ['GPB', 'PGB', 'PBG', 'MKS'],
+        323: ['GPB', 'PGB', 'PBG', 'MKS'],
+        530: ['APP', 'UPS', 'GEN'],
+        321: ['APP', 'UPS', 'GEN'],
+        324: ['PNG', 'OPV', 'PVF']
+      };
+      const label = enumLabels[Number(register.register)]?.[raw];
+      if (label) return label;
+      if (Number(register.register) !== 69) return '';
+      const flow = decodeEnergyFlowState(register);
+      if (!flow) return '';
+      const routes = [
+        flow.gridToRectifier && 'AC→REC', flow.gridToLoad && 'AC→OUT',
+        flow.generatorToRectifier && 'GEN→REC', flow.generatorToLoad && 'GEN→OUT',
+        flow.pvToRectifier && 'PV→REC', flow.rectifierToBattery && 'REC→BATT',
+        flow.rectifierToInverter && 'REC→INV', flow.rectifierToGrid && 'REC→AC',
+        flow.batteryToInverter && 'BATT→INV', flow.inverterToMainOutput && 'INV→OUT',
+        flow.inverterToSecondaryOutput && 'INV→OUT2'
+      ].filter(Boolean);
+      return routes.join(' · ');
+    }
     function renderFlowCardValues(cardKey, selector, registers, visible = true) {
       const host = document.querySelector(selector);
       if (!host) return;
@@ -59,8 +91,11 @@
         const register = byNumber.get(number);
         const row = document.createElement('span');
         const name = register ? localizeApiField(register, 'name') : `R${number}`;
-        row.textContent = register ? formatFlowCardRegister(register) : t('noData');
-        row.title = `R${number} · ${name}`;
+        const interpretation = register ? registerInterpretation(register) : '';
+        const stateLabel = register ? flowCardStateLabel(register) : '';
+        row.textContent = stateLabel || interpretation || (register ? formatFlowCardRegister(register) : t('noData'));
+        row.classList.toggle('flow-card-state-value', Boolean(interpretation || stateLabel));
+        row.title = `R${number} · ${name}${register ? ` · ${registerRawExplanation(register)}` : ''}`;
         return row;
       }));
     }
@@ -70,8 +105,18 @@
       if (!host || !config) return;
       const query = document.querySelector('#flow-card-picker-search').value.trim().toLowerCase();
       const selected = flowCardSelection(activeFlowCardPicker);
+      const selectedOrder = new Map(selected.map((register, index) => [register, index]));
       const byNumber = new Map((lastData?.registers || []).map(register => [Number(register.register), register]));
-      const choices = config.registers.map(number => byNumber.get(number) || {register: number, name: `R${number}`, unit: '', available: false})
+      const choices = [...config.registers]
+        .sort((left, right) => {
+          const leftOrder = selectedOrder.get(left);
+          const rightOrder = selectedOrder.get(right);
+          if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder;
+          if (leftOrder !== undefined) return -1;
+          if (rightOrder !== undefined) return 1;
+          return config.registers.indexOf(left) - config.registers.indexOf(right);
+        })
+        .map(number => byNumber.get(number) || {register: number, name: `R${number}`, unit: '', available: false})
         .filter(register => `${register.register} ${localizeApiField(register, 'name')}`.toLowerCase().includes(query));
       host.replaceChildren(...choices.map(register => {
         const option = document.createElement('label');
@@ -188,21 +233,20 @@
       };
       inverterFanRateFrame = window.requestAnimationFrame(tick);
     }
-    function updateInverterFanAnimation(fanRow, normalizedSpeed, forceMotion = false) {
+    function updateInverterFanAnimation(fanRow, normalizedSpeed) {
       const rotor = fanRow?.querySelector('.energy-inverter-fan-rotor');
       if (Number.isFinite(normalizedSpeed)) {
         inverterFanLastKnownSpeed = Math.max(0, Math.min(100, normalizedSpeed));
       }
       const effectiveSpeed = inverterFanLastKnownSpeed ?? 0;
-      const shouldRotate = effectiveSpeed > 0
-        && (forceMotion || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+      const shouldRotate = effectiveSpeed > 0;
       fanRow?.classList.toggle('active', effectiveSpeed > 0);
       if (!rotor) return;
 
       if (typeof rotor.animate !== 'function') {
         fanRow.classList.add('css-animation-fallback');
         if (effectiveSpeed > 0) {
-          rotor.style.animationDuration = `${(22.5 / effectiveSpeed).toFixed(3)}s`;
+          rotor.style.animationDuration = `${(75 / effectiveSpeed).toFixed(3)}s`;
         }
         rotor.style.animationPlayState = shouldRotate ? 'running' : 'paused';
         return;
@@ -290,7 +334,10 @@
         if (!source?.available || !Number.isFinite(raw) || raw === 65535) {
           return {label: '—', description: ''};
         }
-        return modes[raw] || {label: `#${raw}`, description: ''};
+        // Never leak an undecoded register number into the flow card. The
+        // register interpreter has the V1.31 definition (or explicitly says
+        // that the value is unknown), and is also localized.
+        return modes[raw] || {label: '?', descriptionText: registerInterpretation(source)};
       };
       const setText = (selector, value) => {
         const element = document.querySelector(selector);
@@ -299,7 +346,7 @@
       const setModeText = (selector, definitionSelector, mode) => {
         const fullLabel = String(mode.label ?? '\u2014');
         const displayLabel = Array.from(fullLabel).slice(0, 3).join('');
-        const description = mode.description ? t(mode.description) : '';
+        const description = mode.descriptionText || (mode.description ? t(mode.description) : '');
         setText(definitionSelector, description);
         const element = document.querySelector(selector);
         if (element) {
@@ -432,7 +479,10 @@
       const energyFlowState = liveMeasurementsFresh ? decodeEnergyFlowState(flowStateSource) : null;
       const inverterState = decodeBoundedRegister(inverterStateSource, 10);
       const parallelState = 0;
-      const flowSuppressedByState = [0, 1, 7, 8, 10].includes(inverterState);
+      // These R67/R325 states are not an operating energy route. Do not infer
+      // animated power arrows from leftover measurements while the unit is
+      // starting, idle, faulted, stopped, factory-testing, or updating.
+      const flowSuppressedByState = [0, 1, 2, 7, 8, 9, 10].includes(inverterState);
       const batteryConnected = liveMeasurementsFresh && (terminalState ? terminalState.battery !== 0 : (
         Number.isFinite(batteryVoltage) || Number.isFinite(batterySoc)
       ));
@@ -472,7 +522,7 @@
       const gridAbnormal = terminalState?.grid === 1;
       const outputState = terminalState?.output;
       const outputConnected = terminalState ? outputState !== 0 : true;
-      const outputCanSupply = terminalState ? outputState === 1 || outputState === 2 : true;
+      const outputCanSupply = terminalState ? outputState === 1 : true;
       const loadPower = Number.isFinite(measuredLoadPower) ? Math.max(0, measuredLoadPower) : null;
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
@@ -566,7 +616,9 @@
                     ? {label: 'PV', description: 'modeSolarShort', icon: 'pv'}
                     : batteryDischarging
                       ? {label: t('battery'), description: 'modeBatteryInputShort', icon: 'battery'}
-                      : {label: '—', description: ''};
+                      : inverterState !== null
+                        ? {label: '?', descriptionText: registerInterpretation(inverterStateSource)}
+                        : {label: '—', description: ''};
       const inverterBatteryMode = modeDetails(inverterChargeModeSource, {
         0: {label: 'PNG', description: 'modePngShort'},
         1: {label: 'OPV', description: 'modeOpvShort'},
@@ -600,7 +652,7 @@
         ? `${routeSources.join(' + ')} → ${routeDestinations.join(' + ')}`
         : inverterState === 7
           ? t('flowFault')
-          : [0, 1, 2, 8, 10].includes(inverterState)
+          : [0, 1, 2, 8, 9, 10].includes(inverterState)
             ? t('flowStopped')
             : data.online ? t('batteryIdle') : t('offline');
       const statusText = [chartDemoRunning ? t('demoMode') : '', topologyCode, routeText].filter(Boolean).join(' · ');
@@ -680,7 +732,7 @@
         }
       });
       const inverterFanRow = document.querySelector('#energy-inverter-fan-row');
-      updateInverterFanAnimation(inverterFanRow, normalizedFanSpeed, chartDemoRunning);
+      updateInverterFanAnimation(inverterFanRow, normalizedFanSpeed);
       setModeText('#energy-inverter-ac-mode', '#energy-inverter-ac-definition', inverterOutputPriority);
       setModeText('#energy-inverter-input-mode', '#energy-inverter-input-definition', inverterInputMode);
       setModeText('#energy-inverter-charge-mode', '#energy-inverter-charge-definition', inverterBatteryMode);

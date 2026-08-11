@@ -615,9 +615,21 @@ def solar_energy_summary() -> dict[str, Any]:
 def poll_worker() -> None:
     cached: dict[int, int] = {}
     previous_cycle_started: float | None = None
+    missing_identifier_reported = False
     print("[Poll Worker] Starting poll worker")
 
     while True:
+        identifier = decode_identifier(cached)
+        if fresh and identifier == DEVICE_MODEL_NAME:
+            if not missing_identifier_reported:
+                print(
+                    f'[Poll Worker] ERROR: Real inverter identifier could not be decoded from R1–R10; '
+                    f'using fallback "{DEVICE_MODEL_NAME}".'
+                )
+                missing_identifier_reported = True
+        else:
+            missing_identifier_reported = False
+
         with state_lock:
             if state["stop"]:
                 print("[Poll Worker] Stopping poll worker")
@@ -669,7 +681,7 @@ def poll_worker() -> None:
             state["successful"] = len(fresh)
             state["ошибок"] = failed
             state["error"] = "" if fresh else (error or "помилка читання")
-            state["identifier"] = decode_identifier(cached)
+            state["identifier"] = identifier
             state["values"] = dict(cached)
             state["connection_mode"] = CONNECTION_MODE
             log_cycle_id = int(state["cycle_id"])

@@ -397,7 +397,12 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("rectifierToGrid: Boolean(raw & 1 << 7)", flow)
         self.assertIn("batteryToInverter: Boolean(raw & 1 << 8)", flow)
         self.assertIn("inverterToMainOutput: Boolean(raw & 1 << 9)", flow)
-        self.assertIn("const flowSuppressedByState = [0, 1, 7, 8, 10].includes(inverterState)", flow)
+        self.assertIn("const flowSuppressedByState = [0, 1, 2, 7, 8, 9, 10].includes(inverterState)", flow)
+        self.assertIn(": [0, 1, 2, 8, 9, 10].includes(inverterState)", flow)
+        self.assertIn("return modes[raw] || {label: '?', descriptionText: registerInterpretation(source)}", flow)
+        self.assertIn("const description = mode.descriptionText || (mode.description ? t(mode.description) : '')", flow)
+        self.assertIn("const outputCanSupply = terminalState ? outputState === 1 : true", flow)
+        self.assertNotIn("label: `#${raw}`", flow)
         self.assertIn("`${routeSources.join(' + ')} → ${routeDestinations.join(' + ')}`", flow)
         self.assertIn("parallelTopologyCode(parallelState)", flow)
         self.assertIn("classList.toggle('disconnected', !generatorConnected)", flow)
@@ -411,6 +416,8 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("function registerRawExplanation(register)", interpretations)
         self.assertIn("const hexadecimal = `0x${raw.toString(16).toUpperCase().padStart(4, '0')}`", interpretations)
         self.assertIn("const signedNote = register.signed", interpretations)
+        self.assertIn("function rawEncodingExplanation(register, raw)", interpretations)
+        self.assertIn("16-bit unsigned word; direct value", interpretations)
         self.assertIn("const interpretation = registerInterpretation(register)", interpretations)
         self.assertIn("raw: 'Сырое слово и расшифровка'", translations)
 
@@ -424,6 +431,8 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("const FLOW_CARD_MAX_VALUES = 3", flow)
         self.assertIn("const FLOW_CARD_CONFIG = Object.freeze", flow)
         self.assertIn("function renderFlowCardPickerList()", flow)
+        self.assertIn("const selectedOrder = new Map(selected.map((register, index) => [register, index]))", flow)
+        self.assertIn(".sort((left, right) => {", flow)
         self.assertIn("function openFlowCardPicker(cardKey)", flow)
         self.assertIn("function setFlowCardRegister(register, selected)", flow)
         self.assertIn("openFlowCardPicker(button.dataset.flowCardSettings)", events)
@@ -561,11 +570,15 @@ class DashboardAssetTests(unittest.TestCase):
     def test_device_identifier_uses_the_12ku_model_when_serial_words_are_empty(self) -> None:
         from solar_inverter.services.inverter_service_core import decode_identifier
 
-        self.assertEqual(decode_identifier({}), "TTN 12KU U3.0")
+        self.assertEqual(decode_identifier({}), "")
+        self.assertEqual(decode_identifier({1: 0xFFFF}), "")
         self.assertEqual(
             decode_identifier({1: 0x5454, 2: 0x4E2D}),
-            "TTN 12KU U3.0 · TTN-",
+            "TTN 12KU U3 Single · TTN-",
         )
+        runtime = (ROOT / "solar_inverter" / "services" / "inverter_service_runtime.py").read_text(encoding="utf-8")
+        self.assertIn("Real inverter identifier could not be decoded from R1–R10", runtime)
+        self.assertIn("missing_identifier_reported", runtime)
 
     def test_updater_four_records_local_installations_without_github_ui(self) -> None:
         html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
@@ -1051,14 +1064,22 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertNotIn("displaySeconds", chart_source)
         self.assertIn("previousValue + random() * scale * .01", chart_source)
         self.assertIn("Math.max(0, Math.min(100, inverterFanSpeed))", flow_source)
-        self.assertIn("const INVERTER_FAN_MAX_AIR_SPEED_KMH = 45", flow_source)
+        self.assertIn("const INVERTER_FAN_MAX_AIR_SPEED_KMH = 300", flow_source)
         self.assertIn("function fanSpeedKilometersPerHour(normalizedSpeed)", flow_source)
         self.assertIn("reading(fanSpeedKmh, 'km/h', 1)", flow_source)
-        self.assertIn("row.textContent = register ? formatFlowCardRegister(register) : t('noData')", flow_source)
-        self.assertIn("row.title = `R${number} · ${name}`", flow_source)
-        self.assertIn("function updateInverterFanAnimation(fanRow, normalizedSpeed, forceMotion = false)", flow_source)
-        self.assertIn("forceMotion || !window.matchMedia", flow_source)
-        self.assertIn("const INVERTER_FAN_MAX_ROTATION_MS = 225", flow_source)
+        self.assertIn("if (Array.isArray(saved))", flow_source)
+        self.assertIn("return config.defaults", flow_source)
+        self.assertIn("const interpretation = register ? registerInterpretation(register) : ''", flow_source)
+        self.assertIn("function flowCardStateLabel(register)", flow_source)
+        self.assertIn("529: ['GPB', 'PGB', 'PBG', 'MKS']", flow_source)
+        self.assertIn("67: ['ON', 'INIT', 'STBY', 'GRID', 'PV'", flow_source)
+        self.assertIn("flow.pvToRectifier && 'PV→REC'", flow_source)
+        self.assertIn("row.textContent = stateLabel || interpretation || (register ? formatFlowCardRegister(register) : t('noData'))", flow_source)
+        self.assertIn("row.classList.toggle('flow-card-state-value', Boolean(interpretation || stateLabel))", flow_source)
+        self.assertIn("registerRawExplanation(register)", flow_source)
+        self.assertIn("function updateInverterFanAnimation(fanRow, normalizedSpeed)", flow_source)
+        self.assertIn("const shouldRotate = effectiveSpeed > 0", flow_source)
+        self.assertIn("const INVERTER_FAN_MAX_ROTATION_MS = 750", flow_source)
         self.assertIn("{duration: INVERTER_FAN_MAX_ROTATION_MS, iterations: Infinity}", flow_source)
         self.assertIn("smoothlyUpdateInverterFanRate(inverterFanAnimation, playbackRate)", flow_source)
         self.assertIn("inverterFanLastKnownSpeed ?? 0", flow_source)
@@ -1153,6 +1174,7 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn(".lcd-column-input", css_source)
         self.assertIn(".lcd-column-output", css_source)
         self.assertIn(".lcd-column-pv", css_source)
+        self.assertIn(".lcd-device-display > .lcd-column", css_source)
         self.assertIn("const outputVoltage = numberValue([537, 89])", lcd)
         self.assertIn("const outputFrequency = numberValue([91, 538])", lcd)
         self.assertIn("const pvVoltage = numberValue([609])", lcd)
@@ -1355,6 +1377,53 @@ class DashboardRendererTests(unittest.TestCase):
                 "faults": "Bus overvoltage; Overtemperature",
                 "fanStalled": "Fan stalled or not rotating",
                 "unavailable": "",
+            },
+        )
+
+    def test_energy_flow_decodes_terminal_and_route_bits_without_guessing(self) -> None:
+        flow_path = WEB_ROOT / "scripts" / "energy-flow.js"
+        probe = textwrap.dedent(
+            """
+            const fs = require('fs');
+            const source = fs.readFileSync(process.argv[1], 'utf8');
+            eval(source + `
+              const terminal = decodeEnergyTerminalState({available:true, raw:0x00AA});
+              const flow = decodeEnergyFlowState({available:true, raw:592});
+              console.log(JSON.stringify({
+                terminal: {
+                  grid: terminal.grid, generator: terminal.generator,
+                  pv1: terminal.pv1, output: terminal.output,
+                  battery: terminal.battery
+                },
+                flow: {
+                  pvToRectifier: flow.pvToRectifier,
+                  rectifierToInverter: flow.rectifierToInverter,
+                  inverterToMainOutput: flow.inverterToMainOutput,
+                  gridToLoad: flow.gridToLoad
+                },
+                invalid: decodeEnergyFlowState({available:true, raw:65535})
+              }));
+            `);
+            """
+        )
+        result = subprocess.run(
+            [shutil.which("node") or "node", "-e", probe, str(flow_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "terminal": {"grid": 2, "generator": 2, "pv1": 2, "output": 2, "battery": 0},
+                "flow": {
+                    "pvToRectifier": True,
+                    "rectifierToInverter": True,
+                    "inverterToMainOutput": True,
+                    "gridToLoad": False,
+                },
+                "invalid": None,
             },
         )
 

@@ -338,6 +338,32 @@
           }
         }
       }
+      function rawEncodingExplanation(register, raw) {
+        const scale = Number(register?.scale);
+        const value = Number(register?.value);
+        const unit = String(register?.unit || '').trim();
+        if (register?.word_format === 'h_l') {
+          return text(phrase(
+            'Складова 32-бітного значення: старше або молодше 16-бітне слово',
+            'Составляющая 32-битного значения: старшее или младшее 16-битное слово',
+            'Part of a 32-bit value: the high or low 16-bit word'
+          ));
+        }
+        if (Number.isFinite(scale) && scale !== 1 && Number.isFinite(value)) {
+          const valueText = Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+          return text(phrase(
+            `Масштаб ×${scale} → ${valueText}${unit ? ` ${unit}` : ''}`,
+            `Масштаб ×${scale} → ${valueText}${unit ? ` ${unit}` : ''}`,
+            `Scale ×${scale} → ${valueText}${unit ? ` ${unit}` : ''}`
+          ));
+        }
+        if (register?.signed) return '';
+        return text(phrase(
+          '16-бітне беззнакове слово; пряме значення',
+          '16-битное беззнаковое слово; прямое значение',
+          '16-bit unsigned word; direct value'
+        ));
+      }
       function registerRawExplanation(register) {
         if (!register?.available || register.raw === null || register.raw === undefined) return text(phrase('Немає даних', 'Нет данных', 'No data'));
         const rawNumber = Number(register.raw);
@@ -351,7 +377,8 @@
           ? text(phrase(`зі знаком ${signedValue}`, `со знаком ${signedValue}`, `signed ${signedValue}`))
           : '';
         const interpretation = registerInterpretation(register);
-        return [String(raw), hexadecimal, signedNote, interpretation].filter(Boolean).join(' · ');
+        const encoding = rawEncodingExplanation(register, raw);
+        return [String(raw), hexadecimal, signedNote, encoding, interpretation].filter(Boolean).join(' · ');
       }
       return Object.freeze({registerInterpretation, registerRawExplanation});
     })();

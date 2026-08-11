@@ -335,6 +335,11 @@
     .energy-solar-values > span, .energy-inverter-values > span,
     .energy-generator-values > span, .energy-home-values > span, .energy-grid-values > span,
     .energy-battery-values > span { white-space: nowrap }
+    .energy-solar-values > .flow-card-state-value, .energy-inverter-values > .flow-card-state-value,
+    .energy-generator-values > .flow-card-state-value, .energy-home-values > .flow-card-state-value,
+    .energy-grid-values > .flow-card-state-value, .energy-battery-values > .flow-card-state-value {
+      max-width: 100%; overflow-wrap: anywhere; white-space: normal;
+    }
     .energy-inverter-values { gap: 3px }
     .energy-home .energy-node-value { top: 50% }
     .energy-mode-row {
@@ -385,7 +390,7 @@
     }
     .energy-battery-percent {
       position: absolute; z-index: 1; inset: 0; display: grid; place-items: center;
-      color: var(--text); font-size: 8px; font-weight: 950; line-height: 1;
+      color: var(--text); font-size: 16px; font-weight: 950; line-height: 1;
       text-shadow: 0 1px 2px var(--card-start), 0 0 3px var(--card-start);
     }
     .energy-solar { grid-column: 1; grid-row: 1; --node-colour: var(--flow-solar-colour) }
@@ -449,7 +454,7 @@
       transform-box: view-box; transform-origin: 12px 12px; will-change: transform;
     }
     .energy-inverter-fan-row.css-animation-fallback .energy-inverter-fan-rotor {
-      animation: inverter-fan-spin .225s linear infinite; animation-play-state: paused;
+      animation: inverter-fan-spin .75s linear infinite; animation-play-state: paused;
     }
     .energy-inverter-fan-row.css-animation-fallback.active .energy-inverter-fan-rotor { animation-play-state: running }
     .energy-inverter-fan-value {
@@ -776,6 +781,15 @@
     .lcd-day-energy { position: absolute; bottom: 1.5%; left: 50%; display: flex; align-items: center; justify-content: center; width: 31%; gap: 1.4cqw; overflow: hidden; font-size: 4.5cqw; transform: translateX(-50%) }
     .lcd-day-energy > span:first-child { padding: .15cqw .8cqw; color: #eef2e9; background: #171a17; font: 950 1.7cqw/1.2 Arial,sans-serif }
     .lcd-hidden-values { display: none }
+    /* The manual LCD uses the readouts and route above. These legacy blocks
+       are retained only as data targets and must not paint over that layout. */
+    .lcd-device-display > .lcd-battery-source,
+    .lcd-device-display > .lcd-battery-top,
+    .lcd-device-display > .lcd-battery-side,
+    .lcd-device-display > .lcd-battery-scale,
+    .lcd-device-display > .lcd-power-path,
+    .lcd-device-display > .lcd-column,
+    .lcd-device-display > .lcd-day-energy { display: none !important }
     .lcd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 2px solid rgba(16,36,29,.25) }
     .lcd-head h2 { font: 900 clamp(18px,3vw,28px)/1.1 inherit; letter-spacing: .08em }
     .lcd-subtitle { margin-top: 4px; opacity: .68; font-size: 12px }

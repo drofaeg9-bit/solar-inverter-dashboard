@@ -815,7 +815,7 @@ OPERATING_STATUS = {
 
 VALUE_PATTERN = re.compile(r"\[(\d+)\]:\s*(-?\d+)")
 
-DEVICE_MODEL_NAME = "TTN 12KU U3.0"
+DEVICE_MODEL_NAME = ""
 
 state_lock = threading.Lock()
 poll_wake_event = threading.Event()
@@ -884,8 +884,14 @@ def decode_identifier(values: dict[int, int]) -> str:
         data.append((value >> 8) & 0xFF)
         data.append(value & 0xFF)
 
-    serial = data.rstrip(b"\x00").decode("ascii", errors="replace").strip()
-    serial = "".join(character for character in serial if character.isprintable())
+    raw_identifier = bytes(data).rstrip(b"\x00")
+    try:
+        serial = raw_identifier.decode("ascii")
+    except UnicodeDecodeError:
+        serial = ""
+    if not all(0x20 <= ord(character) <= 0x7E for character in serial):
+        serial = ""
+    serial = serial.strip()
     return f"{DEVICE_MODEL_NAME} · {serial}" if serial else DEVICE_MODEL_NAME
 
 
