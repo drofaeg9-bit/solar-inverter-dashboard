@@ -224,7 +224,9 @@
       const pvVoltageSource = firstRegister([609, 151, 154]);
       const pvPowerSource = firstRegister([161, 153, 156]);
       const loadPowerSource = firstRegister([92, 541, 188]);
-      const inverterLoadSource = firstRegister([94]);
+      // R545 is the verified detailed output-load reading. R94 is the
+      // fast-block fallback when detailed registers are unavailable.
+      const inverterLoadSource = firstRegister([545, 94]);
       const inverterFanSpeedSource = firstRegister([801]);
       const outputVoltageSource = firstRegister([537, 89]);
       const outputCurrentSource = firstRegister([90, 539]);
@@ -471,7 +473,7 @@
         : registerText([pvVoltageSource, pvPowerSource], [151, 153, 154, 156]));
       setText('#energy-inverter-registers', registerText(
         [inverterLoadSource, inverterFanSpeedSource, inverterStateSource, flowStateSource, inverterPrioritySource, inverterChargeModeSource],
-        [94, 801, 67, 68, 69, 70, 529, 324]
+        [545, 94, 801, 67, 68, 69, 70, 529, 324]
       ));
       setText('#energy-home-registers', registerText(
         [outputCurrentSource, loadPowerSource, outputVoltageSource, flowStateSource],

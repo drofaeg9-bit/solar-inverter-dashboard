@@ -786,11 +786,14 @@ class DashboardAssetTests(unittest.TestCase):
         from solar_inverter.services.inverter_service_core import METER_DEFINITIONS
 
         output_voltage = next(item for item in METER_DEFINITIONS if item[0] == 537)
+        output_load = next(item for item in METER_DEFINITIONS if item[0] == 545)
         self.assertEqual(output_voltage[1], [89])
+        self.assertEqual(output_load[1], [94])
         lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
         flow = (WEB_ROOT / "scripts" / "energy-flow.js").read_text(encoding="utf-8")
         self.assertIn("numberValue([537, 89])", lcd)
         self.assertIn("firstRegister([537, 89])", flow)
+        self.assertIn("firstRegister([545, 94])", flow)
         self.assertNotIn("numberValue([84, 437, 436])", lcd)
 
     def test_build_and_installer_payload_manifests_match(self) -> None:

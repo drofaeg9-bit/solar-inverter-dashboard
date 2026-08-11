@@ -342,19 +342,19 @@
           <div class="panel-head charts-head">
             <div>
               <h2 data-i18n="liveCharts">Графіки в реальному часі</h2>
-              <span class="muted" id="chart-selection-count" aria-live="polite">Значення не вибрано</span>
+              <span class="muted" id="chart-selection-count" aria-live="polite" data-i18n="noValuesSelected">Значення не вибрано</span>
             </div>
             <div style="display: flex; gap: 8px; align-items: center;">
               <button id="chart-demo-button" class="all-data-demo-button" type="button">Запустити реалістичне демо на 120 с</button>
             </div>
           </div>
-          <section class="chart-selection-panel" aria-label="Graphs to display">
-            <h3>Graphs to display</h3>
-            <input id="chart-selection-search" type="search" placeholder="Search values…" data-i18n-placeholder="searchValues" aria-label="Search graphs">
+          <section class="chart-selection-panel" aria-label="Графіки для відображення" data-i18n-aria="graphsToDisplay">
+            <h3 data-i18n="graphsToDisplay">Графіки для відображення</h3>
+            <input id="chart-selection-search" type="search" placeholder="Пошук значень…" data-i18n-placeholder="searchValues" aria-label="Пошук графіків" data-i18n-aria="searchGraphsAria">
             <div class="chart-selection-list" id="chart-selection-list"></div>
           </section>
           <div class="chart-grid" id="chart-grid">
-            <div class="chart-empty">Очікування даних енергетичних лічильників…</div>
+            <div class="chart-empty" data-i18n="waitingForChartData">Очікування даних енергетичних лічильників…</div>
           </div>
       </div>
     </section>
