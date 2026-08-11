@@ -1,6 +1,6 @@
 # Solar Inverter Dashboard
 
-Solar Inverter Dashboard reads an inverter over Modbus RTU, serves a responsive browser dashboard, records solar-energy totals and register-change logs, and can expose the service through Tailscale. The repository also contains a Home Assistant custom integration and an Android WebView client.
+Solar Inverter Dashboard reads an inverter over Modbus RTU, serves a responsive browser dashboard, records solar-energy totals and register-change logs, and can expose the service through Tailscale. The repository also contains an optional automation-platform integration and an Android WebView client.
 
 ## Main applications
 
@@ -8,7 +8,7 @@ Solar Inverter Dashboard reads an inverter over Modbus RTU, serves a responsive 
 - `solar_inverter/services/inverter_service.py` polls and normalizes inverter registers.
 - `solar_inverter/components/web_dashboard.py` serves the HTML application and JSON API.
 - `solar_inverter/components/dashboard_template.py` contains the browser UI.
-- `custom_components/solar_assistant/` contains the Home Assistant integration.
+- `custom_components/` contains the optional automation-platform integration.
 - `android_app/` contains the Android wrapper application.
 
 ## Generate documentation

@@ -5,12 +5,7 @@ The production service runs as the restricted `solar-dashboard` account, reads `
 ## Update checklist
 
 ```bash
-sudo systemctl stop solar-inverter-dashboard.service
-sudo -u solar-dashboard git -C /opt/solar_assistant pull --ff-only origin main
-sudo -u solar-dashboard python3 -m py_compile /opt/solar_assistant/solar_invertor_web.py
-sudo install -m 0644 /opt/solar_assistant/deploy/solar-inverter-dashboard.service /etc/systemd/system/solar-inverter-dashboard.service
-sudo systemctl daemon-reload
-sudo systemctl start solar-inverter-dashboard.service
+sudo python3 ~/solar-dashboard-update.pyz
 curl -fsS http://127.0.0.1:8080/api/state >/dev/null
 ```
 

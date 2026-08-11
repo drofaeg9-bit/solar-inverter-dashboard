@@ -338,11 +338,29 @@
           }
         }
       }
-      return Object.freeze({registerInterpretation});
+      function registerRawExplanation(register) {
+        if (!register?.available || register.raw === null || register.raw === undefined) return text(phrase('Немає даних', 'Нет данных', 'No data'));
+        const rawNumber = Number(register.raw);
+        if (!Number.isFinite(rawNumber)) return String(register.raw);
+        const raw = rawNumber & 0xffff;
+        if (raw === 0xffff) return text(phrase('0xFFFF — немає даних', '0xFFFF — нет данных', '0xFFFF — no data'));
+        if (raw === 0xfffe) return text(phrase('0xFFFE — не підтримується', '0xFFFE — не поддерживается', '0xFFFE — not supported'));
+        const hexadecimal = `0x${raw.toString(16).toUpperCase().padStart(4, '0')}`;
+        const signedValue = register.signed && raw >= 0x8000 ? raw - 0x10000 : raw;
+        const signedNote = register.signed
+          ? text(phrase(`зі знаком ${signedValue}`, `со знаком ${signedValue}`, `signed ${signedValue}`))
+          : '';
+        const interpretation = registerInterpretation(register);
+        return [String(raw), hexadecimal, signedNote, interpretation].filter(Boolean).join(' · ');
+      }
+      return Object.freeze({registerInterpretation, registerRawExplanation});
     })();
 
     function registerInterpretation(register) {
       return TTN_V131_INTERPRETATIONS.registerInterpretation(register);
+    }
+    function registerRawExplanation(register) {
+      return TTN_V131_INTERPRETATIONS.registerRawExplanation(register);
     }
 
     function registerVersionDisplay(register, registers) {

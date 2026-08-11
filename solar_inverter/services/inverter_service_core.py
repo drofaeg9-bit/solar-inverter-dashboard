@@ -172,6 +172,8 @@ KNOWN_REGISTERS = [
 # duplicate channels, and diagnostics are distributed across cycles below so
 # fast mode does not spend most of its time starting mbpoll subprocesses.
 FAST_BLOCKS = [
+    # R1-R10 contain the device identifier and must be refreshed every fast
+    # cycle. They are covered by this contiguous low-address telemetry block.
     # Keep all low-address telemetry available to the meter panel every cycle.
     # 120 words is within the Modbus 125-register limit for a single request.
     (1, 120),
@@ -813,6 +815,8 @@ OPERATING_STATUS = {
 
 VALUE_PATTERN = re.compile(r"\[(\d+)\]:\s*(-?\d+)")
 
+DEVICE_MODEL_NAME = "TTN 12KU U3.0"
+
 state_lock = threading.Lock()
 poll_wake_event = threading.Event()
 state: dict[str, Any] = {
@@ -827,7 +831,7 @@ state: dict[str, Any] = {
     "successful": 0,
     "ошибок": 0,
     "error": "",
-    "identifier": "",
+    "identifier": DEVICE_MODEL_NAME,
     "values": {},
     "paused": False,
     "stop": False,
@@ -870,6 +874,7 @@ def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str
 
 
 def decode_identifier(values: dict[int, int]) -> str:
+    """Return the verified inverter model and its R1–R10 identifier when present."""
     data = bytearray()
 
     for register in range(1, 11):
@@ -879,7 +884,9 @@ def decode_identifier(values: dict[int, int]) -> str:
         data.append((value >> 8) & 0xFF)
         data.append(value & 0xFF)
 
-    return data.rstrip(b"\x00").decode("ascii", errors="replace")
+    serial = data.rstrip(b"\x00").decode("ascii", errors="replace").strip()
+    serial = "".join(character for character in serial if character.isprintable())
+    return f"{DEVICE_MODEL_NAME} · {serial}" if serial else DEVICE_MODEL_NAME
 
 
 def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:

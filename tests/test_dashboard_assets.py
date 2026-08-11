@@ -322,12 +322,9 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn('width: 80vw', css)
         self.assertIn('height: 80vh', css)
         self.assertIn("function isTimelineValue(item)", charts)
-        self.assertIn("const ENERGY_CONSUMPTION_REGISTERS = new Set", charts)
-        self.assertIn("176, 177, 178, 179", charts)
-        self.assertIn("184, 185, 186, 187", charts)
-        self.assertIn("ENERGY_CONSUMPTION_REGISTERS.has(register)", charts)
-        self.assertIn("[179, 'lifetime']", charts)
-        self.assertIn("[187, 'lifetime']", charts)
+        self.assertIn("const GRID_CONSUMPTION_REGISTERS = new Set([184, 185, 186])", charts)
+        self.assertIn("GRID_CONSUMPTION_REGISTERS.has(register)", charts)
+        self.assertIn("[184, 'day'], [185, 'month'], [186, 'year']", charts)
         self.assertIn("function chartPeriodForItem(item", charts)
         self.assertNotIn("chart-period-select", html)
         self.assertNotIn("refreshChartsWithPeriod", charts)
@@ -340,6 +337,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("/^(?:k?wh)$/i.test(unit)", charts)
         self.assertNotIn("if (value === null && !timelineCapable) return", charts)
         self.assertIn("function synchronizeTimelineCharts()", charts)
+        self.assertIn("if (!chartSelections.size) timelineKeys.forEach(key => chartSelections.add(key));", charts)
         self.assertIn("const timelineKeys = new Set(timelineDefinitions().map(item => item.key))", charts)
         self.assertIn("const selected = timelineDefinitions().map(item => item.key)", charts)
         self.assertIn("const chartValue = value === null", charts)
@@ -383,7 +381,8 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("firstRegister([88])", flow)
         self.assertIn("firstRegister([69])", flow)
         self.assertIn("firstRegister([67, 325])", flow)
-        self.assertNotIn("firstRegister([68])", flow)
+        self.assertIn("firstRegister([68])", flow)
+        self.assertIn("decodeEnergyTerminalState(terminalStateSource)", flow)
         self.assertNotIn("firstRegister([70, 322])", flow)
         self.assertIn("firstRegister([84, 436])", flow)
         self.assertIn("firstRegister([161, 153, 156])", flow)
@@ -403,6 +402,31 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("parallelTopologyCode(parallelState)", flow)
         self.assertIn("classList.toggle('disconnected', !generatorConnected)", flow)
         self.assertIn("classList.toggle('disconnected', !gridAvailable)", flow)
+
+    def test_register_table_explains_raw_words_and_decoded_states(self) -> None:
+        app = (WEB_ROOT / "scripts" / "app.js").read_text(encoding="utf-8")
+        interpretations = (WEB_ROOT / "scripts" / "interpretations.js").read_text(encoding="utf-8")
+        translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
+        self.assertIn('class="register-raw-value">${registerRawExplanation(item)}', app)
+        self.assertIn("function registerRawExplanation(register)", interpretations)
+        self.assertIn("const hexadecimal = `0x${raw.toString(16).toUpperCase().padStart(4, '0')}`", interpretations)
+        self.assertIn("const signedNote = register.signed", interpretations)
+        self.assertIn("const interpretation = registerInterpretation(register)", interpretations)
+        self.assertIn("raw: 'Сырое слово и расшифровка'", translations)
+
+    def test_each_energy_flow_card_has_a_limited_register_picker(self) -> None:
+        html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+        flow = (WEB_ROOT / "scripts" / "energy-flow.js").read_text(encoding="utf-8")
+        events = (WEB_ROOT / "scripts" / "app-events.js").read_text(encoding="utf-8")
+        for card in ("solar", "inverter", "generator", "home", "grid", "battery"):
+            self.assertIn(f'data-flow-card-settings="{card}"', html)
+        self.assertIn('id="flow-card-picker"', html)
+        self.assertIn("const FLOW_CARD_MAX_VALUES = 3", flow)
+        self.assertIn("const FLOW_CARD_CONFIG = Object.freeze", flow)
+        self.assertIn("function renderFlowCardPickerList()", flow)
+        self.assertIn("function openFlowCardPicker(cardKey)", flow)
+        self.assertIn("function setFlowCardRegister(register, selected)", flow)
+        self.assertIn("openFlowCardPicker(button.dataset.flowCardSettings)", events)
 
     def test_poll_timing_reports_real_cycles_and_accounts_for_postprocessing(self) -> None:
         service = inverter_service_source()
@@ -533,6 +557,15 @@ class DashboardAssetTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+
+    def test_device_identifier_uses_the_12ku_model_when_serial_words_are_empty(self) -> None:
+        from solar_inverter.services.inverter_service_core import decode_identifier
+
+        self.assertEqual(decode_identifier({}), "TTN 12KU U3.0")
+        self.assertEqual(
+            decode_identifier({1: 0x5454, 2: 0x4E2D}),
+            "TTN 12KU U3.0 · TTN-",
+        )
 
     def test_updater_four_records_local_installations_without_github_ui(self) -> None:
         html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
@@ -781,6 +814,12 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertEqual(REGISTER_BY_NUMBER[70][2], "Статус топологии / single")
         self.assertEqual(REGISTER_BY_NUMBER[437][2], "Reserved после мощности сети A")
         self.assertIn((1, 120), FAST_BLOCKS)
+        for register in range(1, 11):
+            with self.subTest(register=register):
+                self.assertTrue(
+                    any(start <= register < start + count for start, count in FAST_BLOCKS),
+                    f"R{register} must be read on every fast-poll cycle",
+                )
 
     def test_12ku_cards_prioritize_measured_output_voltage(self) -> None:
         from solar_inverter.services.inverter_service_core import METER_DEFINITIONS
@@ -860,8 +899,8 @@ class DashboardRendererTests(unittest.TestCase):
             {"raw": 2300, "value": 230, "display": "230.0", "available": True},
             {"raw": 1235, "value": 12.35, "display": "12.35", "available": True},
             {"raw": 65413, "value": -123, "display": "-123", "available": True},
-            {"raw": 65356, "value": 18, "display": "18.0", "available": True},
-            {"raw": 180, "value": -18, "display": "-18.0", "available": True},
+            {"raw": 180, "value": 18, "display": "18.0", "available": True},
+            {"raw": 65356, "value": -18, "display": "-18.0", "available": True},
             {"raw": 936, "value": -936, "display": "-936", "available": True},
             {"raw": 5, "value": 5, "display": "5", "available": True},
             {"raw": 249, "value": 24.9, "display": "24.9", "available": True},
@@ -925,9 +964,9 @@ class DashboardRendererTests(unittest.TestCase):
     def test_lcd_uses_canonical_state_registers_for_connections_and_flow(self) -> None:
         lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
         self.assertIn("firstRegister([67, 325])", lcd)
+        self.assertIn("firstRegister([68])", lcd)
         self.assertIn("firstRegister([69])", lcd)
-        self.assertNotIn("firstRegister([68])", lcd)
-        self.assertIn("const terminalState = null", lcd)
+        self.assertIn("decodeEnergyTerminalState(terminalStateSource)", lcd)
         self.assertIn("decodeEnergyFlowState(flowStateSource)", lcd)
         self.assertIn("flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid", lcd)
         self.assertIn("flowState.inverterToMainOutput || flowState.inverterToSecondaryOutput", lcd)
@@ -1012,13 +1051,16 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertNotIn("displaySeconds", chart_source)
         self.assertIn("previousValue + random() * scale * .01", chart_source)
         self.assertIn("Math.max(0, Math.min(100, inverterFanSpeed))", flow_source)
-        self.assertIn("reading(normalizedFanSpeed, '%', 1)", flow_source)
+        self.assertIn("const INVERTER_FAN_MAX_AIR_SPEED_KMH = 45", flow_source)
+        self.assertIn("function fanSpeedKilometersPerHour(normalizedSpeed)", flow_source)
+        self.assertIn("reading(fanSpeedKmh, 'km/h', 1)", flow_source)
         self.assertIn("function updateInverterFanAnimation(fanRow, normalizedSpeed, forceMotion = false)", flow_source)
         self.assertIn("forceMotion || !window.matchMedia", flow_source)
         self.assertIn("const INVERTER_FAN_MAX_ROTATION_MS = 225", flow_source)
         self.assertIn("{duration: INVERTER_FAN_MAX_ROTATION_MS, iterations: Infinity}", flow_source)
-        self.assertIn("inverterFanAnimation.updatePlaybackRate(playbackRate)", flow_source)
-        self.assertIn("const playbackRate = normalizedSpeed / 100", flow_source)
+        self.assertIn("smoothlyUpdateInverterFanRate(inverterFanAnimation, playbackRate)", flow_source)
+        self.assertIn("inverterFanLastKnownSpeed ?? 0", flow_source)
+        self.assertIn("const playbackRate = effectiveSpeed / 100", flow_source)
         self.assertIn("inverterFanAnimation.pause()", flow_source)
         self.assertIn("Array.from(fullLabel).slice(0, 3).join('')", flow_source)
         self.assertIn("element.dataset.sourceIcon = mode.icon", flow_source)
@@ -1046,27 +1088,29 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("transform: translateY(-10px)", css_source)
         self.assertIn("transform: translate(-50%,-50%)", css_source)
 
-    def test_lcd_information_pages_use_only_explicit_v131_registers(self) -> None:
+    def test_lcd_information_pages_follow_the_manual_order(self) -> None:
         lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
         translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
         css_source = "\n".join(
             path.read_text(encoding="utf-8") for path in (WEB_ROOT / "styles").glob("*.css")
         )
         expected = {
-            1: (157,), 2: (158,), 3: (137, 138), 4: (140, 139),
-            5: (409, 408), 6: (411, 415), 7: (413, 412),
-            8: (17, 18, 27, 28), 9: (161, 95), 10: (159, 160),
+            1: (83, 538, 91), 2: (129, 137, 537, 89),
+            3: (129, 137, 545, 94), 4: (129, 137, 542, 93),
+            5: (129, 137, 541, 92), 6: (151, 153),
+            7: (159, 160, 130), 8: (157,), 9: (162,), 10: (163,),
         }
         for page, registers in expected.items():
             start = lcd.index(f"code: 'P{page}'")
-            end_marker = f"code: 'P{page + 1}'" if page < 10 else "code: 'P11'"
+            end_marker = f"code: 'P{page + 1}'" if page < 10 else "];\n      const page"
             end = lcd.index(end_marker, start)
             block = lcd[start:end]
             for register in registers:
                 self.assertRegex(block, rf"(?:numberValue\(\[{register}\]\)|registerLabel\([^\n]*\b{register}\b|versionValue\([^\n]*\b{register}\b|interpretedValue\([^\n]*\b{register}\b)")
         self.assertIn("registerLabel(157, t('dailyPvEnergy'))", lcd)
-        self.assertNotIn("registerLabel(403, t('bmsConnection'))", lcd[lcd.index("code: 'P1'"):lcd.index("code: 'P11'")])
-        self.assertIn("].slice(0, 11);", lcd)
+        self.assertNotIn("code: 'P11'", lcd)
+        self.assertNotIn("code: 'P12'", lcd)
+        self.assertNotIn("registerLabel(403, t('bmsConnection'))", lcd[lcd.index("code: 'P1'"):lcd.index("code: 'P10'")])
         app = (WEB_ROOT / "scripts" / "app.js").read_text(encoding="utf-8")
         runtime = (ROOT / "solar_inverter" / "services" / "inverter_service_runtime.py").read_text(encoding="utf-8")
         self.assertIn("const lcdInformationPageCount = 10", app)
@@ -1094,7 +1138,7 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("container-type: inline-size; width: 100%; min-width: 0; aspect-ratio: 1.65", css_source)
         self.assertIn(".lcd-battery-scale", css_source)
         for symbol_id in (
-            "lcd-icon-source-square", "lcd-icon-source-wide", "lcd-icon-arrow-long",
+            "lcd-icon-source-square", "lcd-icon-source-wide", "lcd-icon-grid", "lcd-icon-arrow-long",
             "lcd-icon-arrow-compact", "lcd-icon-solar", "lcd-icon-sun",
             "lcd-icon-battery-vertical", "lcd-icon-battery-horizontal",
         ):

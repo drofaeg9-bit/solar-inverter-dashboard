@@ -12,8 +12,8 @@
     "file": "dashboard-api.md"
   },
   {
-    "title": "Home Assistant integration",
-    "file": "home-assistant.md"
+    "title": "Optional platform integration",
+    "file": "integration.md"
   },
   {
     "title": "Operations",

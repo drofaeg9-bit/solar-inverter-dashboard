@@ -5,7 +5,7 @@ The repository contains three user-facing applications built around solar-invert
 | Area | Location | Purpose |
 | --- | --- | --- |
 | Web dashboard | `solar_inverter/` | Polls the inverter, normalizes registers, serves the dashboard and JSON API |
-| Home Assistant | `custom_components/solar_assistant/` | Creates Home Assistant entities from WebSocket, REST, or Modbus data |
+| Optional integration | `custom_components/` | Creates platform entities from WebSocket, REST, or Modbus data |
 | Android client | `android_app/` | Displays the existing dashboard in an Android WebView |
 
 ## Runtime requirements

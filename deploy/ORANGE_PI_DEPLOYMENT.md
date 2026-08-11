@@ -21,9 +21,9 @@ ssh orangepi@ORANGE_PI_IP
 sudo python3 ~/solar-dashboard-update.pyz
 ```
 
-The updater validates its embedded Python files before installation, creates the restricted service account when necessary, installs missing `git`, `mbpoll`, or timezone data through `apt-get`, updates only the required files under `/opt/solar_assistant`, installs the systemd unit, restarts the service, and checks `http://127.0.0.1:8080/api/state`.
+The updater validates its embedded Python files before installation, creates the restricted service account when necessary, installs missing `git`, `mbpoll`, or timezone data through `apt-get`, updates only the required application files, installs the systemd unit, restarts the service, and checks `http://127.0.0.1:8080/api/state`.
 
-It does not replace the statistics database, register logs, Tailscale configuration, Home Assistant integration, Android project, or documentation. To inspect a copied archive without changing the Orange Pi, run:
+It does not replace the statistics database, register logs, Tailscale configuration, optional integration, Android project, or documentation. To inspect a copied archive without changing the Orange Pi, run:
 
 ```bash
 python3 ~/solar-dashboard-update.pyz --check
@@ -40,7 +40,7 @@ git commit -m "Update solar inverter dashboard"
 git push origin main
 ```
 
-The Orange Pi cannot receive local, uncommitted changes. Confirm the new commit is visible at `https://github.com/santaes/solar_assistant` before continuing.
+The Orange Pi cannot receive local, uncommitted changes. Confirm the new commit is visible in the configured GitHub repository before continuing.
 
 ## 2. Install Orange Pi packages
 
@@ -55,24 +55,9 @@ mbpoll -V
 
 The application uses only the Python standard library; it does not require `pip` packages.
 
-## 3. Create the service account and clone the app
+## 3. Install the application
 
-```bash
-sudo useradd --system --user-group --home-dir /opt/solar_assistant --shell /usr/sbin/nologin solar-dashboard
-sudo usermod -aG dialout solar-dashboard
-sudo install -d -o solar-dashboard -g solar-dashboard /opt/solar_assistant
-sudo -u solar-dashboard git clone https://github.com/santaes/solar_assistant.git /opt/solar_assistant
-sudo install -d -o solar-dashboard -g solar-dashboard -m 0750 /var/lib/solar-inverter-dashboard
-```
-
-If `solar-dashboard` or `/opt/solar_assistant` already exists, do not recreate it. Verify ownership instead:
-
-```bash
-sudo chown -R solar-dashboard:solar-dashboard /opt/solar_assistant
-sudo usermod -aG dialout solar-dashboard
-```
-
-For a private GitHub repository, configure a read-only deploy key for the `solar-dashboard` account before cloning.
+Use the single-file updater from the first section. It creates the service account, application directory, persistent-data directory, and systemd unit with the paths required by the installed release. This avoids manual path changes and preserves existing runtime data.
 
 ## 4. Verify the USB Modbus adapter
 
@@ -97,13 +82,9 @@ If the adapter appears as `/dev/ttyUSB1`, the current source must be changed or 
 
 ## 5. Install and start the systemd service
 
-Validate the source, install the supplied unit, and start it:
+The updater validates the source, installs the supplied unit, and starts it. Check the resulting service:
 
 ```bash
-sudo -u solar-dashboard python3 -m py_compile /opt/solar_assistant/solar_invertor_web.py
-sudo install -m 0644 /opt/solar_assistant/deploy/solar-inverter-dashboard.service /etc/systemd/system/solar-inverter-dashboard.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now solar-inverter-dashboard.service
 sudo systemctl status solar-inverter-dashboard.service --no-pager
 ```
 
@@ -208,21 +189,14 @@ Orange Pi; the updater uses the `git` package installed during setup.
 First commit and push the new version from the development computer as described in step 1. Then run this on the Orange Pi:
 
 ```bash
-sudo systemctl stop solar-inverter-dashboard.service
-sudo cp -a /var/lib/solar-inverter-dashboard/stats.sqlite3 /var/lib/solar-inverter-dashboard/stats.sqlite3.backup 2>/dev/null || true
-sudo -u solar-dashboard git -C /opt/solar_assistant fetch origin
-sudo -u solar-dashboard git -C /opt/solar_assistant pull --ff-only origin main
-sudo -u solar-dashboard python3 -m py_compile /opt/solar_assistant/solar_invertor_web.py
-sudo install -m 0644 /opt/solar_assistant/deploy/solar-inverter-dashboard.service /etc/systemd/system/solar-inverter-dashboard.service
-sudo systemctl daemon-reload
-sudo systemctl start solar-inverter-dashboard.service
+sudo python3 ~/solar-dashboard-update.pyz
 sudo systemctl status solar-inverter-dashboard.service --no-pager
 curl -fsS http://127.0.0.1:8080/api/state >/dev/null && echo "Updated dashboard OK"
 ```
 
 Tailscale Serve or Funnel does not need to be reconfigured for normal application updates because it continues proxying the same local port.
 
-Do not use `git clean` in the deployment directory: runtime register logs are stored under `/opt/solar_assistant/register_logs`.
+Do not use `git clean` in the application directory: runtime register logs must be preserved.
 
 ## 10. Troubleshooting
 

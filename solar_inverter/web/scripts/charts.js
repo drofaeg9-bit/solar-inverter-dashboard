@@ -2,13 +2,9 @@
     let chartPage = 0;
     let chartsViewRenderPending = false;
     const hydratedChartHistoryPeriods = new Set();
-    const ENERGY_CONSUMPTION_REGISTERS = new Set([
-      176, 177, 178, 179,
-      184, 185, 186, 187
-    ]);
+    const GRID_CONSUMPTION_REGISTERS = new Set([184, 185, 186]);
     const ENERGY_PERIOD_BY_REGISTER = new Map([
-      [176, 'day'], [177, 'month'], [178, 'year'], [179, 'lifetime'],
-      [184, 'day'], [185, 'month'], [186, 'year'], [187, 'lifetime']
+      [184, 'day'], [185, 'month'], [186, 'year']
     ]);
 
     function chartPeriodForItem(item) {
@@ -64,7 +60,7 @@
       const unit = String(item?.unit || '').trim();
       const register = Number(item?.register);
       return Number.isFinite(register)
-        && ENERGY_CONSUMPTION_REGISTERS.has(register)
+        && GRID_CONSUMPTION_REGISTERS.has(register)
         && /^(?:k?wh)$/i.test(unit);
     }
 
@@ -195,6 +191,7 @@
         chartSelections.delete(key);
         chartHistory.delete(key);
       });
+      if (!chartSelections.size) timelineKeys.forEach(key => chartSelections.add(key));
     }
 
     function renderChartSelectionList() {
@@ -254,8 +251,7 @@
     function renderChartCards() {
       if (document.querySelector('#charts-view').hidden) return;
       const grid = document.querySelector('#chart-grid');
-      const selected = timelineDefinitions()
-        .map(item => item.key)
+      const selected = timelineDefinitions().map(item => item.key)
         .filter(key => chartSelections.has(key));
       document.querySelector('#chart-demo-button').disabled = false;
       document.querySelector('#chart-selection-count').textContent =
@@ -390,7 +386,7 @@
         pvVoltage = 326 + ripple * 4;
         pvPower = 7200 + Math.sin(second * .21) * 260;
         loadPower = 2500 + Math.sin(second * .29) * 140;
-        batteryCurrent = 42 + ripple * 1.5;
+        batteryCurrent = -(42 + ripple * 1.5);
         batterySoc = 72 + second * .08;
         statusCode = 4;
         outputPriority = 2;
@@ -401,7 +397,7 @@
         pvVoltage = 0;
         pvPower = 0;
         loadPower = 2900 + ripple * 130;
-        batteryCurrent = 18 + ripple;
+        batteryCurrent = -(18 + ripple);
         batterySoc = 73.6 + (second - 20) * .05;
         statusCode = 3;
         outputPriority = 0;
@@ -414,7 +410,7 @@
         pvVoltage = 0;
         pvPower = 0;
         loadPower = 2300 + Math.sin(second * .31) * 160;
-        batteryCurrent = -loadPower / 51.8;
+        batteryCurrent = loadPower / 51.8;
         batterySoc = 74.4 - (second - 40) * .09;
         statusCode = 5;
         outputPriority = 0;
@@ -454,7 +450,7 @@
         pvVoltage = 320 + ripple * 3;
         pvPower = 1500 + ripple * 120;
         loadPower = 2500 + Math.sin(second * .25) * 120;
-        batteryCurrent = -(20 + ripple);
+        batteryCurrent = 20 + ripple;
         batterySoc = 72.5 - (second - 100) * .07;
         statusCode = 4;
         outputPriority = 2;
@@ -473,19 +469,19 @@
       const powerFactor = .86;
       const apparentLoadPower = loadPower / powerFactor;
       const gridPower = gridAvailable ? Math.max(0,
-        loadPower + Math.max(0, batteryPower)
-          - Math.max(0, pvPower) - Math.max(0, -batteryPower) - Math.max(0, generatorPower)
+        loadPower + Math.max(0, -batteryPower)
+          - Math.max(0, pvPower) - Math.max(0, batteryPower) - Math.max(0, generatorPower)
       ) : 0;
       const inputMode = generatorPower > 20 ? 2 : 0;
       const generatorVoltage = generatorPower > 20 ? 230 : 0;
       const generatorCurrent = generatorVoltage > 0 ? generatorPower / generatorVoltage : 0;
-      const pvChargingCurrent = pvPower > loadPower ? Math.max(0, batteryCurrent) : 0;
+      const pvChargingCurrent = pvPower > loadPower ? Math.max(0, -batteryCurrent) : 0;
       const gridTerminalState = gridAvailable ? 2 : 0;
       const generatorTerminalState = generatorPower > 20 ? 2 : 0;
       const pv1TerminalState = pvPower > 20 ? 2 : 0;
       const outputTerminalState = loadPower > 0 ? 1 : 0;
-      const batteryTerminalState = batteryCurrent > .3 ? 3 : batteryCurrent < -.3 ? 2 : batterySoc <= 20 ? 1 : 4;
-      const chargingStage = batteryCurrent > .3 ? 1 : 0;
+      const batteryTerminalState = batteryCurrent < -.3 ? 3 : batteryCurrent > .3 ? 2 : batterySoc <= 20 ? 1 : 4;
+      const chargingStage = batteryCurrent < -.3 ? 1 : 0;
       const energyTerminalState = gridTerminalState
         | generatorTerminalState << 2
         | pv1TerminalState << 4
@@ -495,9 +491,9 @@
       const energyFlowState = (gridPower > 20 ? (1 << 0) | (1 << 1) : 0)
         | (generatorPower > 20 ? (1 << 2) | (1 << 3) : 0)
         | (pvPower > 20 ? 1 << 4 : 0)
-        | (batteryCurrent > .3 ? 1 << 5 : 0)
+        | (batteryCurrent < -.3 ? 1 << 5 : 0)
         | (gridPower > 20 || generatorPower > 20 || pvPower > 20 ? 1 << 6 : 0)
-        | (batteryCurrent < -.3 ? 1 << 8 : 0)
+        | (batteryCurrent > .3 ? 1 << 8 : 0)
         | (loadPower > 0 ? 1 << 9 : 0);
       const energyProgress = second / 120;
       return {
@@ -607,7 +603,6 @@
       const registerNumber = Number(register.register);
       const protocolValue = registerNumber === 134 ? Math.abs(value) : value;
       let base = Math.round(protocolValue / scale);
-      if (registerNumber === 130) base = -base;
       base = register.signed
         ? Math.max(-32768, Math.min(32767, base))
         : Math.max(0, Math.min(65533, base));
@@ -626,7 +621,6 @@
       const scale = Number(register.scale) || 1;
       const raw = demoRawValue(register, requestedValue);
       let base = register.signed && raw >= 32768 ? raw - 65536 : raw;
-      if (Number(register.register) === 130) base = -base;
       let value = base * scale;
       if (Number(register.register) === 134 && requestedValue < 0) value = -value;
       value = Number(value.toFixed(6));
@@ -813,7 +807,7 @@
           if (!document.querySelector('#dashboard-view').hidden) {
             renderDashboardValues();
             scheduleRegisterRender(demoRegisterRows);
-            renderSolarEnergy(demoSolarEnergySummary(elapsedSeconds));
+            renderGridConsumptionEnergy(demoRegisterRows);
           }
           if (!document.querySelector('#charts-view').hidden) scheduleVisibleChartDraw();
         }

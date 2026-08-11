@@ -61,7 +61,7 @@ customElements.define('compodoc-menu', class extends HTMLElement {
                                         <a href="additional-documentation/dashboard-api.html" data-type="entity-link" data-context-id="additional">Dashboard API</a>
                                     </li>
                                     <li class="link ">
-                                        <a href="additional-documentation/home-assistant-integration.html" data-type="entity-link" data-context-id="additional">Home Assistant integration</a>
+                                        <a href="additional-documentation/optional-platform-integration.html" data-type="entity-link" data-context-id="additional">Optional platform integration</a>
                                     </li>
                                     <li class="chapter inner">
                                         <a data-type="chapter-link" href="additional-documentation/operations.html" data-context-id="additional">

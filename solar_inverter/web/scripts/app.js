@@ -167,7 +167,7 @@
         return `<tr class="${item.available ? '' : 'unavailable'}">
           <td>R${item.register}</td><td>${localizeApiField(item, 'group')}</td><td>${localizeApiField(item, 'name')}</td>
           <td class="register-meaning">${descriptions.join(' · ') || '—'}</td>
-          <td class="register-live-value">${localizeDataText(displayValue)} ${item.unit}${bmsFormula ? `<br><small>${bmsFormula}</small>` : ''}</td><td>${item.raw ?? '—'}</td></tr>`;
+          <td class="register-live-value">${localizeDataText(displayValue)} ${item.unit}${bmsFormula ? `<br><small>${bmsFormula}</small>` : ''}</td><td class="register-raw-value">${registerRawExplanation(item)}</td></tr>`;
       }).join('');
       visible.forEach(item => {
         const row = document.querySelector(`#registers tr:nth-child(${visible.indexOf(item) + 1})`);
@@ -412,7 +412,7 @@
         : '';
       error.classList.toggle('show', Boolean(connectionError));
       renderRegisterLog(data.register_log);
-      renderSolarEnergy(data.solar_energy);
+      renderGridConsumptionEnergy(data.registers);
       const displayedRegisters = chartDemoRunning && demoRegisterRows ? demoRegisterRows : data.registers;
       scheduleRegisterRender(displayedRegisters);
       renderEnergyFlow(data, displayedRegisters);

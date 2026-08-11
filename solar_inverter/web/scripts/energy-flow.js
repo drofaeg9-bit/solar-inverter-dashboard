@@ -1,6 +1,113 @@
     let inverterFanAnimation = null;
     let inverterFanAnimationRotor = null;
+    let inverterFanLastKnownSpeed = null;
+    let inverterFanTargetRate = 0;
+    let inverterFanRateFrame = null;
+    let inverterFanRateFrameTime = null;
     const INVERTER_FAN_MAX_ROTATION_MS = 225;
+    const INVERTER_FAN_MAX_AIR_SPEED_KMH = 45;
+    const INVERTER_FAN_RATE_SMOOTHING_MS = 280;
+    const FLOW_CARD_MAX_VALUES = 3;
+    const FLOW_CARD_CONFIG = Object.freeze({
+      solar: {label: 'solarPanels', defaults: [151, 153, 152], registers: [151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163]},
+      inverter: {label: 'inverter', defaults: [545, 801, 537], registers: [67, 68, 69, 321, 323, 324, 325, 529, 530, 537, 538, 539, 541, 542, 545, 801, 802]},
+      generator: {label: 'generator', defaults: [88, 86, 85], registers: [85, 86, 87, 88]},
+      home: {label: 'home', defaults: [541, 539, 537], registers: [89, 90, 91, 92, 93, 94, 188, 189, 190, 537, 538, 539, 541, 542, 545]},
+      grid: {label: 'grid', defaults: [84, 82, 81], registers: [81, 82, 83, 84, 95, 180, 181, 182, 183, 184, 185, 186, 187, 433, 434, 435, 436]},
+      battery: {label: 'battery', defaults: [130, 134, 129], registers: [129, 130, 131, 132, 133, 134, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 341, 342, 343, 344, 345, 346, 375, 376, 377, 378, 379, 383, 384, 385, 386, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 16651, 16652, 16653, 16654]}
+    });
+    let activeFlowCardPicker = null;
+
+    function flowCardSelections() {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem('inverter-flow-card-values-v1') || '{}');
+        return saved && typeof saved === 'object' ? saved : {};
+      } catch {
+        return {};
+      }
+    }
+    function flowCardSelection(cardKey) {
+      const config = FLOW_CARD_CONFIG[cardKey];
+      if (!config) return [];
+      const saved = flowCardSelections()[cardKey];
+      const selected = Array.isArray(saved) ? saved.map(Number).filter(register => config.registers.includes(register)) : [];
+      return selected.length ? selected.slice(0, FLOW_CARD_MAX_VALUES) : config.defaults;
+    }
+    function saveFlowCardSelection(cardKey, selection) {
+      const saved = flowCardSelections();
+      saved[cardKey] = selection;
+      try {
+        window.localStorage.setItem('inverter-flow-card-values-v1', JSON.stringify(saved));
+      } catch {
+        // The selected readings still apply until the page is closed.
+      }
+    }
+    function formatFlowCardRegister(register) {
+      const value = registerNumericValue(register);
+      if (!Number.isFinite(value)) return t('noData');
+      const unit = String(register.unit || '').trim();
+      return `${Number(value.toFixed(unit === 'A' || unit === 'V' || unit === '%' ? 1 : 2))}${unit ? ` ${unit}` : ''}`;
+    }
+    function renderFlowCardValues(cardKey, selector, registers, visible = true) {
+      const host = document.querySelector(selector);
+      if (!host) return;
+      host.hidden = !visible;
+      if (!visible) return;
+      const byNumber = new Map(registers.map(register => [Number(register.register), register]));
+      const selected = flowCardSelection(cardKey);
+      host.replaceChildren(...selected.map(number => {
+        const register = byNumber.get(number);
+        const row = document.createElement('span');
+        const name = register ? localizeApiField(register, 'name') : `R${number}`;
+        row.textContent = `R${number}: ${register ? formatFlowCardRegister(register) : t('noData')}`;
+        row.title = name;
+        return row;
+      }));
+    }
+    function renderFlowCardPickerList() {
+      const host = document.querySelector('#flow-card-picker-list');
+      const config = FLOW_CARD_CONFIG[activeFlowCardPicker];
+      if (!host || !config) return;
+      const query = document.querySelector('#flow-card-picker-search').value.trim().toLowerCase();
+      const selected = flowCardSelection(activeFlowCardPicker);
+      const byNumber = new Map((lastData?.registers || []).map(register => [Number(register.register), register]));
+      const choices = config.registers.map(number => byNumber.get(number) || {register: number, name: `R${number}`, unit: '', available: false})
+        .filter(register => `${register.register} ${localizeApiField(register, 'name')}`.toLowerCase().includes(query));
+      host.replaceChildren(...choices.map(register => {
+        const option = document.createElement('label');
+        option.className = 'gauge-picker-option';
+        const input = document.createElement('input');
+        input.type = 'checkbox'; input.dataset.flowCardRegister = String(register.register);
+        input.checked = selected.includes(Number(register.register));
+        input.disabled = !input.checked && selected.length >= FLOW_CARD_MAX_VALUES;
+        const copy = document.createElement('span');
+        copy.className = 'gauge-picker-name';
+        copy.textContent = localizeApiField(register, 'name') || `R${register.register}`;
+        const detail = document.createElement('small');
+        detail.textContent = `R${register.register}${register.unit ? ` · ${register.unit}` : ''}`;
+        copy.append(detail); option.append(input, copy);
+        return option;
+      }));
+    }
+    function openFlowCardPicker(cardKey) {
+      const config = FLOW_CARD_CONFIG[cardKey];
+      if (!config) return;
+      activeFlowCardPicker = cardKey;
+      document.querySelector('#flow-card-picker-title').textContent = t('flowCardSettingsTitle', {card: t(config.label)});
+      document.querySelector('#flow-card-picker-search').value = '';
+      renderFlowCardPickerList();
+      const picker = document.querySelector('#flow-card-picker');
+      if (typeof picker.showModal === 'function') picker.showModal();
+      else picker.setAttribute('open', '');
+    }
+    function setFlowCardRegister(register, selected) {
+      if (!activeFlowCardPicker) return;
+      const current = flowCardSelection(activeFlowCardPicker).filter(number => number !== register);
+      if (selected && current.length < FLOW_CARD_MAX_VALUES) current.push(register);
+      saveFlowCardSelection(activeFlowCardPicker, current);
+      if (lastData) renderEnergyFlow(lastData, chartDemoRunning && demoRegisterRows ? demoRegisterRows : lastData.registers);
+      renderFlowCardPickerList();
+    }
     function decodeEnergyTerminalState(source) {
       const raw = Number(source?.raw);
       if (!source?.available || !Number.isInteger(raw) || raw < 0 || raw >= 65535) return null;
@@ -47,17 +154,55 @@
     function uniqueLabels(values) {
       return [...new Set(values.filter(Boolean))];
     }
+    function fanSpeedKilometersPerHour(normalizedSpeed) {
+      return normalizedSpeed * INVERTER_FAN_MAX_AIR_SPEED_KMH / 100;
+    }
+    function setInverterFanPlaybackRate(animation, playbackRate) {
+      if (typeof animation.updatePlaybackRate === 'function') {
+        animation.updatePlaybackRate(playbackRate);
+      } else {
+        animation.playbackRate = playbackRate;
+      }
+    }
+    function smoothlyUpdateInverterFanRate(animation, targetRate) {
+      inverterFanTargetRate = targetRate;
+      if (typeof window.requestAnimationFrame !== 'function') {
+        setInverterFanPlaybackRate(animation, targetRate);
+        return;
+      }
+      if (inverterFanRateFrame !== null) return;
+      const tick = now => {
+        const elapsed = inverterFanRateFrameTime === null ? 16 : Math.max(1, now - inverterFanRateFrameTime);
+        inverterFanRateFrameTime = now;
+        const currentRate = Number(animation.playbackRate) || 0;
+        const progress = 1 - Math.exp(-elapsed / INVERTER_FAN_RATE_SMOOTHING_MS);
+        const nextRate = currentRate + (inverterFanTargetRate - currentRate) * progress;
+        setInverterFanPlaybackRate(animation, nextRate);
+        if (Math.abs(inverterFanTargetRate - nextRate) > .002) {
+          inverterFanRateFrame = window.requestAnimationFrame(tick);
+          return;
+        }
+        setInverterFanPlaybackRate(animation, inverterFanTargetRate);
+        inverterFanRateFrame = null;
+        inverterFanRateFrameTime = null;
+      };
+      inverterFanRateFrame = window.requestAnimationFrame(tick);
+    }
     function updateInverterFanAnimation(fanRow, normalizedSpeed, forceMotion = false) {
       const rotor = fanRow?.querySelector('.energy-inverter-fan-rotor');
-      const shouldRotate = normalizedSpeed > 0
+      if (Number.isFinite(normalizedSpeed)) {
+        inverterFanLastKnownSpeed = Math.max(0, Math.min(100, normalizedSpeed));
+      }
+      const effectiveSpeed = inverterFanLastKnownSpeed ?? 0;
+      const shouldRotate = effectiveSpeed > 0
         && (forceMotion || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
-      fanRow?.classList.toggle('active', normalizedSpeed > 0);
+      fanRow?.classList.toggle('active', effectiveSpeed > 0);
       if (!rotor) return;
 
       if (typeof rotor.animate !== 'function') {
         fanRow.classList.add('css-animation-fallback');
-        if (normalizedSpeed > 0) {
-          rotor.style.animationDuration = `${(22.5 / normalizedSpeed).toFixed(3)}s`;
+        if (effectiveSpeed > 0) {
+          rotor.style.animationDuration = `${(22.5 / effectiveSpeed).toFixed(3)}s`;
         }
         rotor.style.animationPlayState = shouldRotate ? 'running' : 'paused';
         return;
@@ -73,22 +218,26 @@
         inverterFanAnimation.pause();
       }
       if (!shouldRotate) {
+        inverterFanTargetRate = 0;
+        if (inverterFanRateFrame !== null) {
+          window.cancelAnimationFrame?.(inverterFanRateFrame);
+          inverterFanRateFrame = null;
+          inverterFanRateFrameTime = null;
+        }
         inverterFanAnimation.pause();
         return;
       }
 
-      const playbackRate = normalizedSpeed / 100;
+      const playbackRate = effectiveSpeed / 100;
       if (inverterFanAnimation.playState === 'paused') {
         inverterFanAnimation.playbackRate = playbackRate;
         inverterFanAnimation.play();
-      } else if (typeof inverterFanAnimation.updatePlaybackRate === 'function') {
-        inverterFanAnimation.updatePlaybackRate(playbackRate);
       } else {
-        inverterFanAnimation.playbackRate = playbackRate;
+        smoothlyUpdateInverterFanRate(inverterFanAnimation, playbackRate);
       }
     }
 
-    function formatSolarEnergy(kilowattHours) {
+    function formatEnergy(kilowattHours) {
       if (kilowattHours === null || kilowattHours === undefined || kilowattHours === '') return t('noData');
       const value = Number(kilowattHours);
       if (!Number.isFinite(value)) return t('noData');
@@ -97,22 +246,17 @@
       if (value < 1000) return `${value.toLocaleString(locale, {maximumFractionDigits: 2})} kWh`;
       return `${(value / 1000).toLocaleString(locale, {maximumFractionDigits: 2})} MWh`;
     }
-    function renderSolarEnergy(summary = {}) {
+    function renderGridConsumptionEnergy(registers = []) {
+      const valuesByRegister = new Map(registers.map(register => [Number(register.register), register]));
       const values = {
-        '#solar-energy-today': summary.today_kwh,
-        '#solar-energy-week': summary.week_kwh,
-        '#solar-energy-month': summary.month_kwh,
-        '#solar-energy-year': summary.year_kwh
+        '#grid-energy-today': registerNumericValue(valuesByRegister.get(184)),
+        '#grid-energy-month': registerNumericValue(valuesByRegister.get(185)),
+        '#grid-energy-year': registerNumericValue(valuesByRegister.get(186))
       };
       Object.entries(values).forEach(([selector, value]) => {
         const element = document.querySelector(selector);
-        if (element) element.textContent = formatSolarEnergy(value);
+        if (element) element.textContent = formatEnergy(value);
       });
-      const error = document.querySelector('#solar-energy-error');
-      if (error) {
-        error.textContent = summary.error ? localizeApiField(summary, 'error') : '';
-        error.hidden = !summary.error;
-      }
     }
     function renderEnergyFlow(data, registers = data.registers || []) {
       const byNumber = new Map(registers.map(register => [register.register, register]));
@@ -223,7 +367,7 @@
       const generatorPowerSource = firstRegister([88]);
       const pvVoltageSource = firstRegister([609, 151, 154]);
       const pvPowerSource = firstRegister([161, 153, 156]);
-      const loadPowerSource = firstRegister([92, 541, 188]);
+      const loadPowerSource = firstRegister([541, 92, 188]);
       // R545 is the verified detailed output-load reading. R94 is the
       // fast-block fallback when detailed registers are unavailable.
       const inverterLoadSource = firstRegister([545, 94]);
@@ -273,7 +417,7 @@
       const batteryPowerMagnitude = Number.isFinite(batteryPowerReading)
         ? Math.abs(batteryPowerReading)
         : Number.isFinite(calculatedBatteryPower) ? Math.abs(calculatedBatteryPower) : null;
-      // R130 defines direction: positive charge, negative discharge. R134 supplies
+      // R130 defines direction: positive discharge, negative charge. R134 supplies
       // the preferred magnitude so both battery values always use the same sign.
       const batteryPower = Number.isFinite(batteryCurrent)
         ? Math.abs(batteryCurrent) >= .3
@@ -283,7 +427,8 @@
           : 0
         : Number.isFinite(batteryPowerReading) ? batteryPowerReading : calculatedBatteryPower;
       const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online);
-      const terminalState = null;
+      const terminalStateSource = firstRegister([68]);
+      const terminalState = liveMeasurementsFresh ? decodeEnergyTerminalState(terminalStateSource) : null;
       const energyFlowState = liveMeasurementsFresh ? decodeEnergyFlowState(flowStateSource) : null;
       const inverterState = decodeBoundedRegister(inverterStateSource, 10);
       const parallelState = 0;
@@ -299,11 +444,11 @@
       const batteryCharging = batteryActive && (energyFlowState
         ? energyFlowState.rectifierToBattery && !energyFlowState.batteryToInverter
         : terminalState ? terminalState.battery === 3
-        : Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3 ? batteryCurrent > 0 : batteryPower > 0);
+        : Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3 ? batteryCurrent < 0 : batteryPower < 0);
       const batteryDischarging = batteryActive && (energyFlowState
         ? energyFlowState.batteryToInverter
         : terminalState ? terminalState.battery === 2
-        : Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3 ? batteryCurrent < 0 : batteryPower < 0);
+        : Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3 ? batteryCurrent > 0 : batteryPower > 0);
       const pvConnected = liveMeasurementsFresh && (terminalState
         ? terminalState.pv1 !== 0 || terminalState.pv2 !== 0
         : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .5);
@@ -319,9 +464,8 @@
       const solarDataVisible = liveMeasurementsFresh && pvConnected;
       const pvReceiving = false;
       const gridVoltagePresent = Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .5;
-      // R81 is the physical mains input. Output voltage is deliberately kept
-      // separate (R537, then R89); this single-inverter profile does not infer
-      // a grid connection from terminal-state or parallel-operation registers.
+      // R81 is the physical mains input. R68 confirms whether that input is
+      // electrically normal; output voltage remains separate (R537, then R89).
       const gridTerminalConnected = terminalState ? terminalState.grid !== 0 : gridVoltagePresent;
       const gridAvailable = liveMeasurementsFresh && gridTerminalConnected;
       const gridNormal = terminalState ? terminalState.grid === 2 : gridAvailable;
@@ -523,13 +667,16 @@
       });
       const normalizedFanSpeed = Number.isFinite(inverterFanSpeed)
         ? Math.max(0, Math.min(100, inverterFanSpeed))
-        : 0;
+        : null;
+      const fanSpeedKmh = Number.isFinite(normalizedFanSpeed)
+        ? fanSpeedKilometersPerHour(normalizedFanSpeed)
+        : null;
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-inverter-node',
         active: inverterActive,
         values: {
           '#energy-inverter-load': Number.isFinite(inverterLoad) ? reading(inverterLoad, '%', 1) : '— %',
-          '#energy-inverter-fan-speed': Number.isFinite(inverterFanSpeed) ? reading(normalizedFanSpeed, '%', 1) : '— %'
+          '#energy-inverter-fan-speed': Number.isFinite(fanSpeedKmh) ? reading(fanSpeedKmh, 'km/h', 1) : '— km/h'
         }
       });
       const inverterFanRow = document.querySelector('#energy-inverter-fan-row');
@@ -602,6 +749,12 @@
         'aria-label',
         batteryLevelKnown ? `${t('battery')} ${Math.round(batteryLevel)}%` : `${t('battery')} ${t('noData')}`
       );
+      renderFlowCardValues('solar', '.energy-solar-values', registers, solarDataVisible);
+      renderFlowCardValues('inverter', '.energy-inverter-values', registers, true);
+      renderFlowCardValues('generator', '.energy-generator-values', registers, generatorConnected);
+      renderFlowCardValues('home', '.energy-home-values', registers, homeConnected);
+      renderFlowCardValues('grid', '.energy-grid-values', registers, gridAvailable);
+      renderFlowCardValues('battery', '.energy-battery-values', registers, liveMeasurementsFresh && batteryConnected);
       // PV is a one-way source and can only supply the inverter.
       setFlow('#energy-pv-flow', pvActive && inverterActive && !pvReceiving, false, pvPower);
       document.querySelector('#energy-pv-flow')?.classList.toggle('disconnected', !pvConnected);

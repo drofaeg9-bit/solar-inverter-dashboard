@@ -121,14 +121,14 @@
 
 
 
-<h1>Home Assistant integration</h1>
-<p>The custom integration lives under <code>custom_components/solar_assistant/</code> and declares the domain <code>solar_assistant</code>.</p>
+<h1>Optional platform integration</h1>
+<p>The custom integration is located under <code>custom_components/</code>.</p>
 <h2>Connection modes</h2>
 <ul>
-<li>Local or cloud SolarAssistant access uses <code>SolarAssistantCoordinator</code>, REST discovery, and a reconnecting WebSocket stream.</li>
-<li>Direct Modbus TCP uses <code>ModbusCoordinator</code> and a fixed register mapping.</li>
+<li>Local or cloud access uses REST discovery and a reconnecting WebSocket stream.</li>
+<li>Direct Modbus TCP uses a fixed register mapping.</li>
 </ul>
-<p>The selected coordinator is stored under <code>hass.data[DOMAIN][entry_id]</code>. Home Assistant then forwards setup to these platforms:</p>
+<p>The selected coordinator is stored for each configuration entry. The platform then forwards setup to these entity types:</p>
 <ul>
 <li><code>binary_sensor</code></li>
 <li><code>number</code></li>
@@ -137,11 +137,11 @@
 <li><code>switch</code></li>
 </ul>
 <h2>WebSocket coordinator</h2>
-<p><code>SolarAssistantCoordinator</code> preloads metric definitions through REST, starts one WebSocket per configuration entry, publishes changes through Home Assistant dispatcher signals, and reconnects with exponential backoff. It can recover a changed device IP through mDNS and refresh cloud authorization when required.</p>
+<p>The cloud coordinator preloads metric definitions through REST, starts one WebSocket per configuration entry, publishes changes through dispatcher signals, and reconnects with exponential backoff. It can recover a changed device IP through mDNS and refresh cloud authorization when required.</p>
 <h2>Direct Modbus coordinator</h2>
-<p><code>ModbusCoordinator</code> connects with <code>pymodbus</code>, reads holding registers, converts known values to engineering units, and exposes the result through Home Assistant&#39;s <code>DataUpdateCoordinator</code> interface.</p>
+<p>The Modbus coordinator connects with <code>pymodbus</code>, reads holding registers, converts known values to engineering units, and exposes the result through the platform update-coordinator interface.</p>
 <h2>Entity lifecycle</h2>
-<p>Metric entities share <code>SolarAssistantMetricEntity</code>. Entity platforms subscribe to new-metric and update signals. When enabled-topic options change, excluded read-only sensors are removed before the configuration entry reloads; settings entities and the connection binary sensor remain independently managed.</p>
+<p>Metric entities share a common base class. Entity platforms subscribe to new-metric and update signals. When enabled-topic options change, excluded read-only sensors are removed before the configuration entry reloads; settings entities and the connection binary sensor remain independently managed.</p>
 
                    </div><div class="search-results">
     <div class="has-results">
@@ -169,7 +169,7 @@
        <script>
             var COMPODOC_CURRENT_PAGE_DEPTH = 1;
             var COMPODOC_CURRENT_PAGE_CONTEXT = 'additional-page';
-            var COMPODOC_CURRENT_PAGE_URL = 'home-assistant-integration.html';
+            var COMPODOC_CURRENT_PAGE_URL = 'optional-platform-integration.html';
             var MAX_SEARCH_RESULTS = 15;
        </script>
 

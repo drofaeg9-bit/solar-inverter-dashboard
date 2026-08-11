@@ -75,6 +75,7 @@
       <div class="energy-flow-scroll" tabindex="0" aria-label="Схема потоків енергії" data-i18n-aria="energyFlowAria">
       <div class="energy-flow-diagram">
         <div class="energy-node energy-solar" id="energy-solar-node">
+          <button class="energy-card-settings" type="button" data-flow-card-settings="solar" data-i18n-aria="configureCardValues" aria-label="Configure displayed values">⚙</button>
           <span class="energy-node-icon" aria-hidden="true">&#9728;</span>
           <span class="energy-node-register" id="energy-solar-registers">—</span>
           <span class="energy-node-label" data-i18n="solarPanels">Сонячні панелі</span>
@@ -92,6 +93,7 @@
           </svg>
         </div>
         <div class="energy-node energy-inverter" id="energy-inverter-node">
+          <button class="energy-card-settings" type="button" data-flow-card-settings="inverter" data-i18n-aria="configureCardValues" aria-label="Configure displayed values">⚙</button>
           <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
           <span class="energy-node-register" id="energy-inverter-registers">—</span>
           <span class="energy-node-label" data-i18n="inverter">Інвертор</span>
@@ -127,6 +129,7 @@
           </svg>
         </div>
         <div class="energy-node energy-generator" id="energy-generator-node">
+          <button class="energy-card-settings" type="button" data-flow-card-settings="generator" data-i18n-aria="configureCardValues" aria-label="Configure displayed values">⚙</button>
           <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
           <span class="energy-node-register" id="energy-generator-registers">—</span>
           <span class="energy-node-label" data-i18n="generator">Генератор</span>
@@ -138,6 +141,7 @@
           <span class="flow-direction" id="energy-generator-direction"></span>
         </div>
         <div class="energy-node energy-home" id="energy-home-node">
+          <button class="energy-card-settings" type="button" data-flow-card-settings="home" data-i18n-aria="configureCardValues" aria-label="Configure displayed values">⚙</button>
           <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
           <span class="energy-node-register" id="energy-home-registers">—</span>
           <span class="energy-node-label" data-i18n="home">Дім</span>
@@ -149,6 +153,7 @@
           <span class="flow-direction" id="energy-home-direction"></span>
         </div>
         <div class="energy-node energy-grid" id="energy-grid-node">
+          <button class="energy-card-settings" type="button" data-flow-card-settings="grid" data-i18n-aria="configureCardValues" aria-label="Configure displayed values">⚙</button>
           <span class="energy-node-icon energy-node-image-icon" aria-hidden="true"></span>
           <span class="energy-node-register" id="energy-grid-registers">—</span>
           <span class="energy-node-label" data-i18n="grid">Мережа</span>
@@ -172,6 +177,7 @@
           </svg>
         </div>
         <div class="energy-node energy-battery" id="energy-battery-node">
+          <button class="energy-card-settings" type="button" data-flow-card-settings="battery" data-i18n-aria="configureCardValues" aria-label="Configure displayed values">⚙</button>
           <span class="energy-node-icon energy-battery-icon" id="energy-battery-icon" role="img">
             <span class="energy-battery-fill" aria-hidden="true"></span>
             <span class="energy-battery-percent" id="energy-battery-percent" aria-hidden="true">—</span>
@@ -188,18 +194,16 @@
       </div>
       </div>
     </article>
-    <section class="panel solar-energy-panel" aria-label="Вироблена сонячна енергія" data-i18n-aria="solarEnergyAria">
+    <section class="panel solar-energy-panel" aria-label="Спожито з мережі" data-i18n-aria="gridConsumptionEnergyAria">
       <div class="solar-energy-head">
-        <h2 data-i18n="solarEnergyTitle">Вироблена сонячна енергія</h2>
-        <span class="solar-energy-note" data-i18n="solarEnergyEstimate">Підтверджено: R153 + R156</span>
+        <h2 data-i18n="gridConsumptionEnergyTitle">Спожито з мережі</h2>
+        <span class="solar-energy-note" data-i18n="gridConsumptionEnergySource">Лічильники: R184–R186</span>
       </div>
       <div class="solar-energy-grid">
-        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="today">Сьогодні</span><span class="solar-energy-value" id="solar-energy-today">—</span></article>
-        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisWeek">Цього тижня</span><span class="solar-energy-value" id="solar-energy-week">—</span></article>
-        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisMonth">Цього місяця</span><span class="solar-energy-value" id="solar-energy-month">—</span></article>
-        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisYear">Цього року</span><span class="solar-energy-value" id="solar-energy-year">—</span></article>
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="today">Сьогодні</span><span class="solar-energy-value" id="grid-energy-today">—</span></article>
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisMonth">Цього місяця</span><span class="solar-energy-value" id="grid-energy-month">—</span></article>
+        <article class="solar-energy-total"><span class="solar-energy-period" data-i18n="thisYear">Цього року</span><span class="solar-energy-value" id="grid-energy-year">—</span></article>
       </div>
-      <div class="solar-energy-error" id="solar-energy-error" hidden></div>
     </section>
     <div class="dashboard-gauge-toolbar" id="dashboard-gauge-toolbar" hidden>
       <div class="dashboard-pagination-host" id="dashboard-pagination-host"></div>
@@ -253,6 +257,9 @@
                 <symbol id="lcd-icon-source-wide" viewBox="0 0 84 56">
                   <rect x="5" y="6" width="74" height="44" rx="12"></rect><path d="M21 23h42M21 35h42"></path>
                 </symbol>
+                <symbol id="lcd-icon-grid" viewBox="0 0 64 64">
+                  <circle cx="32" cy="32" r="25"></circle><path d="M13 32c6-16 12 16 19 0s13 16 19 0"></path>
+                </symbol>
                 <symbol id="lcd-icon-arrow-long" viewBox="0 0 100 32">
                   <path class="lcd-icon-solid" d="M2 12h72V4l24 12-24 12v-8H2z"></path>
                 </symbol>
@@ -273,8 +280,18 @@
                 </symbol>
               </defs>
             </svg>
+            <div class="lcd-manual-readouts" aria-live="polite">
+              <div class="lcd-manual-reading"><strong id="lcd-manual-left-label">INPUT</strong><span id="lcd-manual-left-value">—</span></div>
+              <div class="lcd-manual-reading"><strong id="lcd-manual-right-label">OUTPUT</strong><span id="lcd-manual-right-value">—</span></div>
+            </div>
+            <div class="lcd-manual-route" aria-hidden="true">
+              <svg class="lcd-icon"><use href="#lcd-icon-grid"></use></svg><span>AC</span><i></i>
+              <svg class="lcd-icon"><use href="#lcd-icon-solar"></use></svg><span>PV1</span><i></i>
+              <svg class="lcd-icon"><use href="#lcd-icon-battery-horizontal"></use></svg><span>BATT</span><i></i>
+              <span class="lcd-manual-inverter">INV</span><i></i><span class="lcd-manual-load">LOAD</span>
+            </div>
             <div class="lcd-device-mode" id="lcd-mode">—</div>
-            <div class="lcd-battery-source" aria-hidden="true"><svg class="lcd-icon lcd-source-grid"><use href="#lcd-icon-source-square"></use></svg><span class="lcd-source-plus"></span><svg class="lcd-icon lcd-source-sun"><use href="#lcd-icon-sun"></use></svg><svg class="lcd-icon lcd-source-arrow"><use href="#lcd-icon-arrow-long"></use></svg><svg class="lcd-icon lcd-battery-mini"><use href="#lcd-icon-battery-horizontal"></use></svg></div>
+            <div class="lcd-battery-source" aria-hidden="true"><svg class="lcd-icon lcd-source-grid"><use href="#lcd-icon-grid"></use></svg><span class="lcd-source-plus"></span><svg class="lcd-icon lcd-source-sun"><use href="#lcd-icon-sun"></use></svg><svg class="lcd-icon lcd-source-arrow"><use href="#lcd-icon-arrow-long"></use></svg><svg class="lcd-icon lcd-battery-mini"><use href="#lcd-icon-battery-horizontal"></use></svg></div>
             <div class="lcd-battery-top" id="lcd-battery-card">
               <span class="lcd-tag">Li-ion</span>
               <span class="lcd-measure lcd-battery-main"><span class="lcd-digits" id="lcd-battery-voltage">—</span><span class="lcd-unit">V</span></span>
@@ -288,12 +305,12 @@
 
             <div class="lcd-power-path" aria-hidden="true"><svg class="lcd-icon lcd-path-left"><use href="#lcd-icon-arrow-compact"></use></svg><svg class="lcd-icon lcd-path-mid"><use href="#lcd-icon-arrow-compact"></use></svg></div>
             <div class="lcd-column lcd-column-input" id="lcd-grid-node">
-              <svg class="lcd-icon lcd-column-icon lcd-ac-icon" aria-hidden="true"><use href="#lcd-icon-source-wide"></use></svg><strong>UPS APP</strong>
+              <svg class="lcd-icon lcd-column-icon lcd-ac-icon" aria-hidden="true"><use href="#lcd-icon-grid"></use></svg><strong>AC INPUT</strong>
               <span class="lcd-measure lcd-measure-large"><span class="lcd-digits" id="lcd-grid-voltage">—</span><span class="lcd-unit">V</span></span>
               <span class="lcd-measure"><span class="lcd-digits" id="lcd-frequency">—</span><span class="lcd-unit">Hz</span></span>
-              <strong>AC OUTPUT2</strong>
+              <strong>BATT</strong>
               <span class="lcd-measure"><span class="lcd-digits" id="lcd-ac2-voltage">—</span><span class="lcd-unit">V</span></span>
-              <span class="lcd-measure"><span class="lcd-digits" id="lcd-ac2-frequency">—</span><span class="lcd-unit">Hz</span></span>
+              <span class="lcd-measure"><span class="lcd-digits" id="lcd-ac2-frequency">—</span><span class="lcd-unit">A</span></span>
             </div>
             <div class="lcd-column lcd-column-output" id="lcd-inverter-node">
               <strong>AC OUTPUT</strong>
@@ -388,6 +405,18 @@
         <button id="clear-all-gauges" class="clear-selection" type="button" data-i18n="clearDashboard" data-disabled-reason="clearUnavailable" disabled>Очистити панель</button>
       </div>
       <div class="gauge-picker-list" id="gauge-picker-list"></div>
+    </dialog>
+
+    <dialog class="gauge-picker" id="flow-card-picker" aria-labelledby="flow-card-picker-title">
+      <div class="gauge-picker-head">
+        <div>
+          <h2 id="flow-card-picker-title"></h2>
+          <div class="muted" data-i18n="flowCardPickerHelp">Choose up to three values for this card.</div>
+        </div>
+        <button class="gauge-picker-close" type="button" data-close-flow-card-picker data-i18n-aria="close" aria-label="Close">×</button>
+      </div>
+      <input class="gauge-picker-search" id="flow-card-picker-search" type="search" data-i18n-placeholder="searchValues" placeholder="Search values…" data-i18n-aria="searchValues" aria-label="Search values">
+      <div class="gauge-picker-list" id="flow-card-picker-list"></div>
     </dialog>
 
     <dialog class="gauge-picker" id="settings-picker">

@@ -137,6 +137,20 @@
     document.querySelector('#gauge-picker').addEventListener('click', event => {
       if (event.target === event.currentTarget) event.currentTarget.close();
     });
+    document.querySelector('.energy-flow-diagram').addEventListener('click', event => {
+      const button = event.target.closest('[data-flow-card-settings]');
+      if (button) openFlowCardPicker(button.dataset.flowCardSettings);
+    });
+    document.querySelector('#flow-card-picker-search').addEventListener('input', renderFlowCardPickerList);
+    document.querySelector('#flow-card-picker-list').addEventListener('change', event => {
+      const input = event.target.closest('[data-flow-card-register]');
+      if (input) setFlowCardRegister(Number(input.dataset.flowCardRegister), input.checked);
+    });
+    document.querySelector('[data-close-flow-card-picker]').addEventListener('click', () =>
+      document.querySelector('#flow-card-picker').close());
+    document.querySelector('#flow-card-picker').addEventListener('click', event => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
+    });
     document.querySelector('#settings-button').addEventListener('click', () => {
       const picker = document.querySelector('#settings-picker');
       document.querySelector('#custom-device-name').value = getCustomDeviceName();
