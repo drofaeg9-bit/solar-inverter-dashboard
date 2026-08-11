@@ -59,8 +59,8 @@
         const register = byNumber.get(number);
         const row = document.createElement('span');
         const name = register ? localizeApiField(register, 'name') : `R${number}`;
-        row.textContent = `R${number}: ${register ? formatFlowCardRegister(register) : t('noData')}`;
-        row.title = name;
+        row.textContent = register ? formatFlowCardRegister(register) : t('noData');
+        row.title = `R${number} · ${name}`;
         return row;
       }));
     }

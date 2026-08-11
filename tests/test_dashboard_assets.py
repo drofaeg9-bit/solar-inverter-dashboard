@@ -1054,6 +1054,8 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("const INVERTER_FAN_MAX_AIR_SPEED_KMH = 45", flow_source)
         self.assertIn("function fanSpeedKilometersPerHour(normalizedSpeed)", flow_source)
         self.assertIn("reading(fanSpeedKmh, 'km/h', 1)", flow_source)
+        self.assertIn("row.textContent = register ? formatFlowCardRegister(register) : t('noData')", flow_source)
+        self.assertIn("row.title = `R${number} · ${name}`", flow_source)
         self.assertIn("function updateInverterFanAnimation(fanRow, normalizedSpeed, forceMotion = false)", flow_source)
         self.assertIn("forceMotion || !window.matchMedia", flow_source)
         self.assertIn("const INVERTER_FAN_MAX_ROTATION_MS = 225", flow_source)
