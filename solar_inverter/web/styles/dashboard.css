@@ -421,9 +421,10 @@
       left: 7px; right: 7px; text-align: center;
     }
     .energy-inverter .energy-node-value {
-      z-index: 1; left: 50%; width: calc(100% - 16px); font-size: 12px;
+      z-index: 1; left: 50%; width: calc(100% - 16px); font-size: 16px;
       text-shadow: 0 1px 3px var(--card-start), 0 0 5px var(--card-start);
     }
+    .energy-home .energy-node-value { font-size: 16px }
     .energy-inverter-load {
       position: absolute; z-index: 2; left: 50%; top: 28px;
       width: auto; overflow: visible;
@@ -686,8 +687,9 @@
     th, td { padding: 10px 12px; border-bottom: 1px solid var(--line) }
     tbody tr:hover { background: rgba(56,189,248,.05) }
     tbody tr.unavailable .register-live-value { opacity: .48 }
-    .register-meaning { min-width: 280px; max-width: 42rem; color: var(--muted); font-size: 11px; line-height: 1.4 }
-    td:nth-child(1), td:nth-child(5), td:nth-child(6) { white-space: nowrap }
+    .register-meaning { min-width: 0; max-width: 42rem; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere }
+    .register-raw-value { min-width: 0; overflow-wrap: anywhere }
+    td:nth-child(1), td:nth-child(5) { white-space: nowrap }
     .register-value-editor { display: flex; align-items: center; gap: 6px; min-width: 210px }
     .register-value-editor input { width: 92px; min-width: 0; padding: 6px 8px }
     .register-value-editor button, .register-action { min-height: 30px; padding: 5px 8px; font-size: 12px }

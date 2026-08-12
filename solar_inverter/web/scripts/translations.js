@@ -1,5 +1,8 @@
     const UI_TRANSLATIONS = {
       uk: {
+        deviceTypeSingle: 'TTN 12KU U3.0, один інвертор',
+        unknownDeviceType: 'Невідомий тип пристрою U3.0 ({code})',
+        registerDescriptionSource: 'Джерело опису: {source}',
         githubStatusTitle: 'Версія GitHub', githubStatusDashboard: 'Версія панелі: {version}', githubStatusLocal: 'Локальний коміт: {hash} — {subject}', githubStatusRemote: 'Останній коміт GitHub: {hash} — {subject}', githubStatusUpToDate: 'Панель оновлена', githubStatusUpdateAvailable: 'Доступні оновлення: {count}', githubStatusLocalAhead: 'Локальних комітів поза GitHub: {count}', githubStatusDiverged: 'Історії розійшлися: +{ahead} / -{behind}', githubStatusUnavailable: 'Статус GitHub недоступний: {error}',
         appTitle: 'Вебпанель сонячного інвертора',
         waitingInverter: 'Очікування даних інвертора…',
@@ -28,7 +31,7 @@
         demoGridHome: 'ДЕМО · МЕРЕЖА → ДІМ', demoBatteryHome: 'ДЕМО · БАТ. → ДІМ',
         demoSolarExport: 'ДЕМО · PV → ДІМ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ІНВЕРТОР → ДІМ',
         demoMixedSources: 'ДЕМО · PV + БАТ. → ДІМ · МЕРЕЖІ НЕМАЄ',
-        gridConsumptionEnergyTitle: 'Спожито з мережі', gridConsumptionEnergyAria: 'Підсумки споживання електроенергії з мережі', gridConsumptionEnergySource: 'Лічильники: R184–R186',
+        gridConsumptionEnergyTitle: 'Спожито з мережі', gridConsumptionEnergyAria: 'Підсумки споживання електроенергії з мережі', gridConsumptionEnergySource: 'Лічильники: R449, R451, R453, R455',
         solarEnergyTitle: 'Вироблена сонячна енергія', solarEnergyAria: 'Підсумки виробленої сонячної енергії',
         solarEnergyEstimate: 'Підтверджено: потужність PV з R153 + R156',
         today: 'Сьогодні', thisWeek: 'Цього тижня', thisMonth: 'Цього місяця', thisYear: 'Цього року',
@@ -134,6 +137,9 @@
         browserLabel: 'браузер', viewportLabel: 'розмір вікна'
       },
       ru: {
+        deviceTypeSingle: 'TTN 12KU U3.0, один инвертор',
+        unknownDeviceType: 'Неизвестный тип устройства U3.0 ({code})',
+        registerDescriptionSource: 'Источник описания: {source}',
         githubStatusTitle: 'Версия GitHub', githubStatusDashboard: 'Версия панели: {version}', githubStatusLocal: 'Локальный коммит: {hash} — {subject}', githubStatusRemote: 'Последний коммит GitHub: {hash} — {subject}', githubStatusUpToDate: 'Панель обновлена', githubStatusUpdateAvailable: 'Доступны обновления: {count}', githubStatusLocalAhead: 'Локальных коммитов вне GitHub: {count}', githubStatusDiverged: 'Истории разошлись: +{ahead} / -{behind}', githubStatusUnavailable: 'Статус GitHub недоступен: {error}',
         appTitle: 'Веб-панель солнечного инвертора',
         waitingInverter: 'Ожидание данных инвертора…',
@@ -162,7 +168,7 @@
         demoGridHome: 'ДЕМО · СЕТЬ → ДОМ', demoBatteryHome: 'ДЕМО · БАТ. → ДОМ',
         demoSolarExport: 'ДЕМО · PV → ДОМ', demoGeneratorHome: 'ДЕМО · ГЕНЕРАТОР → ИНВЕРТОР → ДОМ',
         demoMixedSources: 'ДЕМО · PV + БАТ. → ДОМ · СЕТИ НЕТ',
-        gridConsumptionEnergyTitle: 'Потреблено из сети', gridConsumptionEnergyAria: 'Итоги потребления электроэнергии из сети', gridConsumptionEnergySource: 'Счётчики: R184–R186',
+        gridConsumptionEnergyTitle: 'Потреблено из сети', gridConsumptionEnergyAria: 'Итоги потребления электроэнергии из сети', gridConsumptionEnergySource: 'Счётчики: R449, R451, R453, R455',
         solarEnergyTitle: 'Выработанная солнечная энергия', solarEnergyAria: 'Итоги выработанной солнечной энергии',
         solarEnergyEstimate: 'Подтверждено: мощность PV из R153 + R156',
         today: 'Сегодня', thisWeek: 'На этой неделе', thisMonth: 'В этом месяце', thisYear: 'В этом году',
@@ -266,6 +272,9 @@
         browserLabel: 'браузер', viewportLabel: 'размер окна'
       },
       en: {
+        deviceTypeSingle: 'TTN 12KU U3.0, single inverter',
+        unknownDeviceType: 'Unknown U3.0 device type ({code})',
+        registerDescriptionSource: 'Description source: {source}',
         githubStatusTitle: 'GitHub version', githubStatusDashboard: 'Dashboard version: {version}', githubStatusLocal: 'Local commit: {hash} - {subject}', githubStatusRemote: 'Latest GitHub commit: {hash} - {subject}', githubStatusUpToDate: 'Dashboard is up to date', githubStatusUpdateAvailable: 'Updates available: {count}', githubStatusLocalAhead: 'Local commits not on GitHub: {count}', githubStatusDiverged: 'Histories have diverged: +{ahead} / -{behind}', githubStatusUnavailable: 'GitHub status unavailable: {error}',
         appTitle: 'Solar Inverter Web',
         waitingInverter: 'Waiting for inverter data…',
@@ -294,7 +303,7 @@
         demoGridHome: 'DEMO · GRID → HOME', demoBatteryHome: 'DEMO · BAT. → HOME',
         demoSolarExport: 'DEMO · PV → HOME', demoGeneratorHome: 'DEMO · GENERATOR → INVERTER → HOME',
         demoMixedSources: 'DEMO · PV + BAT. → HOME · GRID OFF',
-        gridConsumptionEnergyTitle: 'Consumed from grid', gridConsumptionEnergyAria: 'Grid electricity consumption totals', gridConsumptionEnergySource: 'Meters: R184–R186',
+        gridConsumptionEnergyTitle: 'Consumed from grid', gridConsumptionEnergyAria: 'Grid electricity consumption totals', gridConsumptionEnergySource: 'Meters: R449, R451, R453, R455',
         solarEnergyTitle: 'Solar energy generated', solarEnergyAria: 'Generated solar energy totals',
         solarEnergyEstimate: 'Confirmed: PV power from R153 + R156',
         today: 'Today', thisWeek: 'This week', thisMonth: 'This month', thisYear: 'This year',

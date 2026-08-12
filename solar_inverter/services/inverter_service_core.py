@@ -22,6 +22,7 @@ from typing import Any, TextIO
 
 from .register_profile_12ku import (
     MAINTENANCE_REGISTERS,
+    REGISTER_BY_NUMBER,
     REGISTER_PROFILE,
     REGISTER_NUMBERS,
 )
@@ -418,6 +419,22 @@ REGISTER_WORD_FORMAT: dict[int, bool] = {
     register: has_hl
     for register, _group, _name, _access, _type, _scale, _unit, has_hl
     in REGISTER_PROFILE
+}
+# The workbook represents cumulative counters as adjacent unsigned H/L words.
+# Restrict this to the counters (a low word with x10 scaling following a
+# same-unit unsigned high word); other H/L-labelled values are version or RGB
+# components and have their own display semantics.
+COUNTER_32BIT_LOW_WORD_REGISTERS: dict[int, int] = {
+    low_register: low_register - 1
+    for low_register, _group, _name, _access, data_type, scale, unit, has_hl
+    in REGISTER_PROFILE
+    if has_hl
+    and data_type == "uint16_t"
+    and scale == 10.0
+    and (high_row := REGISTER_BY_NUMBER.get(low_register - 1)) is not None
+    and high_row[4] == "uint16_t"
+    and high_row[5] == 1.0
+    and high_row[6] == unit
 }
 for register, group, name, _access, data_type, scale, unit, _has_hl in REGISTER_PROFILE:
     profile_scale = 0.01 if scale == 10.0 and unit == "Wh" else scale
@@ -840,6 +857,19 @@ state: dict[str, Any] = {
 
 def signed16(raw: int) -> int:
     return raw - 65536 if raw >= 32768 else raw
+
+
+def combined_32bit_counter_value(register: int, values: dict[int, int]) -> float | None:
+    """Decode a workbook-defined 32-bit unsigned counter from its H/L words."""
+    high_register = COUNTER_32BIT_LOW_WORD_REGISTERS.get(register)
+    if high_register is None:
+        return None
+    high = values.get(high_register)
+    low = values.get(register)
+    if high is None or low is None or high >= 65534 or low >= 65534:
+        return None
+    _name, scale, _unit, _signed, _group = register_metadata(register)
+    return round(((high << 16) | low) * scale, 6)
 
 
 def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str]:

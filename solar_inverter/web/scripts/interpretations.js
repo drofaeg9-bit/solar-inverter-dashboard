@@ -273,6 +273,8 @@
           case 18: return versionComponent('protocol', 'minor', raw, 17, 18, register.versionDisplay);
           case 27: return versionComponent('controlSoftware', 'major', raw, 27, 28, register.versionDisplay);
           case 28: return versionComponent('controlSoftware', 'minor', raw, 27, 28, register.versionDisplay);
+          case 61:
+          case 62: return register.versionDisplay || '';
           case 66: return enumMeaning(bmsConnection, raw);
           case 67:
           case 325: return enumMeaning(stateMachine, raw);
@@ -392,21 +394,33 @@
 
     function registerVersionDisplay(register, registers) {
       const registerNumber = Number(register?.register);
-      const pair = registerNumber === 17 || registerNumber === 18
+      const versionPair = registerNumber === 17 || registerNumber === 18
         ? [17, 18]
         : registerNumber === 27 || registerNumber === 28
           ? [27, 28]
           : null;
+      const deviceTypePair = registerNumber === 61 || registerNumber === 62 ? [61, 62] : null;
+      const pair = versionPair || deviceTypePair;
       if (!pair) return String(register?.display ?? register?.raw ?? '');
       const byNumber = new Map(registers.map(item => [Number(item.register), item]));
       const majorRegister = byNumber.get(pair[0]);
       const minorRegister = byNumber.get(pair[1]);
       if (!majorRegister?.available || !minorRegister?.available) return String(register?.display ?? '—');
       const major = Number(majorRegister.raw);
-      const encodedMinor = Number(minorRegister.raw);
-      if (!Number.isFinite(major) || !Number.isFinite(encodedMinor)) {
+      const lowWord = Number(minorRegister.raw);
+      if (!Number.isFinite(major) || !Number.isFinite(lowWord)) {
         return String(register?.display ?? register?.raw ?? '');
       }
-      const minor = encodedMinor >= 10 ? Math.trunc(encodedMinor / 10) : encodedMinor;
+      if (deviceTypePair) {
+        const code = ((major & 0xffff) * 0x10000 + (lowWord & 0xffff)) >>> 0;
+        const codeText = `0x${code.toString(16).toUpperCase().padStart(8, '0')}`;
+        const knownType = code === 0x00000048
+          ? (typeof t === 'function' ? t('deviceTypeSingle') : 'TTN 12KU U3.0 Single')
+          : (typeof t === 'function'
+            ? t('unknownDeviceType', {code})
+            : `Unknown U3.0 device type (${code})`);
+        return `${codeText} · ${knownType}`;
+      }
+      const minor = lowWord >= 10 ? Math.trunc(lowWord / 10) : lowWord;
       return `V${major}.${minor}`;
     }

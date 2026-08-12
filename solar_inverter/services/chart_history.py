@@ -6,10 +6,15 @@ from contextlib import closing
 from datetime import datetime, timedelta
 from typing import Any
 
-from .inverter_service_core import MADRID_TIME_ZONE, STATS_DB_PATH, normalize, stats_lock
+from .inverter_service_core import (
+    MADRID_TIME_ZONE,
+    STATS_DB_PATH,
+    combined_32bit_counter_value,
+    stats_lock,
+)
 
 
-CHART_HISTORY_REGISTERS = (176, 177, 178, 179, 184, 185, 186, 187)
+CHART_HISTORY_REGISTERS = (449, 451, 453, 455)
 CHART_HISTORY_RAW_RETENTION_SECONDS = 48 * 60 * 60
 CHART_HISTORY_AGGREGATE_RETENTION_SECONDS = 90 * 24 * 60 * 60
 CHART_HISTORY_AGGREGATE_SECONDS = 5 * 60
@@ -48,9 +53,7 @@ def record_chart_history(fresh_values: dict[int, int]) -> None:
     global chart_history_error, chart_history_last_cleanup_monotonic
     readings = []
     for register in CHART_HISTORY_REGISTERS:
-        if register not in fresh_values:
-            continue
-        value = normalize(register, fresh_values[register])[3]
+        value = combined_32bit_counter_value(register, fresh_values)
         if value is not None:
             readings.append((register, float(value)))
     if not readings:

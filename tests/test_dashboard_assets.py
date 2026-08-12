@@ -322,9 +322,9 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn('width: 80vw', css)
         self.assertIn('height: 80vh', css)
         self.assertIn("function isTimelineValue(item)", charts)
-        self.assertIn("const GRID_CONSUMPTION_REGISTERS = new Set([184, 185, 186])", charts)
+        self.assertIn("const GRID_CONSUMPTION_REGISTERS = new Set([449, 451, 453, 455])", charts)
         self.assertIn("GRID_CONSUMPTION_REGISTERS.has(register)", charts)
-        self.assertIn("[184, 'day'], [185, 'month'], [186, 'year']", charts)
+        self.assertIn("[449, 'day'], [451, 'month'], [453, 'year'], [455, 'lifetime']", charts)
         self.assertIn("function chartPeriodForItem(item", charts)
         self.assertNotIn("chart-period-select", html)
         self.assertNotIn("refreshChartsWithPeriod", charts)
@@ -412,7 +412,7 @@ class DashboardAssetTests(unittest.TestCase):
         app = (WEB_ROOT / "scripts" / "app.js").read_text(encoding="utf-8")
         interpretations = (WEB_ROOT / "scripts" / "interpretations.js").read_text(encoding="utf-8")
         translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
-        self.assertIn('class="register-raw-value">${registerRawExplanation(item)}', app)
+        self.assertIn('class="register-raw-value">${registerRawExplanation(displayRegister)}', app)
         self.assertIn("function registerRawExplanation(register)", interpretations)
         self.assertIn("const hexadecimal = `0x${raw.toString(16).toUpperCase().padStart(4, '0')}`", interpretations)
         self.assertIn("const signedNote = register.signed", interpretations)
@@ -505,6 +505,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertEqual(grid_voltage["name"], "Напряжение сети, фаза A")
         self.assertEqual(grid_voltage["name_source"], "Напруга мережі, фаза A")
         self.assertEqual(grid_voltage["group"], "AC")
+        self.assertEqual(grid_voltage["description_reference"], "U3.0")
         self.assertIsNone(grid_voltage["value"])
         self.assertIn("сырое значение × 0.1 V", grid_voltage["description"])
         bms_state = next(item for item in snapshot["registers"] if item["register"] == 66)
@@ -516,10 +517,12 @@ class DashboardAssetTests(unittest.TestCase):
         protocol_major = next(item for item in snapshot["registers"] if item["register"] == 17)
         self.assertEqual(protocol_major["display"], "—")
         self.assertIn("R18", protocol_major["description"])
+        self.assertEqual(protocol_major["description_reference"], "V1.31")
         fault_mask = next(item for item in snapshot["registers"] if item["register"] == 71)
         self.assertIn("b0", fault_mask["description"])
         self.assertIn("b15", fault_mask["description"])
         self.assertTrue(all(item["description"] for item in snapshot["registers"]))
+        self.assertTrue(all(item["description_reference"] in {"V1.31", "U3.0"} for item in snapshot["registers"]))
         self.assertIn("error_source", snapshot)
         self.assertIn("error_source", snapshot["register_log"])
 
@@ -776,7 +779,12 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIsNone(traversal)
 
     def test_register_metadata_matches_ttn_v131_units_and_scaling(self) -> None:
-        from solar_inverter.services.inverter_service_core import REGISTER_CONFIG, normalize
+        from solar_inverter.services.inverter_service_core import (
+            COUNTER_32BIT_LOW_WORD_REGISTERS,
+            REGISTER_CONFIG,
+            combined_32bit_counter_value,
+            normalize,
+        )
 
         expected = {
             84: (1.0, "W", True),
@@ -803,6 +811,8 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertEqual(normalize(82, 1235)[3], 12.35)
         self.assertEqual(normalize(95, 65536 - 123)[3], -123.0)
         self.assertEqual(normalize(130, 65536 - 180)[3], 18.0)
+        self.assertEqual(len(COUNTER_32BIT_LOW_WORD_REGISTERS), 30)
+        self.assertEqual(combined_32bit_counter_value(453, {452: 1, 453: 18420}), 839.56)
 
     def test_ttn_12ku_u30_embedded_workbook_profile(self) -> None:
         from solar_inverter.services.inverter_service_core import (
@@ -1320,7 +1330,9 @@ class DashboardRendererTests(unittest.TestCase):
                 {register:17, raw:1, display:'1', available:true},
                 {register:18, raw:31, display:'31', available:true},
                 {register:27, raw:1, display:'1', available:true},
-                {register:28, raw:31, display:'31', available:true}
+                {register:28, raw:31, display:'31', available:true},
+                {register:61, raw:0, display:'0', available:true},
+                {register:62, raw:72, display:'72', available:true}
               ];
               const englishState = registerInterpretation({register:67, raw:4, available:true, unit:'', name:'State'});
               currentLanguage = 'uk';
@@ -1336,6 +1348,8 @@ class DashboardRendererTests(unittest.TestCase):
                 serialPadding: registerInterpretation({register:10, raw:0, available:true, unit:'', name:'SN'}),
                 protocolDisplay: registerVersionDisplay(versionRegisters[0], versionRegisters),
                 controlSoftwareDisplay: registerVersionDisplay(versionRegisters[3], versionRegisters),
+                deviceTypeDisplay: registerVersionDisplay(versionRegisters[5], versionRegisters),
+                deviceTypeInterpretation: registerInterpretation({register:62, raw:72, available:true, versionDisplay: registerVersionDisplay(versionRegisters[5], versionRegisters)}),
                 protocolMajor: registerInterpretation({register:17, raw:1, available:true, unit:'', name:'Version', versionDisplay:'V1.3'}),
                 controlSoftwareMinor: registerInterpretation({register:28, raw:31, available:true, unit:'', name:'Version', versionDisplay:'V1.3'}),
                 bmsCan: registerInterpretation({register:66, raw:1, available:true, unit:'', name:'Status'}),
@@ -1367,6 +1381,8 @@ class DashboardRendererTests(unittest.TestCase):
                 "serialPadding": "SN word R10: 0x0000 is empty padding or the end of the identifier",
                 "protocolDisplay": "V1.3",
                 "controlSoftwareDisplay": "V1.3",
+                "deviceTypeDisplay": "0x00000048 · TTN 12KU U3.0 Single",
+                "deviceTypeInterpretation": "0x00000048 · TTN 12KU U3.0 Single",
                 "protocolMajor": "protocol version: major component = 1; decoded display V1.3",
                 "controlSoftwareMinor": "control-board software version: minor component = 31; decoded display V1.3",
                 "bmsCan": "ID locked through CAN",

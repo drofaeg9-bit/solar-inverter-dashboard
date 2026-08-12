@@ -2,9 +2,9 @@
     let chartPage = 0;
     let chartsViewRenderPending = false;
     const hydratedChartHistoryPeriods = new Set();
-    const GRID_CONSUMPTION_REGISTERS = new Set([184, 185, 186]);
+    const GRID_CONSUMPTION_REGISTERS = new Set([449, 451, 453, 455]);
     const ENERGY_PERIOD_BY_REGISTER = new Map([
-      [184, 'day'], [185, 'month'], [186, 'year']
+      [449, 'day'], [451, 'month'], [453, 'year'], [455, 'lifetime']
     ]);
 
     function chartPeriodForItem(item) {
@@ -729,7 +729,6 @@
         chartDemoCancelRequested = true;
         return;
       }
-
       const selected = [...chartSelections].filter(key => chartDefinitions.has(key));
       const registerKeys = [...chartDefinitions.keys()].filter(key => key.startsWith('register-'));
       const meterKeys = [...chartDefinitions.keys()].filter(key => key.startsWith('meter-'));

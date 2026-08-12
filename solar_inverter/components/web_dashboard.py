@@ -19,7 +19,12 @@ from ..services import inverter_service
 from ..services.inverter_service import *
 from ..services.inverter_service_runtime import get_server_logs, get_updater_archive, get_updater_history
 from .api_localization import SUPPORTED_API_LANGUAGES, localize_api_status
-from .api_localization import localize_api_text, register_description, resolve_api_language
+from .api_localization import (
+    localize_api_text,
+    register_description,
+    register_description_reference,
+    resolve_api_language,
+)
 from .dashboard_template import ASSET_VERSION, WEB_DASHBOARD, WEB_ROOT
 from .state_consistency import effective_battery_soc
 DASHBOARD_INSTANCE_ID = f"{ASSET_VERSION}-{secrets.token_hex(8)}"
@@ -182,7 +187,11 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             display = "—"
         else:
             name, display, unit, normalized_value, group = normalize(register, raw)
-            if register == 134:
+            counter_value = combined_32bit_counter_value(register, values)
+            if counter_value is not None:
+                normalized_value = counter_value
+                display = f"{counter_value:.2f}" if scale == 0.01 else f"{counter_value:g}"
+            elif register == 134:
                 normalized_value = battery_power_with_current_direction(normalized_value)
                 if normalized_value is not None:
                     display = str(int(normalized_value))
@@ -194,6 +203,7 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             "name_source": name,
             "description": str(edit.get("description", register_description(register, name, unit, scale, signed, language))),
             "description_source": str(edit.get("description", register_description(register, name, unit, scale, signed, "uk"))),
+            "description_reference": register_description_reference(register),
             "display": localize_api_text(display, language),
             "display_source": display,
             "value": normalized_value,

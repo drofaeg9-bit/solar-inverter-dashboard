@@ -161,13 +161,17 @@
         const value = registerNumericValue(item);
         const bmsFormula = item.register === 413 && item.available ? r413BmsFormula(value) : '';
         const displayValue = registerVersionDisplay(item, registers);
-        const interpretation = registerInterpretation({...item, versionDisplay: displayValue});
+        const displayRegister = {...item, versionDisplay: displayValue};
+        const interpretation = registerInterpretation(displayRegister);
         const accessNote = item.maintenance ? t('registerMaintenanceReadOnly') : t('registerReadOnly');
-        const descriptions = [...new Set([item.description, interpretation, accessNote].filter(Boolean))];
+        const descriptionReference = item.description_reference
+          ? t('registerDescriptionSource', {source: item.description_reference})
+          : '';
+        const descriptions = [...new Set([item.description, interpretation, descriptionReference, accessNote].filter(Boolean))];
         return `<tr class="${item.available ? '' : 'unavailable'}">
           <td>R${item.register}</td><td>${localizeApiField(item, 'group')}</td><td>${localizeApiField(item, 'name')}</td>
           <td class="register-meaning">${descriptions.join(' · ') || '—'}</td>
-          <td class="register-live-value">${localizeDataText(displayValue)} ${item.unit}${bmsFormula ? `<br><small>${bmsFormula}</small>` : ''}</td><td class="register-raw-value">${registerRawExplanation(item)}</td></tr>`;
+          <td class="register-live-value">${localizeDataText(displayValue)} ${item.unit}${bmsFormula ? `<br><small>${bmsFormula}</small>` : ''}</td><td class="register-raw-value">${registerRawExplanation(displayRegister)}</td></tr>`;
       }).join('');
       visible.forEach(item => {
         const row = document.querySelector(`#registers tr:nth-child(${visible.indexOf(item) + 1})`);

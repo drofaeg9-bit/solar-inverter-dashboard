@@ -91,6 +91,14 @@ REGISTER_DESCRIPTION_TRANSLATIONS: dict[int, dict[str, str]] = {
     530: {"uk": "Фактично застосований режим входу AC.", "ru": "Фактически применённый режим входа AC.", "en": "AC input mode currently applied."},
     802: {"uk": "0 — вентилятор працює нормально; інше значення — зупинка або блокування.", "ru": "0 — вентилятор работает нормально; другое значение — остановка или блокировка.", "en": "0 means normal fan operation; another value indicates a stop or stall."},
 }
+V131_DESCRIPTION_REGISTERS = frozenset(REGISTER_DESCRIPTION_TRANSLATIONS)
+
+
+def register_description_reference(register: int) -> str:
+    """Identify the documentation used for a register's description."""
+    return "V1.31" if register in V131_DESCRIPTION_REGISTERS else "U3.0"
+
+
 DATA_TRANSLATIONS_PATH = (
     Path(__file__).resolve().parents[1] / "web" / "data" / "data-translations.json"
 )
@@ -170,7 +178,7 @@ def register_description(
     signed: bool,
     language: str,
 ) -> str:
-    """Return a localized V1.31 description for every exposed register."""
+    """Return a localized description for every exposed register."""
     language = language if language in SUPPORTED_API_LANGUAGES else "uk"
     if 1 <= register <= 10:
         first_character = (register - 1) * 2 + 1
@@ -185,9 +193,9 @@ def register_description(
         return repair_legacy_text(specific)
     if name == "Резерв":
         return repair_legacy_text({
-            "uk": "Поле зарезервовано картою V1.31; його значення не слід інтерпретувати.",
-            "ru": "Поле зарезервировано картой V1.31; его значение не следует интерпретировать.",
-            "en": "Reserved by the V1.31 map; do not interpret its value.",
+            "uk": "Поле зарезервовано картою U3.0; його значення не слід інтерпретувати.",
+            "ru": "Поле зарезервировано картой U3.0; его значение не следует интерпретировать.",
+            "en": "Reserved by the U3.0 map; do not interpret its value.",
         }[language])
     localized_name = str(localize_api_text(name, language))
     if unit:
@@ -202,7 +210,7 @@ def register_description(
             "en": f"Measured value “{localized_name}”{sign_note}; API = raw value × {scale:g} {unit}.",
         }[language])
     return repair_legacy_text({
-        "uk": f"Поле «{localized_name}» з карти Modbus V1.31; поточний код розшифровується нижче, якщо таблиця значень визначена.",
-        "ru": f"Поле «{localized_name}» из карты Modbus V1.31; текущий код расшифровывается ниже, если таблица значений определена.",
-        "en": f"“{localized_name}” field from the V1.31 Modbus map; the current code is decoded below when a value table is defined.",
+        "uk": f"Поле «{localized_name}» з карти Modbus U3.0; поточний код розшифровується нижче, якщо таблиця значень визначена.",
+        "ru": f"Поле «{localized_name}» из карты Modbus U3.0; текущий код расшифровывается ниже, если таблица значений определена.",
+        "en": f"“{localized_name}” field from the U3.0 Modbus map; the current code is decoded below when a value table is defined.",
     }[language])
