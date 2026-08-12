@@ -62,6 +62,22 @@ class DashboardAssetTests(unittest.TestCase):
         for manifest in (ROOT / "deploy" / "build_update_bundle.py", ROOT / "deploy" / "update_bundle_src" / "__main__.py"):
             self.assertIn("solar_inverter/services/chart_history.py", manifest.read_text(encoding="utf-8"))
 
+    def test_poll_worker_reads_before_using_fresh_and_updater_logs_modbus_access(self) -> None:
+        runtime = (ROOT / "solar_inverter" / "services" / "inverter_service_runtime.py").read_text(encoding="utf-8")
+        poll_worker = runtime[runtime.index("def poll_worker() -> None:"):runtime.index("\ndef meter_value(")]
+        first_read = min(
+            poll_worker.index("fresh, failed, requests, error = read_compatible()"),
+            poll_worker.index("fresh, failed, requests, error = read_fast()"),
+        )
+        identifier_check = poll_worker.index("if fresh and identifier == DEVICE_MODEL_NAME:")
+        self.assertGreater(identifier_check, first_read)
+
+        updater = (ROOT / "deploy" / "update_bundle_src" / "__main__.py").read_text(encoding="utf-8")
+        self.assertIn("def log_modbus_prerequisites() -> None:", updater)
+        self.assertIn('run(["usermod", "-aG", "dialout", SERVICE_USER])', updater)
+        self.assertIn('"/dev/ttyUSB0"', updater)
+        self.assertGreaterEqual(updater.count("log_modbus_prerequisites()"), 3)
+
     def test_light_theme_is_dimmed_and_keeps_readable_contrast(self) -> None:
         css = dashboard_css()
         self.assertIn("--bg: #eef2f4", css)

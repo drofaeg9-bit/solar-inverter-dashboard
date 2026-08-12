@@ -34,7 +34,7 @@ SERVICE_USER = "solar-dashboard"
 SERVICE_GROUP = "solar-dashboard"
 HEALTH_URL = "http://127.0.0.1:8080/api/state"
 VERSION_URL = "http://127.0.0.1:8080/api/version"
-UPDATER_VERSION = "4"
+UPDATER_VERSION = "5"
 DEFAULT_GIT_REMOTE = "origin"
 DEFAULT_GIT_BRANCH = "main"
 
@@ -94,10 +94,12 @@ def ensure_updater_history_schema(connection: sqlite3.Connection) -> None:
     connection.commit()
 
 
-def run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(
+    command: list[str], *, check: bool = True, capture_output: bool = False
+) -> subprocess.CompletedProcess[str]:
     """Run a command and echo it for an auditable update log."""
     print("+", " ".join(command), flush=True)
-    return subprocess.run(command, check=check, text=True)
+    return subprocess.run(command, check=check, text=True, capture_output=capture_output)
 
 
 def run_as_service_user(command: list[str], *, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
@@ -256,7 +258,7 @@ def ensure_runtime() -> None:
 
 
 def ensure_service_account() -> tuple[int, int]:
-    """Create the restricted dashboard account when necessary."""
+    """Create the dashboard account and verify serial-port access on every update."""
     import pwd
 
     try:
@@ -274,7 +276,37 @@ def ensure_service_account() -> tuple[int, int]:
         ])
         account = pwd.getpwnam(SERVICE_USER)
     run(["usermod", "-aG", "dialout", SERVICE_USER])
+    groups = run(
+        ["id", "-nG", SERVICE_USER], check=True, capture_output=True
+    ).stdout.split()
+    if "dialout" not in groups:
+        raise RuntimeError(
+            f"{SERVICE_USER} is not a member of dialout after usermod; "
+            "cannot safely access the Modbus USB adapter"
+        )
+    print(f"Verified {SERVICE_USER} belongs to dialout", flush=True)
     return account.pw_uid, account.pw_gid
+
+
+def log_modbus_prerequisites() -> None:
+    """Log and verify that the service account can use the Modbus USB adapter."""
+    mbpoll_path = shutil.which("mbpoll")
+    if mbpoll_path is None:
+        raise RuntimeError("mbpoll is unavailable after runtime setup")
+    print(f"Modbus updater check: mbpoll={mbpoll_path}", flush=True)
+    run([mbpoll_path, "-V"], check=False)
+    if not Path("/dev/ttyUSB0").exists():
+        raise RuntimeError("Modbus updater check failed: /dev/ttyUSB0 is missing")
+    for access in ("-r", "-w"):
+        result = run(
+            ["runuser", "-u", SERVICE_USER, "--", "test", access, "/dev/ttyUSB0"],
+            check=False,
+        )
+        if result.returncode:
+            raise RuntimeError(
+                f"Modbus updater check failed: {SERVICE_USER} cannot {access[1:]} /dev/ttyUSB0"
+            )
+    print(f"Modbus updater check: {SERVICE_USER} can read and write /dev/ttyUSB0", flush=True)
 
 
 def atomic_install(source: Path, target: Path, mode: int, uid: int, gid: int) -> None:
@@ -492,6 +524,7 @@ def install() -> None:
     require_root()
     ensure_runtime()
     uid, gid = ensure_service_account()
+    log_modbus_prerequisites()
     with tempfile.TemporaryDirectory(prefix="solar-dashboard-update-") as temporary:
         payload_root = Path(temporary)
         extract_payload(payload_root)
@@ -526,7 +559,9 @@ def check_bundle() -> None:
 def update_from_github() -> None:
     """Fast-forward the installed checkout to GitHub and restart only on success."""
     require_root()
+    ensure_runtime()
     ensure_service_account()
+    log_modbus_prerequisites()
     branch, remote_hash, ahead, behind = github_status()
     if ahead:
         raise RuntimeError(

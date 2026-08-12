@@ -619,17 +619,6 @@ def poll_worker() -> None:
     print("[Poll Worker] Starting poll worker")
 
     while True:
-        identifier = decode_identifier(cached)
-        if fresh and identifier == DEVICE_MODEL_NAME:
-            if not missing_identifier_reported:
-                print(
-                    f'[Poll Worker] ERROR: Real inverter identifier could not be decoded from R1–R10; '
-                    f'using fallback "{DEVICE_MODEL_NAME}".'
-                )
-                missing_identifier_reported = True
-        else:
-            missing_identifier_reported = False
-
         with state_lock:
             if state["stop"]:
                 print("[Poll Worker] Stopping poll worker")
@@ -665,6 +654,17 @@ def poll_worker() -> None:
         if fresh:
             cached.update(fresh)
             print(f"[Poll Worker] Cached {len(fresh)} new register values")
+
+        identifier = decode_identifier(cached)
+        if fresh and identifier == DEVICE_MODEL_NAME:
+            if not missing_identifier_reported:
+                print(
+                    f'[Poll Worker] ERROR: Real inverter identifier could not be decoded from R1–R10; '
+                    f'using fallback "{DEVICE_MODEL_NAME}".'
+                )
+                missing_identifier_reported = True
+        else:
+            missing_identifier_reported = False
 
         read_duration = round(time.monotonic() - started, 2)
         cycle_duration = round(cycle_interval or read_duration, 2)
