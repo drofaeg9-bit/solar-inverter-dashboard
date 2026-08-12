@@ -1064,7 +1064,9 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("renderLcd(lastData, demoRegisterRows)", chart_source)
         self.assertIn('id="lcd-inverter-fan-speed"', html_source)
         self.assertIn("const inverterFanSpeedReading = numberValue([801])", lcd_source)
-        self.assertIn("setText('#lcd-inverter-fan-speed', reading(inverterFanSpeed, '%', 1))", lcd_source)
+        self.assertIn("const inverterFanRpm = Number.isFinite(inverterFanSpeed)", lcd_source)
+        self.assertIn("fanSpeedRpm(inverterFanSpeed)", lcd_source)
+        self.assertIn("setText('#lcd-inverter-fan-speed', reading(inverterFanRpm, 'RPM', 0))", lcd_source)
         self.assertIn("registerInterpretation(statusRegister) || localizeDataText(statusRegister.display)", lcd_source)
         self.assertIn("const isPercentage = register.unit === '%'", chart_source)
         self.assertIn("isPercentage ? Math.max(0, Math.min(100, value)) : value", chart_source)
@@ -1074,12 +1076,15 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertNotIn("displaySeconds", chart_source)
         self.assertIn("previousValue + random() * scale * .01", chart_source)
         self.assertIn("Math.max(0, Math.min(100, inverterFanSpeed))", flow_source)
-        self.assertIn("const INVERTER_FAN_MAX_AIR_SPEED_KMH = 300", flow_source)
-        self.assertIn("function fanSpeedKilometersPerHour(normalizedSpeed)", flow_source)
-        self.assertIn("reading(fanSpeedKmh, 'km/h', 1)", flow_source)
+        self.assertIn("const INVERTER_FAN_MAX_RPM = 3000", flow_source)
+        self.assertIn("function fanSpeedRpm(normalizedSpeed)", flow_source)
+        self.assertIn("reading(fanSpeedRpmValue, 'RPM', 0)", flow_source)
         self.assertIn("if (Array.isArray(saved))", flow_source)
         self.assertIn("return config.defaults", flow_source)
         self.assertIn("const interpretation = register ? registerInterpretation(register) : ''", flow_source)
+        self.assertIn("function outputSourceFromPriority(priority, availableSources)", flow_source)
+        self.assertIn("const outputPriority = decodeBoundedRegister(inverterPrioritySource, 3)", flow_source)
+        self.assertIn("outputSourceFromPriority(outputPriority", flow_source)
         self.assertIn("function flowCardStateLabel(register)", flow_source)
         self.assertIn("529: ['GPB', 'PGB', 'PBG', 'MKS']", flow_source)
         self.assertIn("67: ['ON', 'INIT', 'STBY', 'GRID', 'PV'", flow_source)
@@ -1251,7 +1256,7 @@ class DashboardRendererTests(unittest.TestCase):
                 "animateCalls": 1,
                 "playCalls": 2,
                 "pauseCalls": 2,
-                "rateUpdates": [0.8],
+                "rateUpdates": [0, 0.5, 0.8, 0, 0, 0.25],
                 "playbackRate": 0.25,
                 "active": True,
                 "fallback": False,

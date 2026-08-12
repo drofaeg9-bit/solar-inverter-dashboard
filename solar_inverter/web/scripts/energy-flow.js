@@ -4,8 +4,11 @@
     let inverterFanTargetRate = 0;
     let inverterFanRateFrame = null;
     let inverterFanRateFrameTime = null;
+    let inverterFanPauseAtRest = false;
     const INVERTER_FAN_MAX_ROTATION_MS = 750;
-    const INVERTER_FAN_MAX_AIR_SPEED_KMH = 300;
+    // R801 is a 0–100 % PWM/speed command. The dashboard presents the
+    // corresponding fan speed using the inverter fan's 3000 RPM full scale.
+    const INVERTER_FAN_MAX_RPM = 3000;
     const INVERTER_FAN_RATE_SMOOTHING_MS = 280;
     const FLOW_CARD_MAX_VALUES = 3;
     const FLOW_CARD_CONFIG = Object.freeze({
@@ -196,11 +199,22 @@
     function parallelTopologyCode(state) {
       return [null, '1Φ', '3Φ-R', '3Φ-S', '3Φ-T'][state] || '';
     }
+    function outputSourceFromPriority(priority, availableSources) {
+      // R323 is the active output-source priority: GPB, PGB, PBG, or MKS.
+      // It is used when R69's instantaneous flow bits are unavailable.
+      const sourceOrders = [
+        ['grid', 'pv', 'battery'],
+        ['pv', 'grid', 'battery'],
+        ['pv', 'battery', 'grid'],
+        ['generator', 'pv', 'battery', 'grid']
+      ];
+      return sourceOrders[priority]?.find(source => availableSources[source]) || null;
+    }
     function uniqueLabels(values) {
       return [...new Set(values.filter(Boolean))];
     }
-    function fanSpeedKilometersPerHour(normalizedSpeed) {
-      return normalizedSpeed * INVERTER_FAN_MAX_AIR_SPEED_KMH / 100;
+    function fanSpeedRpm(normalizedSpeed) {
+      return normalizedSpeed * INVERTER_FAN_MAX_RPM / 100;
     }
     function setInverterFanPlaybackRate(animation, playbackRate) {
       if (typeof animation.updatePlaybackRate === 'function') {
@@ -213,6 +227,7 @@
       inverterFanTargetRate = targetRate;
       if (typeof window.requestAnimationFrame !== 'function') {
         setInverterFanPlaybackRate(animation, targetRate);
+        if (inverterFanPauseAtRest && targetRate === 0) animation.pause();
         return;
       }
       if (inverterFanRateFrame !== null) return;
@@ -230,6 +245,7 @@
         setInverterFanPlaybackRate(animation, inverterFanTargetRate);
         inverterFanRateFrame = null;
         inverterFanRateFrameTime = null;
+        if (inverterFanPauseAtRest && inverterFanTargetRate === 0) animation.pause();
       };
       inverterFanRateFrame = window.requestAnimationFrame(tick);
     }
@@ -262,23 +278,23 @@
         inverterFanAnimation.pause();
       }
       if (!shouldRotate) {
+        // Decelerate instead of abruptly pausing when the next Modbus poll
+        // reports 0 %. A later non-zero value replaces this target in-place.
         inverterFanTargetRate = 0;
-        if (inverterFanRateFrame !== null) {
-          window.cancelAnimationFrame?.(inverterFanRateFrame);
-          inverterFanRateFrame = null;
-          inverterFanRateFrameTime = null;
-        }
-        inverterFanAnimation.pause();
+        inverterFanPauseAtRest = true;
+        smoothlyUpdateInverterFanRate(inverterFanAnimation, 0);
         return;
       }
 
       const playbackRate = effectiveSpeed / 100;
+      inverterFanPauseAtRest = false;
       if (inverterFanAnimation.playState === 'paused') {
-        inverterFanAnimation.playbackRate = playbackRate;
+        // Resume from zero and ramp up; reusing the same animation timeline
+        // keeps the blade position continuous between telemetry updates.
+        setInverterFanPlaybackRate(inverterFanAnimation, 0);
         inverterFanAnimation.play();
-      } else {
-        smoothlyUpdateInverterFanRate(inverterFanAnimation, playbackRate);
       }
+      smoothlyUpdateInverterFanRate(inverterFanAnimation, playbackRate);
     }
 
     function formatEnergy(kilowattHours) {
@@ -574,17 +590,29 @@
 
       const homeConnected = liveMeasurementsFresh && outputConnected;
       const homeActive = homeConnected && Number.isFinite(loadPower) && loadPower > 20;
+      const outputPriority = decodeBoundedRegister(inverterPrioritySource, 3);
+      const priorityOutputSource = !energyFlowState && !flowSuppressedByState && homeActive
+        ? outputSourceFromPriority(outputPriority, {
+          grid: gridAvailable && gridNormal,
+          pv: pvActive,
+          battery: batteryDischarging,
+          generator: generatorActive
+        })
+        : null;
       const homeFlowActive = !flowSuppressedByState && homeConnected && outputCanSupply && (energyFlowState
         ? energyFlowState.inverterToMainOutput
           || energyFlowState.inverterToSecondaryOutput
           || energyFlowState.gridToLoad
           || energyFlowState.generatorToLoad
-        : homeActive);
+        : Boolean(priorityOutputSource) || homeActive);
       const gridImporting = energyFlowState
         ? energyFlowState.gridToRectifier || energyFlowState.gridToLoad
-        : Number.isFinite(gridPower) && gridPower > 20;
+        : priorityOutputSource ? priorityOutputSource === 'grid' : Number.isFinite(gridPower) && gridPower > 20;
       const gridExporting = Boolean(energyFlowState?.rectifierToGrid);
       const gridFlowActive = !flowSuppressedByState && gridAvailable && gridNormal && (gridImporting || gridExporting);
+      const batterySupplyingOutput = energyFlowState
+        ? batteryDischarging
+        : priorityOutputSource ? priorityOutputSource === 'battery' : batteryDischarging;
       const displayedGridVoltage = gridAvailable && Number.isFinite(gridVoltage)
         ? Math.abs(gridVoltage)
         : 0;
@@ -634,7 +662,7 @@
           ? routeFlowState.generatorToRectifier || routeFlowState.generatorToLoad
           : generatorActive) && t('generator'),
         (routeFlowState ? routeFlowState.pvToRectifier : pvActive) && 'PV',
-        (routeFlowState ? routeFlowState.batteryToInverter : batteryDischarging) && t('battery')
+        (routeFlowState ? routeFlowState.batteryToInverter : batterySupplyingOutput) && t('battery')
       ]);
       const routeDestinations = uniqueLabels([
         (routeFlowState
@@ -720,15 +748,15 @@
       const normalizedFanSpeed = Number.isFinite(inverterFanSpeed)
         ? Math.max(0, Math.min(100, inverterFanSpeed))
         : null;
-      const fanSpeedKmh = Number.isFinite(normalizedFanSpeed)
-        ? fanSpeedKilometersPerHour(normalizedFanSpeed)
+      const fanSpeedRpmValue = Number.isFinite(normalizedFanSpeed)
+        ? fanSpeedRpm(normalizedFanSpeed)
         : null;
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-inverter-node',
         active: inverterActive,
         values: {
           '#energy-inverter-load': Number.isFinite(inverterLoad) ? reading(inverterLoad, '%', 1) : '— %',
-          '#energy-inverter-fan-speed': Number.isFinite(fanSpeedKmh) ? reading(fanSpeedKmh, 'km/h', 1) : '— km/h'
+          '#energy-inverter-fan-speed': Number.isFinite(fanSpeedRpmValue) ? reading(fanSpeedRpmValue, 'RPM', 0) : '— RPM'
         }
       });
       const inverterFanRow = document.querySelector('#energy-inverter-fan-row');
@@ -830,7 +858,7 @@
       );
       document.querySelector('#energy-grid-flow')?.classList.toggle('disconnected', !gridAvailable);
       // Battery and inverter exchange energy in both directions.
-      setFlow('#energy-battery-flow', batteryActive && inverterActive, batteryCharging, batteryPower);
+      setFlow('#energy-battery-flow', batteryActive && inverterActive, batteryCharging && !batterySupplyingOutput, batteryPower);
       document.querySelector('#energy-battery-flow')?.classList.toggle('disconnected', !batteryConnected);
 
       const status = document.querySelector('#energy-flow-status');

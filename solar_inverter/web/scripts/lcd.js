@@ -26,6 +26,18 @@
         const element = document.querySelector(selector);
         if (element) element.textContent = value;
       };
+      const setManualValue = (selector, value) => {
+        const element = document.querySelector(selector);
+        if (!element) return;
+        const displayValue = String(value ?? '—');
+        // The simulated LCD has a fixed-width readout. Scale each value to
+        // its available cell instead of clipping significant digits or units.
+        const characterCount = Math.max(1, [...displayValue].length);
+        const fontSize = Math.min(10.5, 62 / characterCount);
+        element.textContent = displayValue;
+        element.style.setProperty('--lcd-manual-value-size', `${fontSize.toFixed(2)}cqw`);
+        element.title = displayValue;
+      };
       const setMeasure = (selector, value, digits = 1) => {
         const element = document.querySelector(selector);
         if (!element) return;
@@ -57,6 +69,9 @@
       const inverterFanSpeedReading = numberValue([801]);
       const inverterFanSpeed = Number.isFinite(inverterFanSpeedReading)
         ? Math.max(0, Math.min(100, inverterFanSpeedReading))
+        : null;
+      const inverterFanRpm = Number.isFinite(inverterFanSpeed)
+        ? fanSpeedRpm(inverterFanSpeed)
         : null;
       const gridLowVoltageThreshold = numberValue([16655]);
       const loadPower = numberValue([541, 92, 188]);
@@ -156,7 +171,7 @@
       setText('#lcd-frequency', reading(displayedGridFrequency, 'Hz', 2));
       setText('#lcd-ac-output-current', reading(outputCurrent, 'A', 2));
       setText('#lcd-inverter-load', reading(inverterLoad, '%', 1));
-      setText('#lcd-inverter-fan-speed', reading(inverterFanSpeed, '%', 1));
+      setText('#lcd-inverter-fan-speed', reading(inverterFanRpm, 'RPM', 0));
       setText('#lcd-load-power', reading(loadPower, 'W', 0));
       setText('#lcd-apparent-load-power', reading(apparentLoadPower, 'VA', 0));
       setText('#lcd-grid-low-voltage-threshold', reading(gridLowVoltageThreshold, 'V', 0));
@@ -265,10 +280,15 @@
         P8: ['PV ENERGY', 'TODAY'], P9: ['PV ENERGY', 'MONTH'], P10: ['PV ENERGY', 'YEAR']
       };
       const [manualLeftLabel, manualRightLabel] = manualLabels[page.code] || manualLabels.LCD;
+      const manualReadouts = document.querySelector('.lcd-manual-readouts');
+      const manualRightReading = document.querySelector('#lcd-manual-right-value')?.closest('.lcd-manual-reading');
+      const hasManualRightValue = Boolean(page.value2);
+      manualReadouts?.classList.toggle('lcd-manual-readouts-single', !hasManualRightValue);
+      if (manualRightReading) manualRightReading.hidden = !hasManualRightValue;
       setText('#lcd-manual-left-label', manualLeftLabel);
-      setText('#lcd-manual-left-value', page.value1);
+      setManualValue('#lcd-manual-left-value', page.value1);
       setText('#lcd-manual-right-label', manualRightLabel);
-      setText('#lcd-manual-right-value', page.value2 || '—');
+      setManualValue('#lcd-manual-right-value', page.value2 || '—');
       setText('#lcd-page-code', page.code);
       setText('#lcd-page-title', page.title);
       setText('#lcd-page-label-1', page.label1);
