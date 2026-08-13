@@ -10,6 +10,7 @@ import tempfile
 import zipapp
 import json
 import hashlib
+import os
 from pathlib import Path
 from contextlib import closing
 
@@ -34,16 +35,18 @@ EXCLUDED_PAYLOAD_FILES = frozenset({
 def project_payload_files() -> tuple[str, ...]:
     """Return every deployable source file in this project workspace."""
     files: list[str] = []
-    for source in PROJECT_ROOT.rglob("*"):
-        if not source.is_file():
-            continue
-        relative = source.relative_to(PROJECT_ROOT)
-        if any(part in EXCLUDED_PAYLOAD_DIRECTORIES for part in relative.parts):
-            continue
-        relative_name = relative.as_posix()
-        if relative_name in EXCLUDED_PAYLOAD_FILES or source.suffix in {".pyc", ".pyo"}:
-            continue
-        files.append(relative_name)
+    for directory, child_directories, filenames in os.walk(PROJECT_ROOT):
+        child_directories[:] = [
+            name for name in child_directories
+            if name not in EXCLUDED_PAYLOAD_DIRECTORIES
+        ]
+        directory_path = Path(directory)
+        for filename in filenames:
+            source = directory_path / filename
+            relative_name = source.relative_to(PROJECT_ROOT).as_posix()
+            if relative_name in EXCLUDED_PAYLOAD_FILES or source.suffix in {".pyc", ".pyo"}:
+                continue
+            files.append(relative_name)
     return tuple(sorted(files))
 
 def ensure_updater_history_schema(connection: sqlite3.Connection) -> None:
@@ -159,10 +162,13 @@ def get_github_repository() -> str:
 
 
 def main() -> None:
+    print("Collecting deployable project files...", flush=True)
+    project_files = project_payload_files()
+    print(f"Packing {len(project_files)} project files...", flush=True)
     with tempfile.TemporaryDirectory(prefix="solar-dashboard-bundle-") as temporary:
         bundle_root = Path(temporary)
         shutil.copy2(SOURCE_MAIN, bundle_root / "__main__.py")
-        payload_files = (*project_payload_files(), UPSTREAM_VERSION_PAYLOAD)
+        payload_files = (*project_files, UPSTREAM_VERSION_PAYLOAD)
         for relative_name in payload_files:
             if relative_name == UPSTREAM_VERSION_PAYLOAD:
                 continue
