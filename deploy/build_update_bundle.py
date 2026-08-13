@@ -9,6 +9,7 @@ import sqlite3
 import tempfile
 import zipapp
 import json
+import hashlib
 from pathlib import Path
 from contextlib import closing
 
@@ -18,45 +19,32 @@ SOURCE_MAIN = PROJECT_ROOT / "deploy" / "update_bundle_src" / "__main__.py"
 OUTPUT = PROJECT_ROOT / "deploy" / "solar-dashboard-update.pyz"
 STATS_DB_PATH = PROJECT_ROOT / "solar_invertor_web_stats.sqlite3"
 UPSTREAM_VERSION_PAYLOAD = ".solar-dashboard-upstream.json"
-PAYLOAD_FILES = (
-    "solar_invertor_web.py",
-    "favicon.png",
-    "generator-mask.png",
-    "1258380.png",
-    "inverter.svg",
-    "home.svg",
-    "solar_inverter/__init__.py",
-    "solar_inverter/components/__init__.py",
-    "solar_inverter/components/api_localization.py",
-    "solar_inverter/components/web_dashboard.py",
-    "solar_inverter/components/dashboard_template.py",
-    "solar_inverter/components/state_consistency.py",
-    "solar_inverter/web/index.html",
-    "solar_inverter/web/styles/dashboard.css",
-    "solar_inverter/web/styles/dashboard-responsive.css",
-    "solar_inverter/web/vendor/uPlot.iife.min.js",
-    "solar_inverter/web/vendor/uPlot.min.css",
-    "solar_inverter/web/vendor/LICENSE-uPlot.txt",
-    "solar_inverter/web/data/data-translations.json",
-    "solar_inverter/web/scripts/translations.js",
-    "solar_inverter/web/scripts/interpretations.js",
-    "solar_inverter/web/scripts/renderers.js",
-    "solar_inverter/web/scripts/charts.js",
-    "solar_inverter/web/scripts/chart-demo-history.js",
-    "solar_inverter/web/scripts/chart-rendering.js",
-    "solar_inverter/web/scripts/gauges.js",
-    "solar_inverter/web/scripts/energy-flow.js",
-    "solar_inverter/web/scripts/lcd.js",
-    "solar_inverter/web/scripts/app.js",
-    "solar_inverter/web/scripts/app-events.js",
-    "solar_inverter/services/__init__.py",
-    "solar_inverter/services/inverter_service.py",
-    "solar_inverter/services/inverter_service_core.py",
-    "solar_inverter/services/register_profile_12ku.py",
-    "solar_inverter/services/chart_history.py",
-    "solar_inverter/services/inverter_service_runtime.py",
-    "deploy/solar-inverter-dashboard.service",
-)
+PAYLOAD_MANIFEST = ".solar-dashboard-payload.json"
+EXCLUDED_PAYLOAD_DIRECTORIES = frozenset({
+    ".git", ".venv", "node_modules", "__pycache__", "register_logs", ".pytest_cache",
+    ".gradle", "build",
+})
+EXCLUDED_PAYLOAD_FILES = frozenset({
+    "deploy/solar-dashboard-update.pyz",
+    "solar_invertor_web_stats.sqlite3",
+    "config/home-assistant_v2.db",
+})
+
+
+def project_payload_files() -> tuple[str, ...]:
+    """Return every deployable source file in this project workspace."""
+    files: list[str] = []
+    for source in PROJECT_ROOT.rglob("*"):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(PROJECT_ROOT)
+        if any(part in EXCLUDED_PAYLOAD_DIRECTORIES for part in relative.parts):
+            continue
+        relative_name = relative.as_posix()
+        if relative_name in EXCLUDED_PAYLOAD_FILES or source.suffix in {".pyc", ".pyo"}:
+            continue
+        files.append(relative_name)
+    return tuple(sorted(files))
 
 def ensure_updater_history_schema(connection: sqlite3.Connection) -> None:
     columns = {row[1] for row in connection.execute("PRAGMA table_info(updater_versions)")}
@@ -174,7 +162,10 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="solar-dashboard-bundle-") as temporary:
         bundle_root = Path(temporary)
         shutil.copy2(SOURCE_MAIN, bundle_root / "__main__.py")
-        for relative_name in PAYLOAD_FILES:
+        payload_files = (*project_payload_files(), UPSTREAM_VERSION_PAYLOAD)
+        for relative_name in payload_files:
+            if relative_name == UPSTREAM_VERSION_PAYLOAD:
+                continue
             source = PROJECT_ROOT / relative_name
             if not source.is_file():
                 raise FileNotFoundError(source)
@@ -191,6 +182,18 @@ def main() -> None:
                 },
                 ensure_ascii=False,
             ) + "\n",
+            encoding="utf-8",
+        )
+        manifest = {
+            "files": {
+                relative_name: hashlib.sha256(
+                    (bundle_root / "payload" / relative_name).read_bytes()
+                ).hexdigest()
+                for relative_name in payload_files
+            }
+        }
+        (bundle_root / "payload" / PAYLOAD_MANIFEST).write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         zipapp.create_archive(

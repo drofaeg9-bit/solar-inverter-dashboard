@@ -6,7 +6,7 @@ The recommended setup binds the Python server only to `127.0.0.1:8080`. Tailscal
 
 ## Single-file update (recommended for a direct SSH connection)
 
-The repository can build one self-installing Python archive containing only the web dashboard runtime and systemd unit. On the development PC, rebuild it after every application change:
+The repository can build one self-installing Python archive containing the complete declared dashboard project payload and systemd unit. The archive checksum-verifies every declared file before it installs anything. On the development PC, rebuild it after every application change:
 
 ```powershell
 py -3 deploy/build_update_bundle.py

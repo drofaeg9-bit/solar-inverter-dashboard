@@ -623,7 +623,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn('UPDATER_RECEIPT_PATH = PROJECT_ROOT / "updater_history.json"', runtime)
         self.assertIn('VERSION_URL = "http://127.0.0.1:8080/api/version"', installer)
         self.assertIn("def dashboard_asset_version(payload_root: Path) -> str:", installer)
-        self.assertIn("def verify_installed_payload(payload_root: Path) -> None:", installer)
+        self.assertIn("def verify_installed_payload(payload_root: Path, payload_files: tuple[str, ...]) -> None:", installer)
         self.assertIn("def wait_for_health(expected_version: str) -> None:", installer)
         self.assertIn("running_version == expected_version", installer)
         self.assertIn("wait_for_health(expected_version)", installer)
@@ -878,10 +878,14 @@ class DashboardAssetTests(unittest.TestCase):
     def test_build_and_installer_payload_manifests_match(self) -> None:
         build = runpy.run_path(str(ROOT / "deploy" / "build_update_bundle.py"))
         installer = runpy.run_path(str(ROOT / "deploy" / "update_bundle_src" / "__main__.py"))
-        build_payload = set(build["PAYLOAD_FILES"])
-        installed_payload = set(installer["PAYLOAD_FILES"])
-        installed_payload.add(installer["SERVICE_PAYLOAD"])
-        self.assertEqual(build_payload, installed_payload)
+        build_payload = set(build["project_payload_files"]())
+        required_runtime = set(installer["REQUIRED_RUNTIME_FILES"])
+        required_runtime.add(installer["SERVICE_PAYLOAD"])
+        generated_payload = {build["UPSTREAM_VERSION_PAYLOAD"]}
+        self.assertTrue(required_runtime - generated_payload <= build_payload)
+        self.assertNotIn("deploy/solar-dashboard-update.pyz", build_payload)
+        self.assertNotIn("solar_invertor_web_stats.sqlite3", build_payload)
+        self.assertNotIn("config/home-assistant_v2.db", build_payload)
         for relative_name in build_payload:
             self.assertTrue((ROOT / relative_name).is_file(), relative_name)
 

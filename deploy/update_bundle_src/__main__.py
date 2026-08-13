@@ -20,6 +20,7 @@ import zipfile
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
+from pathlib import PurePosixPath
 
 
 APPLICATION_ROOT = Path("/opt/solar_assistant")
@@ -28,6 +29,7 @@ LEGACY_STATS_DATABASE_PATH = APPLICATION_ROOT / "solar_invertor_web_stats.sqlite
 UPDATER_RECEIPT_PATH = APPLICATION_ROOT / "updater_history.json"
 UPDATER_ARCHIVE_DIR = APPLICATION_ROOT / "updater_archives"
 UPSTREAM_VERSION_PAYLOAD = ".solar-dashboard-upstream.json"
+PAYLOAD_MANIFEST = ".solar-dashboard-payload.json"
 SERVICE_NAME = "solar-inverter-dashboard.service"
 SERVICE_TARGET = Path("/etc/systemd/system") / SERVICE_NAME
 SERVICE_USER = "solar-dashboard"
@@ -38,7 +40,7 @@ UPDATER_VERSION = "5"
 DEFAULT_GIT_REMOTE = "origin"
 DEFAULT_GIT_BRANCH = "main"
 
-PAYLOAD_FILES = (
+REQUIRED_RUNTIME_FILES = (
     UPSTREAM_VERSION_PAYLOAD,
     "solar_invertor_web.py",
     "favicon.png",
@@ -183,19 +185,45 @@ def archive_path() -> Path:
     return Path(sys.argv[0]).resolve()
 
 
-def extract_payload(destination: Path) -> None:
-    """Extract only the declared application payload."""
+def extract_payload(destination: Path) -> tuple[str, ...]:
+    """Verify and extract every declared dashboard project payload file."""
     with zipfile.ZipFile(archive_path()) as archive:
         names = set(archive.namelist())
-        expected = {f"payload/{name}" for name in (*PAYLOAD_FILES, SERVICE_PAYLOAD)}
-        missing = sorted(expected - names)
-        if missing:
-            raise RuntimeError(f"Update archive is incomplete: {', '.join(missing)}")
-        for name in (*PAYLOAD_FILES, SERVICE_PAYLOAD):
-            source = f"payload/{name}"
-            target = destination / name
+        manifest_name = f"payload/{PAYLOAD_MANIFEST}"
+        if manifest_name not in names:
+            raise RuntimeError("Update archive is missing its payload manifest")
+        try:
+            manifest = json.loads(archive.read(manifest_name))
+            expected_hashes = manifest["files"]
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError("Update archive has an invalid payload manifest") from error
+        if not isinstance(expected_hashes, dict) or not expected_hashes:
+            raise RuntimeError("Update archive manifest does not describe a project payload")
+        payload_files = tuple(sorted(expected_hashes))
+        required_missing = sorted(set((*REQUIRED_RUNTIME_FILES, SERVICE_PAYLOAD)) - set(payload_files))
+        if required_missing:
+            raise RuntimeError(f"Update archive is missing required runtime files: {', '.join(required_missing)}")
+        expected_archive_names = {f"payload/{name}" for name in payload_files}
+        actual_archive_names = {
+            name for name in names if name.startswith("payload/") and not name.endswith("/")
+        } - {manifest_name}
+        if actual_archive_names != expected_archive_names:
+            raise RuntimeError("Update archive manifest does not describe every packaged project file")
+        for relative_name in payload_files:
+            path = PurePosixPath(relative_name)
+            if path.is_absolute() or ".." in path.parts or str(path) in {"", "."}:
+                raise RuntimeError(f"Update archive has an unsafe project path: {relative_name}")
+            actual_hash = hashlib.sha256(
+                archive.read(f"payload/{relative_name}")
+            ).hexdigest()
+            if expected_hashes[relative_name] != actual_hash:
+                raise RuntimeError(f"Update archive checksum mismatch: {relative_name}")
+        for relative_name in payload_files:
+            source = f"payload/{relative_name}"
+            target = destination / relative_name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.read(source))
+    return payload_files
 
 
 def validate_payload(payload_root: Path) -> None:
@@ -330,11 +358,11 @@ def atomic_install(source: Path, target: Path, mode: int, uid: int, gid: int) ->
         temporary.unlink(missing_ok=True)
 
 
-def install_payload(payload_root: Path, uid: int, gid: int) -> None:
-    """Install application files while preserving SQLite data and register logs."""
+def install_payload(payload_root: Path, payload_files: tuple[str, ...], uid: int, gid: int) -> None:
+    """Install the complete project payload while preserving runtime data."""
     APPLICATION_ROOT.mkdir(parents=True, exist_ok=True)
     os.chown(APPLICATION_ROOT, uid, gid)
-    for relative_name in PAYLOAD_FILES:
+    for relative_name in payload_files:
         atomic_install(
             payload_root / relative_name,
             APPLICATION_ROOT / relative_name,
@@ -345,18 +373,20 @@ def install_payload(payload_root: Path, uid: int, gid: int) -> None:
     atomic_install(payload_root / SERVICE_PAYLOAD, SERVICE_TARGET, 0o644, 0, 0)
 
 
-def verify_installed_payload(payload_root: Path) -> None:
-    """Refuse success when any installed application file differs from the archive."""
+def verify_installed_payload(payload_root: Path, payload_files: tuple[str, ...]) -> None:
+    """Refuse success when any installed project file differs from the archive."""
     mismatches = [
         relative_name
-        for relative_name in PAYLOAD_FILES
+        for relative_name in payload_files
         if not (APPLICATION_ROOT / relative_name).is_file()
         or hashlib.sha256((payload_root / relative_name).read_bytes()).digest()
         != hashlib.sha256((APPLICATION_ROOT / relative_name).read_bytes()).digest()
     ]
     if mismatches:
         raise RuntimeError(f"Installed payload verification failed: {', '.join(mismatches)}")
-    print(f"Verified {len(PAYLOAD_FILES)} installed application files.", flush=True)
+    if not SERVICE_TARGET.is_file() or hashlib.sha256((payload_root / SERVICE_PAYLOAD).read_bytes()).digest() != hashlib.sha256(SERVICE_TARGET.read_bytes()).digest():
+        raise RuntimeError("Installed systemd service file differs from the archive")
+    print(f"Verified {len(payload_files)} installed project files.", flush=True)
 
 
 def next_updater_version() -> int:
@@ -535,13 +565,13 @@ def install() -> None:
     log_modbus_prerequisites()
     with tempfile.TemporaryDirectory(prefix="solar-dashboard-update-") as temporary:
         payload_root = Path(temporary)
-        extract_payload(payload_root)
+        payload_files = extract_payload(payload_root)
         validate_payload(payload_root)
         expected_version = dashboard_asset_version(payload_root)
         print(f"Bundled dashboard version: {expected_version}", flush=True)
         run(["systemctl", "stop", SERVICE_NAME], check=False)
-        install_payload(payload_root, uid, gid)
-        verify_installed_payload(payload_root)
+        install_payload(payload_root, payload_files, uid, gid)
+        verify_installed_payload(payload_root, payload_files)
         record_installed_version(uid, gid, expected_version)
     run(["systemctl", "daemon-reload"])
     run(["systemctl", "enable", SERVICE_NAME])
@@ -555,11 +585,11 @@ def install() -> None:
 def check_bundle() -> None:
     with tempfile.TemporaryDirectory(prefix="solar-dashboard-check-") as temporary:
         payload_root = Path(temporary)
-        extract_payload(payload_root)
+        payload_files = extract_payload(payload_root)
         validate_payload(payload_root)
         version = dashboard_asset_version(payload_root)
     print(
-        f"Bundle is valid and contains {len(PAYLOAD_FILES)} application files "
+        f"Bundle is valid and checksum-verifies all {len(payload_files)} project files "
         f"(dashboard version {version})."
     )
 

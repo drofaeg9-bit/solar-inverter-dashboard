@@ -36,14 +36,14 @@ The runtime requires Python 3, `mbpoll`, and access to `/dev/ttyUSB0`.
 python3 solar_invertor_web.py
 ```
 
-By default the dashboard listens on port `8080`. Production deployment instructions are included in the generated Project Guide and in `deploy/ORANGE_PI_DEPLOYMENT.md`.
+By default the dashboard listens on port `8080`. Production deployment instructions are included in the generated Project Guide and in `deploy/ORANGE_PI_DEPLOYMENT.md`. For a new Orange Pi 3 LTS running the exact `lts_2.2.2_debian_buster_desktop_linux5.10.75.7z` image, begin with `deploy/ORANGE_PI_3_LTS_BUSTER_FIRST_INSTALL.md`.
 
 ## Connect to the real inverter
 
 The dashboard deliberately does not generate measurement values: it only shows
 what Modbus returns. Configure the connection before starting it. For a Modbus
 TCP gateway, set `INVERTER_CONNECTION_MODE=tcp`, `INVERTER_TCP_HOST` and,
-when needed, `INVERTER_TCP_PORT` and `INVERTER_SLAVE_ID`. For a USB/RS-485
+when needed, `INVERTER_TCP_PORT` and `INVERTER_SLAVE_ID`. For a USB/RS-232 or USB/RS-485
 adapter, set `INVERTER_SERIAL_DEVICE` (for example `COM3` on Windows or
 `/dev/ttyUSB0` on Linux), `INVERTER_BAUD_RATE` and `INVERTER_SLAVE_ID`.
 
@@ -63,4 +63,4 @@ python3 deploy/build_update_bundle.py
 python3 deploy/solar-dashboard-update.pyz --check
 ```
 
-Copy only `deploy/solar-dashboard-update.pyz` to the Orange Pi and run it with `sudo python3`. The updater installs only the dashboard runtime files, restarts the systemd service, and verifies the local API without overwriting persistent statistics or register logs.
+Copy only `deploy/solar-dashboard-update.pyz` to the Orange Pi and run it with `sudo python3`. The archive contains every deployable project source file from this workspace—including documentation, tests, Android sources, configuration, scripts, and assets—and its manifest checksum-verifies every file before installation. It excludes only Git metadata, virtual environments, `node_modules`, caches/build outputs, the archive itself, and live databases/logs. The updater restarts the systemd service and verifies the local API without overwriting persistent statistics or register logs.
