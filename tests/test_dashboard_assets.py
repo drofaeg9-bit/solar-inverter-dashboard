@@ -77,6 +77,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn('run(["usermod", "-aG", "dialout", SERVICE_USER])', updater)
         self.assertIn('"/dev/ttyUSB0"', updater)
         self.assertGreaterEqual(updater.count("log_modbus_prerequisites()"), 3)
+        self.assertIn("no physical RTU adapter is available to this host", updater)
 
     def test_light_theme_is_dimmed_and_keeps_readable_contrast(self) -> None:
         css = dashboard_css()
