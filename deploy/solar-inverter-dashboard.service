@@ -14,6 +14,14 @@ Environment=PYTHONUNBUFFERED=1
 Environment=INVERTER_WEB_HOST=127.0.0.1
 Environment=INVERTER_WEB_PORT=8080
 Environment=INVERTER_STATS_DB=/var/lib/solar-inverter-dashboard/stats.sqlite3
+# Set the following to the actual inverter connection when it differs from the
+# default USB RTU adapter. Example: INVERTER_CONNECTION_MODE=tcp.
+# Environment=INVERTER_CONNECTION_MODE=rtu
+# Environment=INVERTER_SERIAL_DEVICE=/dev/ttyUSB0
+# Environment=INVERTER_BAUD_RATE=9600
+# Environment=INVERTER_SLAVE_ID=1
+# Environment=INVERTER_TCP_HOST=192.168.1.50
+# Environment=INVERTER_TCP_PORT=502
 ExecStart=/usr/bin/python3 /opt/solar_assistant/solar_invertor_web.py
 Restart=on-failure
 RestartSec=3

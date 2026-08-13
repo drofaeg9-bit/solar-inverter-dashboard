@@ -426,10 +426,10 @@
     }
     .energy-home .energy-node-value { font-size: 16px }
     .energy-inverter-load {
-      position: absolute; z-index: 2; left: 50%; top: 28px;
+      position: static; z-index: 2; flex: 0 0 auto; margin-bottom: 3px;
       width: auto; overflow: visible;
       color: #fff; font-size: clamp(14px,1.7vw,22px); font-weight: 950; line-height: 1;
-      text-align: center; white-space: nowrap; transform: translateX(-50%);
+      text-align: center; white-space: nowrap; transform: none;
     }
     .energy-inverter-load-definition {
       margin-top: -2px; color: var(--muted); font-size: 6.5px; font-weight: 700;
@@ -440,16 +440,16 @@
     .energy-inverter .energy-mode-label,
     .energy-inverter .energy-mode-definition { display: none }
     .energy-inverter-fan-row {
-      position: absolute; z-index: 3; left: 6px; top: 58%; bottom: auto;
+      position: absolute; z-index: 3; left: 22px; top: 50%; bottom: auto;
       display: flex; align-items: center; flex-direction: column; justify-content: center; width: 60px; gap: 0;
-      color: var(--muted); font-size: 7px; font-weight: 800; line-height: 1;
+      color: var(--muted); font-size: 7px; font-weight: 800; line-height: 2;
       transform: translateY(-50%);
     }
     .energy-inverter-fan-icon {
       display: block; flex: 0 0 48px; width: 60px; height: 48px; max-height: none; margin: 0;
       overflow: visible; color: var(--node-colour); line-height: 1;
       filter: drop-shadow(0 0 4px color-mix(in srgb, var(--node-colour) 65%, transparent));
-      transform: translateY(-10px);
+      transform: none;
     }
     .energy-inverter-fan-rotor {
       transform-box: view-box; transform-origin: 12px 12px; will-change: transform;

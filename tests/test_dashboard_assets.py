@@ -1140,7 +1140,7 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("row-gap: 10px", css_source)
         self.assertIn("color: #fff; font-size: clamp(18px,5.2vw,22px)", css_source)
         self.assertIn("left: 50%; right: auto; top: 64%; width: 48%; row-gap: 8px", css_source)
-        self.assertIn("transform: translateY(-10px)", css_source)
+        self.assertIn("position: static; z-index: 2; flex: 0 0 auto", css_source)
         self.assertIn("transform: translate(-50%,-50%)", css_source)
 
     def test_lcd_information_pages_follow_the_manual_order(self) -> None:

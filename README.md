@@ -38,6 +38,24 @@ python3 solar_invertor_web.py
 
 By default the dashboard listens on port `8080`. Production deployment instructions are included in the generated Project Guide and in `deploy/ORANGE_PI_DEPLOYMENT.md`.
 
+## Connect to the real inverter
+
+The dashboard deliberately does not generate measurement values: it only shows
+what Modbus returns. Configure the connection before starting it. For a Modbus
+TCP gateway, set `INVERTER_CONNECTION_MODE=tcp`, `INVERTER_TCP_HOST` and,
+when needed, `INVERTER_TCP_PORT` and `INVERTER_SLAVE_ID`. For a USB/RS-485
+adapter, set `INVERTER_SERIAL_DEVICE` (for example `COM3` on Windows or
+`/dev/ttyUSB0` on Linux), `INVERTER_BAUD_RATE` and `INVERTER_SLAVE_ID`.
+
+Example in PowerShell:
+
+```powershell
+$env:INVERTER_CONNECTION_MODE = 'tcp'
+$env:INVERTER_TCP_HOST = '192.168.1.50'
+$env:INVERTER_TCP_PORT = '502'
+python solar_invertor_web.py
+```
+
 ## Build the single-file Orange Pi updater
 
 ```bash

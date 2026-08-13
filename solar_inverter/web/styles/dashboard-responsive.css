@@ -354,11 +354,11 @@
       .energy-home .energy-node-value { top: 49% }
       .energy-inverter-values { min-width: 0; overflow: visible; font-size: 10px; line-height: 1.1 }
       .energy-home-values { font-size: 11px; line-height: 1.12 }
-      .energy-inverter-load { top: 30px; font-size: clamp(14px,4vw,18px) }
+      .energy-inverter-load { font-size: clamp(14px,4vw,18px) }
       .energy-inverter-load-definition { max-width: 100%; overflow-wrap: anywhere; font-size: 6px }
       .energy-inverter-fan-row {
-        left: 2px; top: 58%; bottom: auto; flex-direction: column; width: 60px; max-width: 60px; gap: 0; overflow-wrap: normal;
-        font-size: 5.8px; line-height: 1.08; white-space: nowrap !important;
+        left: 22px; top: 50%; bottom: auto; flex-direction: column; width: 60px; max-width: 60px; gap: 0; overflow-wrap: normal;
+        font-size: 5.8px; line-height: 2; white-space: nowrap !important;
       }
       .energy-inverter-fan-icon { flex-basis: 48px; width: 60px; height: 48px }
       .energy-inverter-fan-value { margin-top: -2px; font-size: 14px }

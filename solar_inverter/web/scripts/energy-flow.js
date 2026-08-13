@@ -225,6 +225,11 @@
     }
     function smoothlyUpdateInverterFanRate(animation, targetRate) {
       inverterFanTargetRate = targetRate;
+      const currentRate = Number(animation.playbackRate) || 0;
+      if (inverterFanRateFrame === null && Math.abs(currentRate - targetRate) <= .002) {
+        if (inverterFanPauseAtRest && targetRate === 0) animation.pause();
+        return;
+      }
       if (typeof window.requestAnimationFrame !== 'function') {
         setInverterFanPlaybackRate(animation, targetRate);
         if (inverterFanPauseAtRest && targetRate === 0) animation.pause();

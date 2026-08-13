@@ -28,13 +28,35 @@ from .register_profile_12ku import (
 )
 from zoneinfo import ZoneInfo
 
-DEVICE = "/dev/ttyUSB0"
-SLAVE_ID = 1
-BAUD_RATE = 9600
-TCP_IP = "192.168.1.100"
-TCP_PORT = 502
-CONNECTION_MODE = "rtu"  # "rtu" or "tcp"
-COMMAND_TIMEOUT_SECONDS = 3.0
+def _environment_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    """Read a bounded integer setting without making startup fragile."""
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if minimum <= value <= maximum else default
+
+
+def _environment_float(name: str, default: float, *, minimum: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if value >= minimum else default
+
+
+# Connection details must be deployment settings: `/dev/ttyUSB0` only exists on
+# the Orange Pi, while a Windows USB adapter is usually exposed as `COMx`.
+DEVICE = os.environ.get("INVERTER_SERIAL_DEVICE", "/dev/ttyUSB0")
+SLAVE_ID = _environment_int("INVERTER_SLAVE_ID", 1, minimum=1, maximum=247)
+BAUD_RATE = _environment_int("INVERTER_BAUD_RATE", 9600, minimum=300, maximum=4_000_000)
+TCP_IP = os.environ.get("INVERTER_TCP_HOST", "192.168.1.100")
+TCP_PORT = _environment_int("INVERTER_TCP_PORT", 502, minimum=1, maximum=65535)
+_connection_mode_setting = os.environ.get("INVERTER_CONNECTION_MODE", "rtu").lower()
+CONNECTION_MODE = _connection_mode_setting if _connection_mode_setting in {"rtu", "tcp"} else "rtu"
+COMMAND_TIMEOUT_SECONDS = _environment_float(
+    "INVERTER_COMMAND_TIMEOUT_SECONDS", 3.0, minimum=0.1
+)
 MADRID_TIME_ZONE = ZoneInfo("Europe/Madrid")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FAVICON_PATH = PROJECT_ROOT / "favicon.png"
