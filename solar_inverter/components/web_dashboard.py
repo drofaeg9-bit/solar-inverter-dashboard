@@ -948,6 +948,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     if mode not in {"fast", "compatible"}:
                         raise ValueError("неправильний режим читання")
                     state["read_mode"] = mode
+                if "fast_selected_registers" in payload:
+                    registers = payload["fast_selected_registers"]
+                    if not isinstance(registers, list) or len(registers) > 18:
+                        raise ValueError("fast_selected_registers must contain at most 18 registers")
+                    selected_registers = []
+                    for register in registers:
+                        if isinstance(register, bool) or not isinstance(register, int) or register not in KNOWN_REGISTERS:
+                            raise ValueError("fast_selected_registers contains an unsupported register")
+                        if register not in selected_registers:
+                            selected_registers.append(register)
+                    state["fast_selected_registers"] = selected_registers
                 if "paused" in payload:
                     paused = payload["paused"]
                     if not isinstance(paused, bool):

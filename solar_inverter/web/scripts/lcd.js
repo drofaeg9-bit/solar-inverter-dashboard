@@ -78,7 +78,7 @@
       const apparentLoadPower = numberValue([542, 93]);
       const batteryVoltage = numberValue([129, 137, 404, 342]);
       const batteryCurrent = numberValue([130]);
-      const measuredBatterySoc = numberValue([133, 139, 339, 407]);
+      const measuredBatterySoc = numberValue([407]);
       const batteryPowerReading = numberValue([134]);
       const batteryTemperature = numberValue([140, 406]);
       const inverterTemperature = numberValue([818]);
@@ -117,10 +117,14 @@
         && batteryActiveValue < -batteryActivityThreshold;
       const measuredBatteryDischarging = Number.isFinite(batteryActiveValue)
         && batteryActiveValue > batteryActivityThreshold;
-      const batteryCharging = liveMeasurementsFresh && !flowSuppressed && batteryConnected && (flowState
+      const batteryCharging = liveMeasurementsFresh && !flowSuppressed && batteryConnected && (batteryDirectionFromCurrent
+        ? measuredBatteryCharging
+        : flowState
         ? flowState.rectifierToBattery && !flowState.batteryToInverter
         : terminalState ? terminalState.battery === 3 : measuredBatteryCharging);
-      const batteryDischarging = liveMeasurementsFresh && !flowSuppressed && batteryConnected && (flowState
+      const batteryDischarging = liveMeasurementsFresh && !flowSuppressed && batteryConnected && (batteryDirectionFromCurrent
+        ? measuredBatteryDischarging
+        : flowState
         ? flowState.batteryToInverter
         : terminalState ? terminalState.battery === 2 : measuredBatteryDischarging);
       const batteryState = !batteryConnected
@@ -218,61 +222,86 @@
       const pages = [
         {
           code: 'LCD', title: t('mainDisplay'),
+          icons: ['ac-input', 'ac-output'],
           label1: registerLabel(81, t('gridVoltage')), value1: reading(gridVoltage, 'V'),
           label2: registerLabel([537, 89], t('acOutputVoltage')), value2: reading(outputVoltage, 'V'), help: t('lcdMainPageHelp')
         },
         {
           code: 'P1', title: t('frequency'),
+          icons: ['ac-input', 'ac-output'],
           label1: registerLabel(83, t('gridFrequency')), value1: reading(frequency, 'Hz', 2),
           label2: registerLabel([538, 91], t('acOutputFrequency')), value2: reading(outputFrequency, 'Hz', 2), help: t('lcdP1Help')
         },
         {
           code: 'P2', title: t('batteryVoltage'),
+          icons: ['battery', 'ac-output'],
           label1: registerLabel([129, 137], t('batteryVoltage')), value1: reading(batteryVoltage, 'V'),
           label2: registerLabel([537, 89], t('acOutputVoltage')), value2: reading(outputVoltage, 'V'), help: t('lcdP2Help')
         },
         {
           code: 'P3', title: t('inverterLoad'),
+          icons: ['battery', 'load'],
           label1: registerLabel([129, 137], t('batteryVoltage')), value1: reading(batteryVoltage, 'V'),
           label2: registerLabel([545, 94], t('inverterLoad')), value2: reading(inverterLoad, '%', 1), help: t('lcdP3Help')
         },
         {
           code: 'P4', title: t('apparentLoadPower'),
+          icons: ['battery', 'load'],
           label1: registerLabel([129, 137], t('batteryVoltage')), value1: reading(batteryVoltage, 'V'),
           label2: registerLabel([542, 93], t('apparentLoadPower')), value2: kilowattReading(numberValue([542, 93]), 'kVA'), help: t('lcdP4Help')
         },
         {
           code: 'P5', title: t('loadPower'),
+          icons: ['battery', 'load'],
           label1: registerLabel([129, 137], t('batteryVoltage')), value1: reading(batteryVoltage, 'V'),
           label2: registerLabel([541, 92], t('loadPower')), value2: kilowattReading(numberValue([541, 92]), 'kW'), help: t('lcdP5Help')
         },
         {
           code: 'P6', title: t('pvPower'),
+          icons: ['solar'],
           label1: registerLabel(151, t('pvVoltage')), value1: reading(numberValue([151]), 'V'),
           label2: registerLabel(153, t('pvPower')), value2: kilowattReading(numberValue([153]), 'kW'), help: t('lcdP6Help')
         },
         {
           code: 'P7', title: t('chargerCurrent'),
+          icons: ['charger', 'battery'],
           label1: registerLabel([159, 160], t('chargerCurrent')), value1: reading(chargerCurrent, 'A', 1),
           label2: registerLabel(130, t('dcDischargingCurrent')), value2: reading(dischargingCurrent, 'A', 1), help: t('lcdP7Help')
         },
         {
           code: 'P8', title: t('dailyPvEnergy'),
+          icons: ['solar', 'energy'],
           label1: registerLabel(157, t('dailyPvEnergy')), value1: reading(numberValue([157]), 'kWh'),
           label2: '', value2: '', help: t('lcdP8Help')
         },
         {
           code: 'P9', title: t('monthlyPvEnergy'),
+          icons: ['solar', 'energy'],
           label1: registerLabel(162, t('monthlyPvEnergy')), value1: reading(numberValue([162]), 'kWh'),
           label2: '', value2: '', help: t('lcdP9Help')
         },
         {
           code: 'P10', title: t('yearlyPvEnergy'),
+          icons: ['solar', 'energy'],
           label1: registerLabel(163, t('yearlyPvEnergy')), value1: reading(numberValue([163]), 'kWh'),
           label2: '', value2: '', help: t('lcdP10Help')
         }
       ];
       const page = pages[lcdPageIndex] || pages[0];
+      const manualContext = document.querySelector('#lcd-manual-context');
+      const iconNames = page.icons || [];
+      const iconSignature = iconNames.join('|');
+      if (manualContext && manualContext.dataset.icons !== iconSignature) {
+        const icons = document.createDocumentFragment();
+        iconNames.forEach(iconName => {
+          const icon = document.createElement('img');
+          icon.src = `/static/assets/lcd-icons/${iconName}.svg`;
+          icon.alt = '';
+          icons.append(icon);
+        });
+        manualContext.replaceChildren(icons);
+        manualContext.dataset.icons = iconSignature;
+      }
       const manualLabels = {
         LCD: ['INPUT', 'OUTPUT'], P1: ['INPUT', 'OUTPUT'], P2: ['BATT', 'OUTPUT'],
         P3: ['BATT', 'LOAD'], P4: ['BATT', 'LOAD'], P5: ['BATT', 'LOAD'],

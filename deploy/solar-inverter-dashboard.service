@@ -11,6 +11,7 @@ SupplementaryGroups=dialout
 WorkingDirectory=/opt/solar_assistant
 StateDirectory=solar-inverter-dashboard
 Environment=PYTHONUNBUFFERED=1
+Environment=TZ=Europe/Madrid
 Environment=INVERTER_WEB_HOST=127.0.0.1
 Environment=INVERTER_WEB_PORT=8080
 Environment=INVERTER_STATS_DB=/var/lib/solar-inverter-dashboard/stats.sqlite3

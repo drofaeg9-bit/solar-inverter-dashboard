@@ -81,6 +81,18 @@ REQUIRED_RUNTIME_FILES = (
 )
 SERVICE_PAYLOAD = "deploy/solar-inverter-dashboard.service"
 
+
+def remove_file_if_present(path: Path) -> None:
+    """Remove a temporary file when it remains after an interrupted install."""
+    if path.exists():
+        path.unlink()
+
+
+def remove_prefix(value: str, prefix: str) -> str:
+    """Return *value* without *prefix* (compatible with Python 3.7)."""
+    return value[len(prefix):] if value.startswith(prefix) else value
+
+
 def ensure_updater_history_schema(connection: sqlite3.Connection) -> None:
     """Upgrade an existing updater history table without deleting its rows."""
     columns = {row[1] for row in connection.execute("PRAGMA table_info(updater_versions)")}
@@ -141,7 +153,7 @@ def github_branch() -> str:
     except subprocess.CalledProcessError:
         return DEFAULT_GIT_BRANCH
     remote_prefix = f"{DEFAULT_GIT_REMOTE}/"
-    return remote_head.removeprefix(remote_prefix) or DEFAULT_GIT_BRANCH
+    return remove_prefix(remote_head, remote_prefix) or DEFAULT_GIT_BRANCH
 
 
 def git_commit_details(revision: str) -> tuple[str, str, str]:
@@ -355,7 +367,7 @@ def atomic_install(source: Path, target: Path, mode: int, uid: int, gid: int) ->
         os.chown(temporary, uid, gid)
         os.replace(temporary, target)
     finally:
-        temporary.unlink(missing_ok=True)
+        remove_file_if_present(temporary)
 
 
 def install_payload(payload_root: Path, payload_files: tuple[str, ...], uid: int, gid: int) -> None:
@@ -420,7 +432,7 @@ def next_updater_version() -> int:
             if checksum:
                 checksums.add(str(checksum))
             try:
-                versions.append(int(str(commit_hash).removeprefix("updater-").split("-", 1)[0]))
+                versions.append(int(remove_prefix(str(commit_hash), "updater-").split("-", 1)[0]))
             except ValueError:
                 pass
     except sqlite3.Error:
@@ -461,7 +473,7 @@ def record_installed_version(uid: int, gid: int, dashboard_version: str) -> None
         os.chown(temporary_receipt, uid, gid)
         os.replace(temporary_receipt, UPDATER_RECEIPT_PATH)
     finally:
-        temporary_receipt.unlink(missing_ok=True)
+        remove_file_if_present(temporary_receipt)
 
     try:
         STATS_DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)

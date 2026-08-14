@@ -5,10 +5,8 @@ from __future__ import annotations
 import base64
 import json
 import zlib
-from typing import Final
-
 # Workbook-derived rows: register, group, name, access, type, scale, unit, H/L.
-_PAYLOAD: Final = (
+_PAYLOAD = (
     "c-"
     "qZfS&tkylKv|R0SlA>%_t8tkA3SyN5kD#+by>+FbrW}YuCb#t%Z+=*{7CdNuF)ng0+5F3_Q}>>mN{klvP$=!2W`)zc9aK$zWy{^QvT$!K`_3yV"
     "X@0@i7=*@CY*U{r9~qmt4<De@dsbhqFiNBt1>XPI{P5W_z=T=`@{Qx^ijf?cb$u()09~{XTmJ-#TL-"
@@ -119,7 +117,7 @@ def _load() -> tuple[tuple[int, str, str, str, str, float, str, bool], ...]:
     )
 
 
-_AUTHORITATIVE_ADDITIONS: Final = (
+_AUTHORITATIVE_ADDITIONS = (
     (68, "02 Быстрые данные", "Состояние силовых клемм", "только чтение", "uint16_t", 1.0, "bitfield", False),
     (70, "02 Быстрые данные", "Статус топологии / single", "только чтение", "uint16_t", 1.0, "enum", False),
     (382, "07 Батарея", "Reserved / не определён в U3.0 карте", "наблюдается при чтении", "не определён", 1.0, "raw", False),
@@ -132,13 +130,13 @@ _AUTHORITATIVE_ADDITIONS: Final = (
 # TTN_12KU_U3.0_FULL_REGISTER_MAP_696.xlsx is the catalog authority.  These
 # observed registers were added to that workbook after the original 689-row
 # profile was embedded; ordering by R-number preserves the workbook sequence.
-REGISTER_PROFILE: Final = tuple(sorted((*_load(), *_AUTHORITATIVE_ADDITIONS), key=lambda row: row[0]))
-REGISTER_BY_NUMBER: Final = {row[0]: row for row in REGISTER_PROFILE}
-REGISTER_NUMBERS: Final = tuple(row[0] for row in REGISTER_PROFILE)
-READ_ONLY_REGISTERS: Final = frozenset(
+REGISTER_PROFILE = tuple(sorted((*_load(), *_AUTHORITATIVE_ADDITIONS), key=lambda row: row[0]))
+REGISTER_BY_NUMBER = {row[0]: row for row in REGISTER_PROFILE}
+REGISTER_NUMBERS = tuple(row[0] for row in REGISTER_PROFILE)
+READ_ONLY_REGISTERS = frozenset(
     row[0] for row in REGISTER_PROFILE if "только чтение" in row[3].lower()
 )
-MAINTENANCE_REGISTERS: Final = frozenset(
+MAINTENANCE_REGISTERS = frozenset(
     row[0] for row in REGISTER_PROFILE
     if row[0] >= 1021 or "запись" in row[3].lower()
 )

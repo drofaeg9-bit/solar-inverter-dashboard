@@ -375,7 +375,7 @@
     }
     function render(data) {
       lastData = data;
-      document.querySelector('#identifier').textContent = getDisplayIdentifier(data.identifier);
+      document.querySelector('#identifier').textContent = getDisplayIdentifier(data);
       const status = document.querySelector('#status');
       status.classList.toggle('online', chartDemoRunning || (data.online && !data.paused));
       status.classList.toggle('paused', !chartDemoRunning && data.paused);
@@ -817,10 +817,10 @@
       }
     }
 
-    function getDisplayIdentifier(dataIdentifier) {
+    function getDisplayIdentifier(data) {
       const customName = getCustomDeviceName();
       if (customName && customName.trim()) return customName.trim();
-      return dataIdentifier || t('unknownDevice');
+      return data?.online && data.identifier ? data.identifier : t('waitingInverter');
     }
 
     // Make functions globally available for app-events.js

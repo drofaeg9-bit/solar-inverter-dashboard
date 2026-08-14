@@ -446,12 +446,16 @@ class DashboardAssetTests(unittest.TestCase):
             self.assertIn(f'data-flow-card-settings="{card}"', html)
         self.assertIn('id="flow-card-picker"', html)
         self.assertIn("const FLOW_CARD_MAX_VALUES = 3", flow)
+        self.assertIn("const FLOW_CARD_SELECTION_KEY_PREFIX = 'inverter-flow-card-values-v2:'", flow)
+        self.assertIn("function normalizeFlowCardSelection(cardKey, selection)", flow)
         self.assertIn("const FLOW_CARD_CONFIG = Object.freeze", flow)
         self.assertIn("function renderFlowCardPickerList()", flow)
         self.assertIn("const selectedOrder = new Map(selected.map((register, index) => [register, index]))", flow)
         self.assertIn(".sort((left, right) => {", flow)
         self.assertIn("function openFlowCardPicker(cardKey)", flow)
         self.assertIn("function setFlowCardRegister(register, selected)", flow)
+        self.assertIn("function syncFlowCardSelectionsForFastPoll()", flow)
+        self.assertIn("fast_selected_registers: registers", flow)
         self.assertIn("openFlowCardPicker(button.dataset.flowCardSettings)", events)
 
     def test_poll_timing_reports_real_cycles_and_accounts_for_postprocessing(self) -> None:
@@ -590,11 +594,11 @@ class DashboardAssetTests(unittest.TestCase):
     def test_device_identifier_uses_the_12ku_model_when_serial_words_are_empty(self) -> None:
         from solar_inverter.services.inverter_service_core import decode_identifier
 
-        self.assertEqual(decode_identifier({}), "")
-        self.assertEqual(decode_identifier({1: 0xFFFF}), "")
+        self.assertEqual(decode_identifier({}), "TTN 12KU U3.0 Single")
+        self.assertEqual(decode_identifier({1: 0xFFFF}), "TTN 12KU U3.0 Single")
         self.assertEqual(
             decode_identifier({1: 0x5454, 2: 0x4E2D}),
-            "TTN 12KU U3 Single · TTN-",
+            "TTN 12KU U3.0 Single · TTN-",
         )
         runtime = (ROOT / "solar_inverter" / "services" / "inverter_service_runtime.py").read_text(encoding="utf-8")
         self.assertIn("Real inverter identifier could not be decoded from R1–R10", runtime)
@@ -827,7 +831,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertEqual(normalize(81, 2300)[3], 230.0)
         self.assertEqual(normalize(82, 1235)[3], 12.35)
         self.assertEqual(normalize(95, 65536 - 123)[3], -123.0)
-        self.assertEqual(normalize(130, 65536 - 180)[3], 18.0)
+        self.assertEqual(normalize(130, 65536 - 180)[3], -18.0)
         self.assertEqual(len(COUNTER_32BIT_LOW_WORD_REGISTERS), 30)
         self.assertEqual(combined_32bit_counter_value(453, {452: 1, 453: 18420}), 839.56)
 
@@ -853,8 +857,12 @@ class DashboardAssetTests(unittest.TestCase):
         )
         self.assertEqual(REGISTER_BY_NUMBER[70][2], "Статус топологии / single")
         self.assertEqual(REGISTER_BY_NUMBER[437][2], "Reserved после мощности сети A")
-        self.assertIn((1, 120), FAST_BLOCKS)
-        for register in range(1, 11):
+        self.assertEqual(
+            FAST_BLOCKS,
+            [(401, 19), (433, 5), (448, 8), (529, 2), (537, 9),
+             (801, 2), (817, 6), (16641, 16)],
+        )
+        for register in (404, 407, 433, 436, 537, 545, 801, 818, 16655):
             with self.subTest(register=register):
                 self.assertTrue(
                     any(start <= register < start + count for start, count in FAST_BLOCKS),
@@ -873,6 +881,10 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("numberValue([537, 89])", lcd)
         self.assertIn("firstRegister([537, 89])", flow)
         self.assertIn("firstRegister([545, 94])", flow)
+        self.assertIn("const batterySocSource = firstRegister([407])", flow)
+        self.assertIn("const measuredBatteryDirectionKnown", flow)
+        self.assertIn("? batteryCurrent < 0", flow)
+        self.assertIn("? batteryCurrent > 0", flow)
         self.assertNotIn("numberValue([84, 437, 436])", lcd)
 
     def test_build_and_installer_payload_manifests_match(self) -> None:
@@ -1219,6 +1231,12 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("const dailyPvEnergy = numberValue([157])", lcd)
         self.assertIn("setMeasure('#lcd-pv-day-energy', dailyPvEnergy)", lcd)
         self.assertIn("--lcd-soc", lcd)
+        self.assertIn('id="lcd-manual-context"', html)
+        self.assertIn("manualContext.dataset.icons !== iconSignature", lcd)
+        self.assertIn("manualContext.replaceChildren(icons)", lcd)
+        self.assertIn("/static/assets/lcd-icons/${iconName}.svg", lcd)
+        for icon_name in ("ac-input", "ac-output", "battery", "load", "solar", "charger", "energy"):
+            self.assertTrue((WEB_ROOT / "assets" / "lcd-icons" / f"{icon_name}.svg").is_file())
 
     def test_fan_animation_keeps_one_timeline_across_data_updates(self) -> None:
         flow_path = WEB_ROOT / "scripts" / "energy-flow.js"

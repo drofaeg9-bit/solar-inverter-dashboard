@@ -639,7 +639,7 @@
       
       document.querySelector('#settings-picker').close();
       if (lastData) {
-        document.querySelector('#identifier').textContent = getDisplayIdentifier(lastData.identifier);
+        document.querySelector('#identifier').textContent = getDisplayIdentifier(lastData);
       }
     });
     const gaugeHost = document.querySelector('#gauges');

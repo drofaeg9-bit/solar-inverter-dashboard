@@ -26,7 +26,10 @@ from .register_profile_12ku import (
     REGISTER_PROFILE,
     REGISTER_NUMBERS,
 )
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 def _environment_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
     """Read a bounded integer setting without making startup fragile."""
@@ -57,7 +60,12 @@ CONNECTION_MODE = _connection_mode_setting if _connection_mode_setting in {"rtu"
 COMMAND_TIMEOUT_SECONDS = _environment_float(
     "INVERTER_COMMAND_TIMEOUT_SECONDS", 3.0, minimum=0.1
 )
-MADRID_TIME_ZONE = ZoneInfo("Europe/Madrid")
+# Python 3.7 does not provide zoneinfo.  The deployed Orange Pi is configured
+# with the dashboard's local timezone, so its active local offset also retains
+# the correct daylight-saving behaviour for current readings.
+MADRID_TIME_ZONE = (
+    ZoneInfo("Europe/Madrid") if ZoneInfo is not None else datetime.now().astimezone().tzinfo
+)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FAVICON_PATH = PROJECT_ROOT / "favicon.png"
 _stats_path_setting = os.environ.get("INVERTER_STATS_DB")
@@ -191,28 +199,40 @@ KNOWN_REGISTERS = [
     16649, 16650, 16651, 16652, 16653, 16654, 16655, 16656,
 ]
 
-# Live operating values are read every cycle. Slow-changing metadata, settings,
-# duplicate channels, and diagnostics are distributed across cycles below so
-# fast mode does not spend most of its time starting mbpoll subprocesses.
+# Live operating values are read every cycle.  This TTN 12KU rejects broad
+# reads through sparse legacy address ranges (notably R1-R120, R129-R190, and
+# R321-R350) with Modbus server-failure responses.  These verified contiguous
+# banks contain the dashboard's active measurements and can be read reliably.
 FAST_BLOCKS = [
-    # R1-R10 contain the device identifier and must be refreshed every fast
-    # cycle. They are covered by this contiguous low-address telemetry block.
-    # Keep all low-address telemetry available to the meter panel every cycle.
-    # 120 words is within the Modbus 125-register limit for a single request.
-    (1, 120),
-    (129, 62),
-    (321, 30),
     (401, 19),
+    (433, 5),
+    (448, 8),
+    (529, 2),
+    (537, 9),
     (801, 2),
     (817, 6),
+    (16641, 16),
 ]
 
-FAST_AUXILIARY_BLOCK_GROUPS = [
-    [(1, 18), (27, 2), (58, 1)],
-    [(375, 14), (448, 8), (16641, 16)],
-    [(433, 5), (529, 2), (537, 9)],
-]
-fast_auxiliary_group_index = 0
+def fast_selected_blocks(selected_registers: list[int]) -> list[tuple[int, int]]:
+    """Group card-selected registers into efficient extra Fast-poll reads."""
+    always_read = {
+        register
+        for start, count in FAST_BLOCKS
+        for register in range(start, start + count)
+    }
+    registers = sorted({
+        register for register in selected_registers
+        if register in KNOWN_REGISTERS and register not in always_read
+    })
+    blocks: list[tuple[int, int]] = []
+    for register in registers:
+        if not blocks or register != blocks[-1][0] + blocks[-1][1] or blocks[-1][1] >= 125:
+            blocks.append((register, 1))
+        else:
+            start, count = blocks[-1]
+            blocks[-1] = (start, count + 1)
+    return blocks
 
 # Public R-numbers are one-based references. The inverter's Modbus PDU addresses
 # are zero-based, so R89 is protocol address 0x0058.  This is the TTN 12KU
@@ -446,17 +466,27 @@ REGISTER_WORD_FORMAT: dict[int, bool] = {
 # Restrict this to the counters (a low word with x10 scaling following a
 # same-unit unsigned high word); other H/L-labelled values are version or RGB
 # components and have their own display semantics.
+def _is_32bit_counter_low_word(
+    low_register: int, data_type: str, scale: float, unit: str, has_hl: bool
+) -> bool:
+    """Return whether a register is the low word of a cumulative counter."""
+    high_row = REGISTER_BY_NUMBER.get(low_register - 1)
+    return (
+        has_hl
+        and data_type == "uint16_t"
+        and scale == 10.0
+        and high_row is not None
+        and high_row[4] == "uint16_t"
+        and high_row[5] == 1.0
+        and high_row[6] == unit
+    )
+
+
 COUNTER_32BIT_LOW_WORD_REGISTERS: dict[int, int] = {
     low_register: low_register - 1
     for low_register, _group, _name, _access, data_type, scale, unit, has_hl
     in REGISTER_PROFILE
-    if has_hl
-    and data_type == "uint16_t"
-    and scale == 10.0
-    and (high_row := REGISTER_BY_NUMBER.get(low_register - 1)) is not None
-    and high_row[4] == "uint16_t"
-    and high_row[5] == 1.0
-    and high_row[6] == unit
+    if _is_32bit_counter_low_word(low_register, data_type, scale, unit, has_hl)
 }
 for register, group, name, _access, data_type, scale, unit, _has_hl in REGISTER_PROFILE:
     profile_scale = 0.01 if scale == 10.0 and unit == "Wh" else scale
@@ -716,7 +746,7 @@ def set_manual_register_edit(
             os.replace(temporary_path, MANUAL_REGISTER_VALUES_PATH)
         except OSError:
             if temporary_path.exists():
-                temporary_path.unlink(missing_ok=True)
+                temporary_path.unlink()
             raise
         manual_register_values.clear()
         manual_register_values.update(updated)
@@ -854,7 +884,10 @@ OPERATING_STATUS = {
 
 VALUE_PATTERN = re.compile(r"\[(\d+)\]:\s*(-?\d+)")
 
-DEVICE_MODEL_NAME = ""
+# This dashboard uses the TTN 12KU U3.0 register profile.  R1–R10 contain
+# the inverter's own ASCII identifier; when those words are blank, the verified
+# model name still identifies a connected inverter instead of showing unknown.
+DEVICE_MODEL_NAME = "TTN 12KU U3.0 Single"
 
 state_lock = threading.Lock()
 poll_wake_event = threading.Event()
@@ -871,6 +904,7 @@ state: dict[str, Any] = {
     "ошибок": 0,
     "error": "",
     "identifier": DEVICE_MODEL_NAME,
+    "fast_selected_registers": [],
     "values": {},
     "paused": False,
     "stop": False,
@@ -906,10 +940,8 @@ def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str
         return name, display, unit, None, group
 
     base = signed16(raw) if use_signed else raw
-    # This installed inverter reports R130 with the opposite direction to the
-    # UI convention: charging is positive and discharging is negative.
-    if register == 130:
-        base = -base
+    # Preserve the signed value reported by the inverter. Presentation code
+    # translates its R130 direction into charging/discharging labels.
     value = base * scale
 
     if scale == 1.0:
@@ -1032,17 +1064,14 @@ def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:
 
 
 def read_fast() -> tuple[dict[int, int], int, int, str | None]:
-    global fast_auxiliary_group_index
     values: dict[int, int] = {}
     failed = 0
     requests = 0
     last_error = None
-    auxiliary_blocks = FAST_AUXILIARY_BLOCK_GROUPS[fast_auxiliary_group_index]
-    fast_auxiliary_group_index = (
-        fast_auxiliary_group_index + 1
-    ) % len(FAST_AUXILIARY_BLOCK_GROUPS)
 
-    for start, count in [*FAST_BLOCKS, *auxiliary_blocks]:
+    with state_lock:
+        selected_blocks = fast_selected_blocks(state["fast_selected_registers"])
+    for start, count in [*FAST_BLOCKS, *selected_blocks]:
         block_values, error = run_mbpoll(start, count)
         requests += 1
 

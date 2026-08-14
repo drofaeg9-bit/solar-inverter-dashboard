@@ -11,44 +11,76 @@
     const INVERTER_FAN_MAX_RPM = 3000;
     const INVERTER_FAN_RATE_SMOOTHING_MS = 280;
     const FLOW_CARD_MAX_VALUES = 3;
+    const FLOW_CARD_SELECTION_KEY_PREFIX = 'inverter-flow-card-values-v2:';
+    const LEGACY_FLOW_CARD_SELECTION_KEY = 'inverter-flow-card-values-v1';
     const FLOW_CARD_CONFIG = Object.freeze({
       solar: {label: 'solarPanels', defaults: [151, 153, 152], registers: [151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163]},
       inverter: {label: 'inverter', defaults: [545, 801, 537], registers: [67, 68, 69, 321, 323, 324, 325, 529, 530, 537, 538, 539, 541, 542, 545, 801, 802]},
       generator: {label: 'generator', defaults: [88, 86, 85], registers: [85, 86, 87, 88]},
       home: {label: 'home', defaults: [541, 539, 537], registers: [89, 90, 91, 92, 93, 94, 188, 189, 190, 537, 538, 539, 541, 542, 545]},
       grid: {label: 'grid', defaults: [84, 82, 81], registers: [81, 82, 83, 84, 95, 180, 181, 182, 183, 184, 185, 186, 187, 433, 434, 435, 436]},
-      battery: {label: 'battery', defaults: [130, 134, 129], registers: [129, 130, 131, 132, 133, 134, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 341, 342, 343, 344, 345, 346, 375, 376, 377, 378, 379, 383, 384, 385, 386, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 16651, 16652, 16653, 16654]}
+      battery: {label: 'battery', defaults: [407, 405, 404], registers: [129, 130, 131, 132, 133, 134, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 341, 342, 343, 344, 345, 346, 375, 376, 377, 378, 379, 383, 384, 385, 386, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 16651, 16652, 16653, 16654]}
     });
     let activeFlowCardPicker = null;
+    let lastFastPollSelection = '';
 
-    function flowCardSelections() {
+    function legacyFlowCardSelections() {
       try {
-        const saved = JSON.parse(window.localStorage.getItem('inverter-flow-card-values-v1') || '{}');
+        const saved = JSON.parse(window.localStorage.getItem(LEGACY_FLOW_CARD_SELECTION_KEY) || '{}');
         return saved && typeof saved === 'object' ? saved : {};
       } catch {
         return {};
       }
     }
+    function normalizeFlowCardSelection(cardKey, selection) {
+      const config = FLOW_CARD_CONFIG[cardKey];
+      if (!config || !Array.isArray(selection)) return null;
+      return [...new Set(selection.map(Number))]
+        .filter(register => config.registers.includes(register))
+        .slice(0, FLOW_CARD_MAX_VALUES);
+    }
     function flowCardSelection(cardKey) {
       const config = FLOW_CARD_CONFIG[cardKey];
       if (!config) return [];
-      const saved = flowCardSelections()[cardKey];
-      if (Array.isArray(saved)) {
-        return saved
-          .map(Number)
-          .filter(register => config.registers.includes(register))
-          .slice(0, FLOW_CARD_MAX_VALUES);
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(`${FLOW_CARD_SELECTION_KEY_PREFIX}${cardKey}`) || 'null');
+        const normalized = normalizeFlowCardSelection(cardKey, saved);
+        if (normalized !== null) return normalized;
+      } catch {
+        // Fall through to migrate the legacy shared selection below.
+      }
+      const legacySelection = normalizeFlowCardSelection(cardKey, legacyFlowCardSelections()[cardKey]);
+      if (legacySelection !== null) {
+        saveFlowCardSelection(cardKey, legacySelection);
+        return legacySelection;
       }
       return config.defaults;
     }
     function saveFlowCardSelection(cardKey, selection) {
-      const saved = flowCardSelections();
-      saved[cardKey] = selection;
+      const normalized = normalizeFlowCardSelection(cardKey, selection);
+      if (normalized === null) return;
       try {
-        window.localStorage.setItem('inverter-flow-card-values-v1', JSON.stringify(saved));
+        window.localStorage.setItem(
+          `${FLOW_CARD_SELECTION_KEY_PREFIX}${cardKey}`,
+          JSON.stringify(normalized)
+        );
       } catch {
         // The selected readings still apply until the page is closed.
       }
+    }
+    function syncFlowCardSelectionsForFastPoll() {
+      const registers = Object.keys(FLOW_CARD_CONFIG)
+        .flatMap(cardKey => flowCardSelection(cardKey));
+      const signature = registers.join(',');
+      if (signature === lastFastPollSelection) return;
+      lastFastPollSelection = signature;
+      fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({fast_selected_registers: registers})
+      }).catch(() => {
+        // The dashboard remains usable if the local browser cannot reach the API.
+      });
     }
     function formatFlowCardRegister(register) {
       const value = registerNumericValue(register);
@@ -348,6 +380,8 @@
         const numbers = actualNumbers.length ? actualNumbers : fallbackNumbers;
         return [...new Set(numbers)].map(number => `R${number}`).join(' · ') || '—';
       };
+      const selectedRegisterText = cardKey =>
+        flowCardSelection(cardKey).map(number => `R${number}`).join(', ') || t('noData');
       const reading = (value, unit, digits = 0) =>
         Number.isFinite(value) ? `${Number(value.toFixed(digits))} ${unit}` : t('noData');
       const modeDetails = (source, modes) => {
@@ -444,7 +478,7 @@
       const outputCurrentSource = firstRegister([90, 539]);
       const batteryVoltageSource = firstRegister([129, 137, 404, 342]);
       const batteryCurrentSource = firstRegister([130]);
-      const batterySocSource = firstRegister([133, 139, 339, 407]);
+      const batterySocSource = firstRegister([407]);
       const batteryPowerSource = firstRegister([134, 149]);
       const inverterPrioritySource = firstRegister([529, 323, 16643]);
       const inverterAcModeSource = firstRegister([530, 321, 16644]);
@@ -485,7 +519,7 @@
       const batteryPowerMagnitude = Number.isFinite(batteryPowerReading)
         ? Math.abs(batteryPowerReading)
         : Number.isFinite(calculatedBatteryPower) ? Math.abs(calculatedBatteryPower) : null;
-      // R130 defines direction: positive discharge, negative charge. R134 supplies
+      // R130 is the inverter's signed current: positive discharge, negative charge. R134 supplies
       // the preferred magnitude so both battery values always use the same sign.
       const batteryPower = Number.isFinite(batteryCurrent)
         ? Math.abs(batteryCurrent) >= .3
@@ -509,17 +543,22 @@
       ));
       const measuredBatteryActive = (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3)
         || (Number.isFinite(batteryPower) && Math.abs(batteryPower) > 20);
+      const measuredBatteryDirectionKnown = Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3;
       const batteryActive = liveMeasurementsFresh && !flowSuppressedByState && batteryConnected && (energyFlowState
         ? energyFlowState.rectifierToBattery || energyFlowState.batteryToInverter
         : terminalState ? terminalState.battery === 2 || terminalState.battery === 3 : measuredBatteryActive);
-      const batteryCharging = batteryActive && (energyFlowState
+      const batteryCharging = batteryActive && (measuredBatteryDirectionKnown
+        ? batteryCurrent < 0
+        : energyFlowState
         ? energyFlowState.rectifierToBattery && !energyFlowState.batteryToInverter
         : terminalState ? terminalState.battery === 3
-        : Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3 ? batteryCurrent < 0 : batteryPower < 0);
-      const batteryDischarging = batteryActive && (energyFlowState
+        : batteryPower < 0);
+      const batteryDischarging = batteryActive && (measuredBatteryDirectionKnown
+        ? batteryCurrent > 0
+        : energyFlowState
         ? energyFlowState.batteryToInverter
         : terminalState ? terminalState.battery === 2
-        : Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3 ? batteryCurrent > 0 : batteryPower > 0);
+        : batteryPower > 0);
       const pvConnected = liveMeasurementsFresh && (terminalState
         ? terminalState.pv1 !== 0 || terminalState.pv2 !== 0
         : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .5);
@@ -716,6 +755,9 @@
       setText('#energy-generator-registers', chartDemoRunning
         ? t('demoMode')
         : registerText([generatorVoltageSource, generatorCurrentSource, generatorPowerSource, flowStateSource], [85, 86, 88, 69]));
+      for (const cardKey of Object.keys(FLOW_CARD_CONFIG)) {
+        setText(`#energy-${cardKey}-registers`, selectedRegisterText(cardKey));
+      }
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-solar-node',
         active: pvActive,
@@ -840,6 +882,7 @@
       renderFlowCardValues('home', '.energy-home-values', registers, homeConnected);
       renderFlowCardValues('grid', '.energy-grid-values', registers, gridAvailable);
       renderFlowCardValues('battery', '.energy-battery-values', registers, liveMeasurementsFresh && batteryConnected);
+      syncFlowCardSelectionsForFastPoll();
       // PV is a one-way source and can only supply the inverter.
       setFlow('#energy-pv-flow', pvActive && inverterActive && !pvReceiving, false, pvPower);
       document.querySelector('#energy-pv-flow')?.classList.toggle('disconnected', !pvConnected);

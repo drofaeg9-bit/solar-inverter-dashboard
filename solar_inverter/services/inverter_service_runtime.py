@@ -834,7 +834,10 @@ def get_updater_history() -> list:
                 """
             ).fetchall()
         for row in rows:
-            version_parts = row[1].removeprefix("updater-").split("-", 1)
+            commit_hash = row[1]
+            if commit_hash.startswith("updater-"):
+                commit_hash = commit_hash[len("updater-"):]
+            version_parts = commit_hash.split("-", 1)
             history.append({
                 "id": row[0],
                 "version": version_parts[0],
