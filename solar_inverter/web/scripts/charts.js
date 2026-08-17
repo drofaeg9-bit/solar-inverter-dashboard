@@ -740,6 +740,7 @@
       demoPvVoltage = registerNumericValue(demoRowsByNumber.get(151)) ?? 0;
       demoPvPower = registerNumericValue(demoRowsByNumber.get(161)) ?? 0;
       if (lastData) {
+        updateChartDefinitions(dashboardDefinitionData(lastData));
         if (!document.querySelector('#dashboard-view').hidden) {
           renderEnergyFlow(lastData, demoRegisterRows);
         } else {
