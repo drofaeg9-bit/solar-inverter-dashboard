@@ -1,3 +1,34 @@
+    function dashboardDefinitionData(data) {
+      if (!chartDemoRunning || !demoRegisterRows?.length) return data;
+
+      const demoMeters = new Map((data.meters || []).map(meter => [Number(meter.register), {...meter}]));
+      demoRegisterRows.forEach(reading => {
+        const register = Number(reading.register);
+        const value = registerNumericValue(reading);
+        const existingMeter = demoMeters.get(register);
+        if (existingMeter) {
+          existingMeter.value = Number.isFinite(value) ? value : 0;
+          existingMeter.available = Number.isFinite(value);
+          existingMeter.source = `R${register}`;
+          existingMeter.source_source = `R${register}`;
+          return;
+        }
+        demoMeters.set(register, {
+          register,
+          label: reading.name,
+          label_source: reading.name_source || reading.name,
+          minimum: null,
+          maximum: null,
+          unit: reading.unit,
+          value: Number.isFinite(value) ? value : 0,
+          source: `R${register}`,
+          source_source: `R${register}`,
+          available: Number.isFinite(value),
+        });
+      });
+      return {...data, registers: demoRegisterRows, meters: [...demoMeters.values()]};
+    }
+
     function synchronizeDemoChartDefinitions(scenario) {
       const demoRegistersByNumber = new Map(
         (demoRegisterRows || []).map(register => [register.register, register])

@@ -24,12 +24,12 @@ export interface RegisterReading {
   available: boolean;
 }
 
-/** A confirmed engineering-value definition used by dashboard gauges and charts. */
+/** A live engineering-value definition. Curated gauges include fixed bounds; dynamically discovered registers do not. */
 export interface MeterReading {
   register: number;
   label: string;
-  minimum: number;
-  maximum: number;
+  minimum: number | null;
+  maximum: number | null;
   unit: string;
   value: number;
   source: string;

@@ -507,6 +507,26 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("function localizeDataText", source)
         self.assertIn("function localizeApiField", source)
         for obsolete in (
+            "ÐšÐ¾Ð´ ÐºÐ¾Ð½Ñ„Ñ–Ð³ÑƒÑ€Ð°Ñ†Ñ–Ñ— 66",
+            "ÐšÐ¾Ð´ ÐºÐ¾Ð½Ñ„Ñ–Ð³ÑƒÑ€Ð°Ñ†Ñ–Ñ— 67",
+            "Ð¡Ð¸ÑÑ‚ÐµÐ¼Ð½Ðµ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð½Ñ 68",
+            "Ð£Ð¿Ð°ÐºÐ¾Ð²Ð°Ð½Ðµ Ð·Ð½Ð°ÐºÐ¾Ð²Ðµ Ð·Ð½Ð°Ñ‡ÐµÐ½Ð½Ñ 69",
+        ):
+            self.assertNotIn(obsolete, source)
+
+    def test_toolbar_icon_accessibility_labels_are_translated(self) -> None:
+        index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+        source = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
+        for control, translation_key in (
+            ("settings-button", "settingsAria"),
+            ("logs-button", "logsAria"),
+            ("modbus-debug-button", "modbusDebugAria"),
+        ):
+            self.assertRegex(
+                index,
+                rf'<button id="{control}"[^>]*data-i18n-aria="{translation_key}"',
+            )
+        for obsolete in (
             "Код конфігурації 66",
             "Код конфігурації 67",
             "Системне значення 68",
@@ -525,6 +545,7 @@ class DashboardAssetTests(unittest.TestCase):
             resolve_api_language,
             web_state,
         )
+        from solar_inverter.services.inverter_service import state, state_lock
 
         self.assertEqual(resolve_api_language("ru", "en-US,en;q=.9"), "ru")
         self.assertEqual(resolve_api_language("", "fr, en;q=.8, ru;q=.9"), "ru")
@@ -558,6 +579,22 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("b15", fault_mask["description"])
         self.assertTrue(all(item["description"] for item in snapshot["registers"]))
         self.assertTrue(all(item["description_reference"] in {"V1.31", "U3.0"} for item in snapshot["registers"]))
+
+        # The curated meter list is supplemented with every live register so
+        # external API consumers do not lose readings outside the dashboard's
+        # original gauge set.
+        with state_lock:
+            original_values = dict(state["values"])
+            state["values"][449] = 840
+        try:
+            live_snapshot = web_state("en")
+            discovered_meter = next(item for item in live_snapshot["meters"] if item["register"] == 449)
+            self.assertTrue(discovered_meter["available"])
+            self.assertIsNone(discovered_meter["minimum"])
+            self.assertIsNone(discovered_meter["maximum"])
+        finally:
+            with state_lock:
+                state["values"] = original_values
         self.assertIn("error_source", snapshot)
         self.assertIn("error_source", snapshot["register_log"])
 
@@ -1115,6 +1152,8 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("const demoFanSpeed = registerNumericValue(demoRowsByNumber.get(801))", chart_source)
         self.assertIn("updateInverterFanAnimation(", chart_source)
         self.assertIn("function synchronizeDemoChartDefinitions(scenario)", chart_source)
+        self.assertIn("function dashboardDefinitionData(data)", chart_source)
+        self.assertIn("return {...data, registers: demoRegisterRows, meters: [...demoMeters.values()]};", chart_source)
         self.assertIn("item.displayValue = registerVersionDisplay(matchingRegister", chart_source)
         self.assertIn("registerInterpretation({...matchingRegister, versionDisplay: item.displayValue})", chart_source)
         self.assertIn("item.source = `R${item.register} · ${t('demoMode')}`", chart_source)

@@ -422,7 +422,7 @@
       scheduleRegisterRender(displayedRegisters);
       renderEnergyFlow(data, displayedRegisters);
       renderLcd(data, displayedRegisters);
-      updateChartDefinitions(data);
+      updateChartDefinitions(dashboardDefinitionData(data));
     }
 
     function reloadDashboardForVersion(data) {

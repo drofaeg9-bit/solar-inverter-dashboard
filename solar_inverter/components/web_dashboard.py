@@ -217,6 +217,34 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             "manual": manual_value is not None,
             "edited": bool(edit),
         })
+
+    # ``METER_DEFINITIONS`` contains the curated dashboard cards.  Keep those
+    # stable (including their purpose-built gauge limits), then expose every
+    # other reading that was actually returned by the inverter as a meter too.
+    # This lets API consumers discover the complete live telemetry set without
+    # having to maintain a second, hard-coded register list.
+    curated_meter_registers = {register for register, *_ in METER_DEFINITIONS}
+    for reading in registers:
+        register = int(reading["register"])
+        if register in curated_meter_registers or not reading["available"]:
+            continue
+        value = reading["value"]
+        if value is None:
+            continue
+        meters.append({
+            "register": register,
+            "label": reading["name"],
+            "label_source": reading["name_source"],
+            # Unknown registers deliberately have no invented gauge range.
+            # The web client derives a safe range from the live value instead.
+            "minimum": None,
+            "maximum": None,
+            "unit": reading["unit"],
+            "value": value,
+            "source": f"R{register}" + (" (manual)" if reading["manual"] else ""),
+            "source_source": f"R{register}" + (" (manual)" if reading["manual"] else ""),
+            "available": True,
+        })
     return {"language": language,
         "dashboard_version": ASSET_VERSION,
         "dashboard_instance": DASHBOARD_INSTANCE_ID,

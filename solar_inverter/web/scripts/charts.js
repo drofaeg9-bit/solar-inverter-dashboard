@@ -224,7 +224,7 @@
       const picker = document.querySelector('#gauge-picker');
       // Rebuild from the original server labels on every open so the dialog
       // can never retain labels produced for a previously selected language.
-      if (lastData) chartDefinitions = collectChartDefinitions(lastData);
+      if (lastData) chartDefinitions = collectChartDefinitions(dashboardDefinitionData(lastData));
       if (typeof picker.showModal === 'function') picker.showModal();
       else picker.setAttribute('open', '');
       requestAnimationFrame(() => window.setTimeout(() => {
