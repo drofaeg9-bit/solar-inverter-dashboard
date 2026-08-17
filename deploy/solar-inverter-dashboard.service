@@ -8,10 +8,11 @@ Type=simple
 User=solar-dashboard
 Group=solar-dashboard
 SupplementaryGroups=dialout
-WorkingDirectory=/opt/solar_assistant
+WorkingDirectory=/opt/solar-inverter-dashboard
 StateDirectory=solar-inverter-dashboard
 Environment=PYTHONUNBUFFERED=1
 Environment=TZ=Europe/Madrid
+Environment=INVERTER_TIME_ZONE=Europe/Madrid
 Environment=INVERTER_WEB_HOST=127.0.0.1
 Environment=INVERTER_WEB_PORT=8080
 Environment=INVERTER_STATS_DB=/var/lib/solar-inverter-dashboard/stats.sqlite3
@@ -23,7 +24,7 @@ Environment=INVERTER_STATS_DB=/var/lib/solar-inverter-dashboard/stats.sqlite3
 # Environment=INVERTER_SLAVE_ID=1
 # Environment=INVERTER_TCP_HOST=192.168.1.50
 # Environment=INVERTER_TCP_PORT=502
-ExecStart=/usr/bin/python3 /opt/solar_assistant/solar_invertor_web.py
+ExecStart=/usr/bin/python3 /opt/solar-inverter-dashboard/solar_invertor_web.py
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15

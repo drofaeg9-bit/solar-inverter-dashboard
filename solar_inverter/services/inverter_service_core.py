@@ -27,9 +27,10 @@ from .register_profile_12ku import (
     REGISTER_NUMBERS,
 )
 try:
-    from zoneinfo import ZoneInfo
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 except ImportError:
     ZoneInfo = None
+    ZoneInfoNotFoundError = Exception
 
 def _environment_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
     """Read a bounded integer setting without making startup fragile."""
@@ -53,19 +54,26 @@ def _environment_float(name: str, default: float, *, minimum: float) -> float:
 DEVICE = os.environ.get("INVERTER_SERIAL_DEVICE", "/dev/ttyUSB0")
 SLAVE_ID = _environment_int("INVERTER_SLAVE_ID", 1, minimum=1, maximum=247)
 BAUD_RATE = _environment_int("INVERTER_BAUD_RATE", 9600, minimum=300, maximum=4_000_000)
-TCP_IP = os.environ.get("INVERTER_TCP_HOST", "192.168.1.100")
+TCP_IP = os.environ.get("INVERTER_TCP_HOST", "")
 TCP_PORT = _environment_int("INVERTER_TCP_PORT", 502, minimum=1, maximum=65535)
 _connection_mode_setting = os.environ.get("INVERTER_CONNECTION_MODE", "rtu").lower()
 CONNECTION_MODE = _connection_mode_setting if _connection_mode_setting in {"rtu", "tcp"} else "rtu"
 COMMAND_TIMEOUT_SECONDS = _environment_float(
     "INVERTER_COMMAND_TIMEOUT_SECONDS", 3.0, minimum=0.1
 )
-# Python 3.7 does not provide zoneinfo.  The deployed Orange Pi is configured
-# with the dashboard's local timezone, so its active local offset also retains
-# the correct daylight-saving behaviour for current readings.
-MADRID_TIME_ZONE = (
-    ZoneInfo("Europe/Madrid") if ZoneInfo is not None else datetime.now().astimezone().tzinfo
-)
+def _configured_time_zone():
+    """Return the configured IANA zone, or the host zone when unavailable."""
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo(os.environ.get("INVERTER_TIME_ZONE", "Europe/Madrid"))
+        except ZoneInfoNotFoundError:
+            pass
+    return datetime.now().astimezone().tzinfo
+
+
+# Python 3.7 lacks zoneinfo and minimal development systems may lack the IANA
+# zone database. In either case, use the host's configured local timezone.
+MADRID_TIME_ZONE = _configured_time_zone()
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FAVICON_PATH = PROJECT_ROOT / "favicon.png"
 _stats_path_setting = os.environ.get("INVERTER_STATS_DB")

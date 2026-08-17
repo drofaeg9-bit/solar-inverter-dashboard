@@ -129,7 +129,7 @@ Do not continue until `command -v mbpoll` returns `/usr/local/bin/mbpoll` (or an
 
 ## 5. Build and copy the dashboard updater
 
-On the development PC, from the repository root, create the self-contained updater. This is the supported first-install path; it creates `/opt/solar_assistant`, the restricted `solar-dashboard` account, the persistent state directory, and the systemd service.
+On the development PC, from the repository root, create the self-contained updater. This is the supported first-install path; it creates `/opt/solar-inverter-dashboard`, the restricted `solar-dashboard` account, the persistent state directory, and the systemd service.
 
 ```powershell
 py -3 deploy/build_update_bundle.py
@@ -198,7 +198,7 @@ Complete the authorization URL printed by `tailscale up`, then open the HTTPS ad
 - To inspect service failures: `sudo journalctl -u solar-inverter-dashboard.service -f`
 - To check the USB adapter after reconnecting it: `ls -l /dev/ttyUSB*` and `dmesg | tail -n 30`
 - To apply a later dashboard release: build and copy a new `solar-dashboard-update.pyz`, then run `sudo python3 ~/solar-dashboard-update.pyz`.
-- Do not run `git clean` under `/opt/solar_assistant`; it can remove register logs.
+- Do not run `git clean` under `/opt/solar-inverter-dashboard`; it can remove register logs.
 
 For the ongoing operational procedure, troubleshooting, and Tailscale details, continue with [ORANGE_PI_DEPLOYMENT.md](ORANGE_PI_DEPLOYMENT.md).
 

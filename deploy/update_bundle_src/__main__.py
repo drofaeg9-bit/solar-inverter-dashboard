@@ -23,9 +23,10 @@ from pathlib import Path
 from pathlib import PurePosixPath
 
 
-APPLICATION_ROOT = Path("/opt/solar_assistant")
+APPLICATION_ROOT = Path("/opt/solar-inverter-dashboard")
 STATS_DATABASE_PATH = Path("/var/lib/solar-inverter-dashboard/stats.sqlite3")
-LEGACY_STATS_DATABASE_PATH = APPLICATION_ROOT / "solar_invertor_web_stats.sqlite3"
+LEGACY_APPLICATION_ROOT = Path("/opt/solar_assistant")
+LEGACY_STATS_DATABASE_PATH = LEGACY_APPLICATION_ROOT / "solar_invertor_web_stats.sqlite3"
 UPDATER_RECEIPT_PATH = APPLICATION_ROOT / "updater_history.json"
 UPDATER_ARCHIVE_DIR = APPLICATION_ROOT / "updater_archives"
 UPSTREAM_VERSION_PAYLOAD = ".solar-dashboard-upstream.json"
@@ -34,8 +35,6 @@ SERVICE_NAME = "solar-inverter-dashboard.service"
 SERVICE_TARGET = Path("/etc/systemd/system") / SERVICE_NAME
 SERVICE_USER = "solar-dashboard"
 SERVICE_GROUP = "solar-dashboard"
-HEALTH_URL = "http://127.0.0.1:8080/api/state"
-VERSION_URL = "http://127.0.0.1:8080/api/version"
 UPDATER_VERSION = "5"
 DEFAULT_GIT_REMOTE = "origin"
 DEFAULT_GIT_BRANCH = "main"
@@ -57,6 +56,13 @@ REQUIRED_RUNTIME_FILES = (
     "solar_inverter/web/index.html",
     "solar_inverter/web/styles/dashboard.css",
     "solar_inverter/web/styles/dashboard-responsive.css",
+    "solar_inverter/web/assets/lcd-icons/ac-input.svg",
+    "solar_inverter/web/assets/lcd-icons/ac-output.svg",
+    "solar_inverter/web/assets/lcd-icons/battery.svg",
+    "solar_inverter/web/assets/lcd-icons/charger.svg",
+    "solar_inverter/web/assets/lcd-icons/energy.svg",
+    "solar_inverter/web/assets/lcd-icons/load.svg",
+    "solar_inverter/web/assets/lcd-icons/solar.svg",
     "solar_inverter/web/vendor/uPlot.iife.min.js",
     "solar_inverter/web/vendor/uPlot.min.css",
     "solar_inverter/web/vendor/LICENSE-uPlot.txt",
@@ -543,17 +549,30 @@ def record_installed_version(uid: int, gid: int, dashboard_version: str) -> None
     print(f"Recorded Updater {release_version}: {archive_name}", flush=True)
 
 
+def active_service_environment() -> dict[str, str]:
+    """Read the environment systemd actually applied to the running service."""
+    values = run(
+        ["systemctl", "show", SERVICE_NAME, "--property=Environment", "--value"],
+        capture_output=True,
+    ).stdout.strip().split()
+    return dict(value.split("=", 1) for value in values if "=" in value)
+
+
 def wait_for_health(expected_version: str) -> None:
     """Wait for the restarted API and require the bundled dashboard version."""
+    settings = active_service_environment()
+    port = settings.get("INVERTER_WEB_PORT", "8080")
+    health_url = f"http://127.0.0.1:{port}/api/state"
+    version_url = f"http://127.0.0.1:{port}/api/version"
     last_error = "no response"
     for _ in range(15):
         try:
-            with urllib.request.urlopen(VERSION_URL, timeout=2) as response:
+            with urllib.request.urlopen(version_url, timeout=2) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 running_version = str(data.get("dashboard_version", ""))
                 if response.status == 200 and running_version == expected_version:
                     print(
-                        f"Dashboard API is healthy: {HEALTH_URL} "
+                        f"Dashboard API is healthy: {health_url} "
                         f"(version {running_version})",
                         flush=True,
                     )
@@ -568,6 +587,58 @@ def wait_for_health(expected_version: str) -> None:
     run(["systemctl", "--no-pager", "--full", "status", SERVICE_NAME], check=False)
     run(["journalctl", "-u", SERVICE_NAME, "-n", "50", "--no-pager"], check=False)
     raise RuntimeError(f"Dashboard health check failed: {last_error}")
+
+
+def review_active_connections() -> None:
+    """Report the actual service and Tailscale configuration without changing it."""
+    settings = active_service_environment()
+    connection_mode = settings.get("INVERTER_CONNECTION_MODE", "rtu")
+    print("Active inverter connection configuration:", flush=True)
+    if connection_mode == "tcp":
+        print(
+            "  mode=tcp "
+            f"host={settings.get('INVERTER_TCP_HOST', '<not configured>')} "
+            f"port={settings.get('INVERTER_TCP_PORT', '502')}",
+            flush=True,
+        )
+    else:
+        print(
+            "  mode=rtu "
+            f"device={settings.get('INVERTER_SERIAL_DEVICE', '/dev/ttyUSB0')} "
+            f"baud={settings.get('INVERTER_BAUD_RATE', '9600')} "
+            f"slave={settings.get('INVERTER_SLAVE_ID', '1')}",
+            flush=True,
+        )
+    print(
+        "  web="
+        f"{settings.get('INVERTER_WEB_HOST', '0.0.0.0')}:"
+        f"{settings.get('INVERTER_WEB_PORT', '8080')} "
+        f"timezone={settings.get('INVERTER_TIME_ZONE', settings.get('TZ', '<host default>'))}",
+        flush=True,
+    )
+
+    tailscale_path = shutil.which("tailscale")
+    if tailscale_path is None:
+        print("Tailscale review: not installed; no Tailscale configuration was changed.", flush=True)
+        return
+    status = run([tailscale_path, "status", "--json"], check=False, capture_output=True)
+    if status.returncode:
+        print("Tailscale review: unavailable or not authenticated; no Tailscale configuration was changed.", flush=True)
+        return
+    try:
+        self_status = json.loads(status.stdout).get("Self", {})
+    except (TypeError, ValueError):
+        print("Tailscale review: status could not be parsed; no Tailscale configuration was changed.", flush=True)
+        return
+    owner = self_status.get("UserProfile", {}).get("LoginName") or self_status.get("UserID", "unknown")
+    machine_name = self_status.get("HostName", "unknown")
+    dns_name = self_status.get("DNSName", "unknown")
+    print(
+        f"Tailscale review: machine={machine_name} dns={dns_name} owner={owner}",
+        flush=True,
+    )
+    run([tailscale_path, "serve", "status"], check=False)
+    run([tailscale_path, "funnel", "status"], check=False)
 
 
 def install() -> None:
@@ -589,8 +660,7 @@ def install() -> None:
     run(["systemctl", "enable", SERVICE_NAME])
     run(["systemctl", "restart", SERVICE_NAME])
     wait_for_health(expected_version)
-    if shutil.which("tailscale"):
-        run(["tailscale", "serve", "status"], check=False)
+    review_active_connections()
     print("Solar Inverter Dashboard update completed successfully.", flush=True)
 
 
@@ -644,6 +714,7 @@ def update_from_github() -> None:
     run(["systemctl", "daemon-reload"])
     run(["systemctl", "restart", SERVICE_NAME])
     wait_for_health(expected_version)
+    review_active_connections()
     print(
         f"Installed GitHub commit {installed_hash} (dashboard version {expected_version}).",
         flush=True,

@@ -2,6 +2,7 @@ from __future__ import annotations
 import csv
 import gzip
 import json
+import mimetypes
 import os
 import secrets
 import subprocess
@@ -333,11 +334,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
         if request_path in DASHBOARD_STATIC_PATHS:
             path = DASHBOARD_STATIC_PATHS[request_path]
-            content_type = (
-                "text/css; charset=utf-8"
-                if path.suffix.lower() == ".css"
-                else "text/javascript; charset=utf-8"
-            )
+            content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            if content_type.startswith("text/") or content_type in {
+                "application/javascript",
+                "application/json",
+            }:
+                content_type = f"{content_type}; charset=utf-8"
             try:
                 metadata = path.stat()
                 self.send_content(
@@ -345,7 +347,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     content_type,
                     cache_control="public, max-age=31536000, immutable",
                     etag=f'W/"{metadata.st_mtime_ns:x}-{metadata.st_size:x}"',
-                    compress=True,
+                    compress=content_type.startswith(("text/", "application/javascript", "image/svg+xml")),
                 )
             except OSError:
                 self.send_content(b"", content_type, HTTPStatus.NOT_FOUND)

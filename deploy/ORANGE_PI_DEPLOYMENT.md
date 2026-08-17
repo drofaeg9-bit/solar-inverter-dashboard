@@ -21,7 +21,7 @@ ssh orangepi@ORANGE_PI_IP
 sudo python3 ~/solar-dashboard-update.pyz
 ```
 
-The updater validates its embedded Python files before installation, creates the restricted service account when necessary, installs missing `git`, `mbpoll`, or timezone data through `apt-get`, updates only the required application files, installs the systemd unit, restarts the service, and checks `http://127.0.0.1:8080/api/state`.
+The updater validates its embedded Python files before installation, creates the restricted service account when necessary, installs missing `git`, `mbpoll`, or timezone data through `apt-get`, updates only the required application files, installs the systemd unit, restarts the service, and checks `http://127.0.0.1:8080/api/state`. It then reports the active inverter connection settings and, when Tailscale is installed, the signed-in Tailscale identity, machine/DNS name, and current Serve/Funnel status. This review is read-only: the updater never changes Tailscale settings or invents a connection address.
 
 It does not replace the statistics database, register logs, Tailscale configuration, optional integration, Android project, or documentation. To inspect a copied archive without changing the Orange Pi, run:
 

@@ -30,23 +30,45 @@ EXCLUDED_PAYLOAD_FILES = frozenset({
     "solar_invertor_web_stats.sqlite3",
     "config/home-assistant_v2.db",
 })
+RUNTIME_ROOT_FILES = (
+    "solar_invertor_web.py",
+    "favicon.png",
+    "generator-mask.png",
+    "1258380.png",
+    "inverter.svg",
+    "home.svg",
+    "deploy/solar-inverter-dashboard.service",
+)
+RUNTIME_SOURCE_DIRECTORIES = ("solar_inverter",)
 
 
 def project_payload_files() -> tuple[str, ...]:
-    """Return every deployable source file in this project workspace."""
+    """Return exactly the dashboard runtime files, including all web assets.
+
+    Development-only content such as Home Assistant configuration, logs,
+    documentation, Android builds, and local databases must never be copied to
+    the Orange Pi by an application update.
+    """
     files: list[str] = []
-    for directory, child_directories, filenames in os.walk(PROJECT_ROOT):
-        child_directories[:] = [
-            name for name in child_directories
-            if name not in EXCLUDED_PAYLOAD_DIRECTORIES
-        ]
-        directory_path = Path(directory)
-        for filename in filenames:
-            source = directory_path / filename
-            relative_name = source.relative_to(PROJECT_ROOT).as_posix()
-            if relative_name in EXCLUDED_PAYLOAD_FILES or source.suffix in {".pyc", ".pyo"}:
-                continue
-            files.append(relative_name)
+    for relative_name in RUNTIME_ROOT_FILES:
+        source = PROJECT_ROOT / relative_name
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        files.append(relative_name)
+    for source_directory in RUNTIME_SOURCE_DIRECTORIES:
+        root = PROJECT_ROOT / source_directory
+        for directory, child_directories, filenames in os.walk(root):
+            child_directories[:] = [
+                name for name in child_directories
+                if name not in EXCLUDED_PAYLOAD_DIRECTORIES
+            ]
+            directory_path = Path(directory)
+            for filename in filenames:
+                source = directory_path / filename
+                relative_name = source.relative_to(PROJECT_ROOT).as_posix()
+                if relative_name in EXCLUDED_PAYLOAD_FILES or source.suffix in {".pyc", ".pyo"}:
+                    continue
+                files.append(relative_name)
     return tuple(sorted(files))
 
 def ensure_updater_history_schema(connection: sqlite3.Connection) -> None:
