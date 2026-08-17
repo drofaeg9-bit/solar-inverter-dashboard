@@ -306,7 +306,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 and len(body) >= 1024
                 and "gzip" in self.headers.get("Accept-Encoding", "").lower()
             ):
-                body = gzip.compress(body, compresslevel=5, mtime=0)
+                try:
+                    # ``mtime`` makes compressed assets reproducible on modern
+                    # Python, but gzip.compress on Debian Buster's Python 3.7
+                    # does not accept it. Tailscale Serve requests gzip, so
+                    # falling back here prevents its reverse proxy receiving
+                    # an EOF/502 from the handler.
+                    body = gzip.compress(body, compresslevel=5, mtime=0)
+                except TypeError:
+                    body = gzip.compress(body, compresslevel=5)
                 response_headers["Content-Encoding"] = "gzip"
                 vary = response_headers.get("Vary", "")
                 response_headers["Vary"] = ", ".join(
@@ -947,7 +955,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     state["poll_rate_index"] = index
                 if "read_mode" in payload:
                     mode = str(payload["read_mode"])
-                    if mode not in {"fast", "compatible"}:
+                    if mode not in {"fast", "compatible", "scan"}:
                         raise ValueError("неправильний режим читання")
                     state["read_mode"] = mode
                 if "fast_selected_registers" in payload:

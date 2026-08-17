@@ -76,8 +76,8 @@
       const gridLowVoltageThreshold = numberValue([16655]);
       const loadPower = numberValue([541, 92, 188]);
       const apparentLoadPower = numberValue([542, 93]);
-      const batteryVoltage = numberValue([129, 137, 404, 342]);
-      const batteryCurrent = numberValue([130]);
+      const batteryVoltage = numberValue([404, 129, 137, 342]);
+      const batteryCurrent = numberValue([405, 130]);
       const measuredBatterySoc = numberValue([407]);
       const batteryPowerReading = numberValue([134]);
       const batteryTemperature = numberValue([140, 406]);
@@ -113,10 +113,11 @@
       const batteryConnected = terminalState
         ? terminalState.battery !== 0
         : Number.isFinite(batteryVoltage) && batteryVoltage > 20;
+      // Battery current uses the BMS convention: positive charge, negative discharge.
       const measuredBatteryCharging = Number.isFinite(batteryActiveValue)
-        && batteryActiveValue < -batteryActivityThreshold;
-      const measuredBatteryDischarging = Number.isFinite(batteryActiveValue)
         && batteryActiveValue > batteryActivityThreshold;
+      const measuredBatteryDischarging = Number.isFinite(batteryActiveValue)
+        && batteryActiveValue < -batteryActivityThreshold;
       const batteryCharging = liveMeasurementsFresh && !flowSuppressed && batteryConnected && (batteryDirectionFromCurrent
         ? measuredBatteryCharging
         : flowState
@@ -216,7 +217,7 @@
       const kilowattReading = (value, unit) =>
         Number.isFinite(value) ? reading(value / 1000, unit, 2) : t('noData');
       const chargerCurrent = sumValues([159, 160]);
-      const dischargingCurrent = Number.isFinite(batteryCurrent) && batteryCurrent > 0
+      const dischargingCurrent = Number.isFinite(batteryCurrent) && batteryCurrent < 0
         ? Math.abs(batteryCurrent)
         : 0;
       const pages = [

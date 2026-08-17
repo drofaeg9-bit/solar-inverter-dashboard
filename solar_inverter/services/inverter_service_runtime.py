@@ -644,7 +644,7 @@ def poll_worker() -> None:
         
         print(f"[Poll Worker] Cycle started - Mode: {mode}, Interval: {cycle_interval:.2f}s, Connection: {CONNECTION_MODE.upper()}")
 
-        if mode == "compatible":
+        if mode in {"compatible", "scan"}:
             fresh, failed, requests, error = read_compatible()
         else:
             fresh, failed, requests, error = read_fast()
@@ -684,6 +684,10 @@ def poll_worker() -> None:
             state["identifier"] = identifier
             state["values"] = dict(cached)
             state["connection_mode"] = CONNECTION_MODE
+            # A full scan is intentionally one-shot: it populates the cached
+            # register snapshot, then restores low-latency live monitoring.
+            if mode == "scan":
+                state["read_mode"] = "fast"
             log_cycle_id = int(state["cycle_id"])
             log_values = dict(cached)
 

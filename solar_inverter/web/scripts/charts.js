@@ -386,7 +386,7 @@
         pvVoltage = 326 + ripple * 4;
         pvPower = 7200 + Math.sin(second * .21) * 260;
         loadPower = 2500 + Math.sin(second * .29) * 140;
-        batteryCurrent = -(42 + ripple * 1.5);
+        batteryCurrent = 42 + ripple * 1.5;
         batterySoc = 72 + second * .08;
         statusCode = 4;
         outputPriority = 2;
@@ -397,7 +397,7 @@
         pvVoltage = 0;
         pvPower = 0;
         loadPower = 2900 + ripple * 130;
-        batteryCurrent = -(18 + ripple);
+        batteryCurrent = 18 + ripple;
         batterySoc = 73.6 + (second - 20) * .05;
         statusCode = 3;
         outputPriority = 0;
@@ -410,7 +410,7 @@
         pvVoltage = 0;
         pvPower = 0;
         loadPower = 2300 + Math.sin(second * .31) * 160;
-        batteryCurrent = loadPower / 51.8;
+        batteryCurrent = -loadPower / 51.8;
         batterySoc = 74.4 - (second - 40) * .09;
         statusCode = 5;
         outputPriority = 0;
@@ -450,7 +450,7 @@
         pvVoltage = 320 + ripple * 3;
         pvPower = 1500 + ripple * 120;
         loadPower = 2500 + Math.sin(second * .25) * 120;
-        batteryCurrent = 20 + ripple;
+        batteryCurrent = -(20 + ripple);
         batterySoc = 72.5 - (second - 100) * .07;
         statusCode = 4;
         outputPriority = 2;
@@ -469,19 +469,19 @@
       const powerFactor = .86;
       const apparentLoadPower = loadPower / powerFactor;
       const gridPower = gridAvailable ? Math.max(0,
-        loadPower + Math.max(0, -batteryPower)
-          - Math.max(0, pvPower) - Math.max(0, batteryPower) - Math.max(0, generatorPower)
+        loadPower + Math.max(0, batteryPower)
+          - Math.max(0, pvPower) - Math.max(0, -batteryPower) - Math.max(0, generatorPower)
       ) : 0;
       const inputMode = generatorPower > 20 ? 2 : 0;
       const generatorVoltage = generatorPower > 20 ? 230 : 0;
       const generatorCurrent = generatorVoltage > 0 ? generatorPower / generatorVoltage : 0;
-      const pvChargingCurrent = pvPower > loadPower ? Math.max(0, -batteryCurrent) : 0;
+      const pvChargingCurrent = pvPower > loadPower ? Math.max(0, batteryCurrent) : 0;
       const gridTerminalState = gridAvailable ? 2 : 0;
       const generatorTerminalState = generatorPower > 20 ? 2 : 0;
       const pv1TerminalState = pvPower > 20 ? 2 : 0;
       const outputTerminalState = loadPower > 0 ? 1 : 0;
-      const batteryTerminalState = batteryCurrent < -.3 ? 3 : batteryCurrent > .3 ? 2 : batterySoc <= 20 ? 1 : 4;
-      const chargingStage = batteryCurrent < -.3 ? 1 : 0;
+      const batteryTerminalState = batteryCurrent > .3 ? 3 : batteryCurrent < -.3 ? 2 : batterySoc <= 20 ? 1 : 4;
+      const chargingStage = batteryCurrent > .3 ? 1 : 0;
       const energyTerminalState = gridTerminalState
         | generatorTerminalState << 2
         | pv1TerminalState << 4
@@ -491,9 +491,9 @@
       const energyFlowState = (gridPower > 20 ? (1 << 0) | (1 << 1) : 0)
         | (generatorPower > 20 ? (1 << 2) | (1 << 3) : 0)
         | (pvPower > 20 ? 1 << 4 : 0)
-        | (batteryCurrent < -.3 ? 1 << 5 : 0)
+        | (batteryCurrent > .3 ? 1 << 5 : 0)
         | (gridPower > 20 || generatorPower > 20 || pvPower > 20 ? 1 << 6 : 0)
-        | (batteryCurrent > .3 ? 1 << 8 : 0)
+        | (batteryCurrent < -.3 ? 1 << 8 : 0)
         | (loadPower > 0 ? 1 << 9 : 0);
       const energyProgress = second / 120;
       return {

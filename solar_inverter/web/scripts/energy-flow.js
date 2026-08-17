@@ -345,10 +345,16 @@
     }
     function renderGridConsumptionEnergy(registers = []) {
       const valuesByRegister = new Map(registers.map(register => [Number(register.register), register]));
+      // R449/R451/R453 are the live 32-bit grid-import counters (their high
+      // words R448/R450/R452 are read in the same fast block).  R184–R186
+      // remain a compatibility fallback for devices that expose those totals.
+      const firstAvailableValue = numbers => numbers
+        .map(number => registerNumericValue(valuesByRegister.get(number)))
+        .find(Number.isFinite);
       const values = {
-        '#grid-energy-today': registerNumericValue(valuesByRegister.get(184)),
-        '#grid-energy-month': registerNumericValue(valuesByRegister.get(185)),
-        '#grid-energy-year': registerNumericValue(valuesByRegister.get(186))
+        '#grid-energy-today': firstAvailableValue([449, 184]),
+        '#grid-energy-month': firstAvailableValue([451, 185]),
+        '#grid-energy-year': firstAvailableValue([453, 186])
       };
       Object.entries(values).forEach(([selector, value]) => {
         const element = document.querySelector(selector);
@@ -476,8 +482,12 @@
       const inverterFanSpeedSource = firstRegister([801]);
       const outputVoltageSource = firstRegister([537, 89]);
       const outputCurrentSource = firstRegister([90, 539]);
-      const batteryVoltageSource = firstRegister([129, 137, 404, 342]);
-      const batteryCurrentSource = firstRegister([130]);
+      // The BMS bank (R404/R405/R407) is read on every fast cycle and is the
+      // live source shown by the battery card.  Prefer it over the optional
+      // inverter fast-bank values so a BMS-reported discharge is animated even
+      // when R130 was not selected for an extra read.
+      const batteryVoltageSource = firstRegister([404, 129, 137, 342]);
+      const batteryCurrentSource = firstRegister([405, 130]);
       const batterySocSource = firstRegister([407]);
       const batteryPowerSource = firstRegister([134, 149]);
       const inverterPrioritySource = firstRegister([529, 323, 16643]);
@@ -519,8 +529,9 @@
       const batteryPowerMagnitude = Number.isFinite(batteryPowerReading)
         ? Math.abs(batteryPowerReading)
         : Number.isFinite(calculatedBatteryPower) ? Math.abs(calculatedBatteryPower) : null;
-      // R130 is the inverter's signed current: positive discharge, negative charge. R134 supplies
-      // the preferred magnitude so both battery values always use the same sign.
+      // Battery current uses the BMS convention: positive charge, negative
+      // discharge. R134 supplies the preferred magnitude so both values keep
+      // that same sign.
       const batteryPower = Number.isFinite(batteryCurrent)
         ? Math.abs(batteryCurrent) >= .3
           ? Number.isFinite(batteryPowerMagnitude)
@@ -544,21 +555,26 @@
       const measuredBatteryActive = (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3)
         || (Number.isFinite(batteryPower) && Math.abs(batteryPower) > 20);
       const measuredBatteryDirectionKnown = Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3;
-      const batteryActive = liveMeasurementsFresh && !flowSuppressedByState && batteryConnected && (energyFlowState
-        ? energyFlowState.rectifierToBattery || energyFlowState.batteryToInverter
-        : terminalState ? terminalState.battery === 2 || terminalState.battery === 3 : measuredBatteryActive);
+      // A non-zero measured BMS current is authoritative.  R69 is useful for
+      // topology, but may be absent or lag one poll behind the BMS bank.
+      const batteryActive = liveMeasurementsFresh && !flowSuppressedByState && batteryConnected && (
+        measuredBatteryActive
+        || (energyFlowState
+          ? energyFlowState.rectifierToBattery || energyFlowState.batteryToInverter
+          : terminalState ? terminalState.battery === 2 || terminalState.battery === 3 : false)
+      );
       const batteryCharging = batteryActive && (measuredBatteryDirectionKnown
-        ? batteryCurrent < 0
+        ? batteryCurrent > 0
         : energyFlowState
         ? energyFlowState.rectifierToBattery && !energyFlowState.batteryToInverter
         : terminalState ? terminalState.battery === 3
-        : batteryPower < 0);
+        : batteryPower > 0);
       const batteryDischarging = batteryActive && (measuredBatteryDirectionKnown
-        ? batteryCurrent > 0
+        ? batteryCurrent < 0
         : energyFlowState
         ? energyFlowState.batteryToInverter
         : terminalState ? terminalState.battery === 2
-        : batteryPower > 0);
+        : batteryPower < 0);
       const pvConnected = liveMeasurementsFresh && (terminalState
         ? terminalState.pv1 !== 0 || terminalState.pv2 !== 0
         : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .5);
@@ -727,7 +743,8 @@
           : [0, 1, 2, 8, 9, 10].includes(inverterState)
             ? t('flowStopped')
             : data.online ? t('batteryIdle') : t('offline');
-      const statusText = [chartDemoRunning ? t('demoMode') : '', topologyCode, routeText].filter(Boolean).join(' · ');
+      const demoStatus = chartDemoRunning ? t(demoFlowCase || 'demoMode') : '';
+      const statusText = [demoStatus, topologyCode, routeText].filter(Boolean).join(' · ');
       setText('#energy-flow-status', statusText);
       const statusElement = document.querySelector('#energy-flow-status');
       if (statusElement) {

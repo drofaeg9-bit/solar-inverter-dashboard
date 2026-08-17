@@ -403,7 +403,14 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertNotIn("firstRegister([70, 322])", flow)
         self.assertIn("firstRegister([84, 436])", flow)
         self.assertIn("firstRegister([161, 153, 156])", flow)
+        self.assertIn("firstAvailableValue([449, 184])", flow)
+        self.assertIn("firstAvailableValue([451, 185])", flow)
+        self.assertIn("firstAvailableValue([453, 186])", flow)
+        self.assertIn("firstRegister([404, 129, 137, 342])", flow)
+        self.assertIn("firstRegister([405, 130])", flow)
+        self.assertIn("measuredBatteryActive\n        || (energyFlowState", flow)
         self.assertIn("const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online)", flow)
+        self.assertIn("const demoStatus = chartDemoRunning ? t(demoFlowCase || 'demoMode') : ''", flow)
         self.assertIn("grid: raw & 0x03", flow)
         self.assertIn("generator: (raw >> 2) & 0x03", flow)
         self.assertIn("pv1: (raw >> 4) & 0x03", flow)
@@ -472,6 +479,11 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("cycle_work_duration = time.monotonic() - started", service)
         self.assertIn("poll_rate - cycle_work_duration", service)
         self.assertIn('"read_seconds": snapshot["read_seconds"]', server)
+        self.assertIn('mode not in {"fast", "compatible", "scan"}', server)
+        self.assertIn('mode in {"compatible", "scan"}', service)
+        self.assertIn('if mode == "scan":', service)
+        self.assertIn('state["read_mode"] = "fast"', service)
+        self.assertIn('<option value="scan" data-i18n="scanAllAvailable">', html)
 
     def test_static_route_map_contains_every_referenced_asset(self) -> None:
         from solar_inverter.components.web_dashboard import DASHBOARD_STATIC_PATHS
@@ -883,8 +895,12 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("firstRegister([545, 94])", flow)
         self.assertIn("const batterySocSource = firstRegister([407])", flow)
         self.assertIn("const measuredBatteryDirectionKnown", flow)
-        self.assertIn("? batteryCurrent < 0", flow)
         self.assertIn("? batteryCurrent > 0", flow)
+        self.assertIn("? batteryCurrent < 0", flow)
+        translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
+        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДІМ · − розряд'", translations)
+        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДОМ · − разрядка'", translations)
+        self.assertIn("demoBatteryHome: 'DEMO · BAT. → HOME · − discharging'", translations)
         self.assertNotIn("numberValue([84, 437, 436])", lcd)
 
     def test_build_and_installer_payload_manifests_match(self) -> None:
