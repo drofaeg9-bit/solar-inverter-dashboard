@@ -154,6 +154,7 @@
         t('registerCount', {
           available,
           waiting: registers.length - available,
+          catalog: registers.length,
           shown: shown.length
         });
       const visible = shown.slice(0, registerRenderLimit);

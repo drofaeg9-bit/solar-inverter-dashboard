@@ -216,6 +216,7 @@ class DashboardAssetTests(unittest.TestCase):
 
     def test_flow_connectors_stay_behind_every_card(self) -> None:
         css = dashboard_css()
+        responsive_css = (WEB_ROOT / "styles" / "dashboard-responsive.css").read_text(encoding="utf-8")
         html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn("display: grid; isolation: isolate", css)
         self.assertIn("position: relative; z-index: 1; align-self: stretch", css)
@@ -233,6 +234,7 @@ class DashboardAssetTests(unittest.TestCase):
             html,
         )
         self.assertIn(".flow-generator .flow-line-mobile { stroke-linecap: round }", css)
+        self.assertIn(".flow-connector.active .flow-line { animation-name: energy-track !important }", responsive_css)
 
     def test_gauges_and_graphs_use_energy_flow_component_colours(self) -> None:
         gauges_path = WEB_ROOT / "scripts" / "gauges.js"
@@ -1101,6 +1103,12 @@ class DashboardRendererTests(unittest.TestCase):
         lcd_source = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
         css_source = dashboard_css()
         self.assertIn("const fanSpeed =", chart_source)
+        self.assertIn("function capturedRegisterLogDemoScenario(elapsedSeconds)", chart_source)
+        self.assertIn("[67, 5], [68, 576], [69, 33536]", chart_source)
+        self.assertIn("values.set(405, frame.current)", chart_source)
+        self.assertIn("Number.isFinite(currentValue)", chart_source)
+        self.assertIn(": null;\n        const reading = Number.isFinite(value)", chart_source)
+        self.assertNotIn(": demoFallbackValue(register, scenario.elapsedSeconds)", chart_source)
         self.assertIn("second / 120 * 100", chart_source)
         self.assertIn("[801, fanSpeed]", chart_source)
         self.assertIn("renderEnergyFlow(lastData, demoRegisterRows)", chart_source)
@@ -1116,6 +1124,8 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("const inverterFanRpm = Number.isFinite(inverterFanSpeed)", lcd_source)
         self.assertIn("fanSpeedRpm(inverterFanSpeed)", lcd_source)
         self.assertIn("setText('#lcd-inverter-fan-speed', reading(inverterFanRpm, 'RPM', 0))", lcd_source)
+        self.assertIn("flex: 0 1 clamp(22px,6.6cqw,56px)", css_source)
+        self.assertIn("overflow: hidden", css_source)
         self.assertIn("registerInterpretation(statusRegister) || localizeDataText(statusRegister.display)", lcd_source)
         self.assertIn("const isPercentage = register.unit === '%'", chart_source)
         self.assertIn("isPercentage ? Math.max(0, Math.min(100, value)) : value", chart_source)

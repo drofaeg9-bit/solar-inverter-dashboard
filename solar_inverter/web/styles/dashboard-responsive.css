@@ -426,12 +426,15 @@
         animation-duration: .01ms !important;
         animation-iteration-count: 1 !important;
       }
-      html.demo-energy-flow .flow-connector.active .flow-line {
+      /* Keep live energy direction visible even when the browser requests
+         reduced motion. The connector uses a slow, linear dash movement and
+         carries operational meaning; it is not decorative animation. */
+      .flow-connector.active .flow-line {
         animation-duration: var(--flow-duration,1.4s) !important;
         animation-iteration-count: infinite !important;
         animation-play-state: running !important;
       }
-      html.demo-energy-flow .flow-connector.active .flow-line { animation-name: energy-track !important }
+      .flow-connector.active .flow-line { animation-name: energy-track !important }
     }
     .energy-inverter .energy-source-icon {
       position: relative; display: grid; place-items: center; width: 34px; height: 25px; margin-inline: auto;

@@ -732,9 +732,9 @@
     .lcd-manual-reading { display: grid; justify-items: center; min-width: 0; border-bottom: .4cqw solid currentColor }
     .lcd-manual-reading strong { font: 900 2.2cqw/1 Arial,sans-serif; letter-spacing: .06em }
     .lcd-manual-reading span { display: block; width: 100%; min-width: 0; max-width: 100%; font: 900 var(--lcd-manual-value-size,10.5cqw)/.95 "Courier New",monospace; letter-spacing: -.07em; white-space: nowrap }
-    .lcd-manual-context { position: absolute; z-index: 4; left: 8%; right: 8%; bottom: 13%; display: flex; align-items: center; justify-content: center; gap: 2.6cqw }
+    .lcd-manual-context { position: absolute; z-index: 4; left: 8%; right: 8%; bottom: 13%; display: flex; align-items: center; justify-content: center; gap: clamp(6px,2.6cqw,22px); min-width: 0; overflow: hidden }
     .lcd-manual-context::before { content: ""; position: absolute; left: 12%; right: 12%; top: 50%; border-top: .35cqw dashed currentColor; opacity: .48 }
-    .lcd-manual-context img { position: relative; z-index: 1; width: 6.6cqw; height: 6.6cqw; padding: .55cqw; background: #e6ebe2; object-fit: contain }
+    .lcd-manual-context img { position: relative; z-index: 1; flex: 0 1 clamp(22px,6.6cqw,56px); width: clamp(22px,6.6cqw,56px); height: clamp(22px,6.6cqw,56px); min-width: 0; padding: clamp(2px,.55cqw,5px); background: #e6ebe2; object-fit: contain }
     .lcd-battery-source, .lcd-battery-top, .lcd-battery-side, .lcd-battery-scale, .lcd-power-path, .lcd-column, .lcd-day-energy { display: none }
     .lcd-battery-source { position: absolute; top: 18%; left: 3%; display: flex; align-items: center; width: 19%; gap: .55cqw; overflow: hidden }
     .lcd-source-grid { flex: 0 0 3.4cqw; width: 3.4cqw; height: 3.4cqw }

@@ -364,7 +364,62 @@
     function interpolate(start, end, ratio) {
       return start + (end - start) * Math.max(0, Math.min(1, ratio));
     }
+    // Captured from register_changes_ru_20260817_225757_021057.csv on the
+    // connected TTN 12KU.  The sequence replays the observed BMS-current,
+    // output-voltage, load, and load-percentage changes while all other
+    // captured values stay faithful to the initial device snapshot.
+    const CAPTURED_REGISTER_LOG_VALUES = Object.freeze([
+      [67, 5], [68, 576], [69, 33536],
+      [81, 0], [82, 0], [83, 0], [84, 0], [85, 0], [86, 0], [88, 0],
+      [89, 230], [90, 2.44], [91, 50], [92, 260], [93, 562], [94, 4.6], [95, 0],
+      [129, 52.8], [130, 5.7], [133, 6.5], [134, 306], [137, 52.8], [138, -6.1], [139, 65],
+      [140, 33.8], [141, 57.1],
+      [151, 0], [152, 0], [153, 0], [154, 0], [155, 0], [156, 0], [157, .03], [161, 0],
+      [159, 0], [160, 0],
+      [404, 52.8], [407, 64], [433, 0], [434, 0], [436, 0],
+      [448, 0], [449, 11.01], [450, 0], [451, 160.82], [452, 0], [453, 546.6],
+      [529, 0], [530, 1], [537, 230.1], [539, 2.35], [541, 208], [542, 540], [545, 4.6],
+      [801, 30], [818, 40], [822, 38]
+    ]);
+    const CAPTURED_REGISTER_LOG_FRAMES = Object.freeze([
+      {current: -5.7, voltage: 230.1, load: 208, loadPercent: 4.6},
+      {current: -4.8, voltage: 229.9, load: 200, loadPercent: 4.6},
+      {current: -5.0, voltage: 230.4, load: 208, loadPercent: 4.6},
+      {current: -5.8, voltage: 229.9, load: 216, loadPercent: 4.6},
+      {current: -6.6, voltage: 230.1, load: 216, loadPercent: 4.6},
+      {current: -6.8, voltage: 230.1, load: 200, loadPercent: 4.6},
+      {current: -6.4, voltage: 230.4, load: 216, loadPercent: 4.6},
+      {current: -5.5, voltage: 230.6, load: 208, loadPercent: 4.6},
+      {current: -6.1, voltage: 229.4, load: 200, loadPercent: 4.6},
+      {current: -5.3, voltage: 230.4, load: 216, loadPercent: 4.6},
+      {current: -6.7, voltage: 230.1, load: 208, loadPercent: 4.6},
+      {current: -5.9, voltage: 230.6, load: 216, loadPercent: 4.6}
+    ]);
+    function capturedRegisterLogDemoScenario(elapsedSeconds) {
+      const frame = CAPTURED_REGISTER_LOG_FRAMES[
+        Math.floor(Math.max(0, elapsedSeconds) / 3) % CAPTURED_REGISTER_LOG_FRAMES.length
+      ];
+      const values = new Map(CAPTURED_REGISTER_LOG_VALUES);
+      values.set(405, frame.current);
+      values.set(537, frame.voltage);
+      values.set(541, frame.load);
+      values.set(545, frame.loadPercent);
+      return {
+        elapsedSeconds: Math.max(0, elapsedSeconds),
+        statusCode: 5,
+        caseKey: 'demoBatteryHome',
+        generatorPower: 0,
+        pvVoltage: 0,
+        pvPower: 0,
+        values
+      };
+    }
     function realisticDemoScenario(elapsedSeconds) {
+      return capturedRegisterLogDemoScenario(elapsedSeconds);
+    }
+    // Retained for future synthetic examples; the user-facing demo replays
+    // the captured inverter data above.
+    function legacySyntheticDemoScenario(elapsedSeconds) {
       const second = elapsedSeconds % 120;
       const ripple = Math.sin(second * .37);
       let gridAvailable = true;
@@ -664,10 +719,15 @@
       demoFlowCase = scenario.caseKey;
       demoRegisterRows = lastData ? lastData.registers.map(register => {
         const scenarioValue = scenario.values.get(register.register);
+        const currentValue = registerNumericValue(register);
         const value = Number.isFinite(scenarioValue)
           ? scenarioValue
-          : demoFallbackValue(register, scenario.elapsedSeconds);
-        const reading = demoRegisterReading(register, value);
+          : Number.isFinite(currentValue)
+            ? currentValue
+            : null;
+        const reading = Number.isFinite(value)
+          ? demoRegisterReading(register, value)
+          : {raw: null, value: null, display: '—', available: false};
         return {
           ...register,
           ...reading
