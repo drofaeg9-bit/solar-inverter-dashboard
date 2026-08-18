@@ -562,33 +562,28 @@
       const measuredBatteryActive = (Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3)
         || (Number.isFinite(batteryPower) && Math.abs(batteryPower) > 20);
       const measuredBatteryDirectionKnown = Number.isFinite(batteryCurrent) && Math.abs(batteryCurrent) >= .3;
-      // A non-zero measured BMS current is authoritative.  R69 is useful for
-      // topology, but may be absent or lag one poll behind the BMS bank.
-      const batteryActive = liveMeasurementsFresh && !flowSuppressedByState && batteryConnected && (
-        measuredBatteryActive
-        || (energyFlowState
-          ? energyFlowState.rectifierToBattery || energyFlowState.batteryToInverter
-          : terminalState ? terminalState.battery === 2 || terminalState.battery === 3 : false)
+      // When R69 is available it is the authoritative topology for cards and
+      // connectors. Measurements remain the fallback for older devices that
+      // do not expose a usable R69 word.
+      const batteryActive = liveMeasurementsFresh && !flowSuppressedByState && batteryConnected && (energyFlowState
+        ? energyFlowState.rectifierToBattery || energyFlowState.batteryToInverter
+        : measuredBatteryActive || (terminalState ? terminalState.battery === 2 || terminalState.battery === 3 : false)
       );
-      const batteryCharging = batteryActive && (measuredBatteryDirectionKnown
-        ? batteryCurrent > 0
-        : energyFlowState
+      const batteryCharging = batteryActive && (energyFlowState
         ? energyFlowState.rectifierToBattery && !energyFlowState.batteryToInverter
-        : terminalState ? terminalState.battery === 3
-        : batteryPower > 0);
-      const batteryDischarging = batteryActive && (measuredBatteryDirectionKnown
-        ? batteryCurrent < 0
-        : energyFlowState
+        : measuredBatteryDirectionKnown ? batteryCurrent > 0
+          : terminalState ? terminalState.battery === 3 : batteryPower > 0);
+      const batteryDischarging = batteryActive && (energyFlowState
         ? energyFlowState.batteryToInverter
-        : terminalState ? terminalState.battery === 2
-        : batteryPower < 0);
-      const pvConnected = liveMeasurementsFresh && (terminalState
+        : measuredBatteryDirectionKnown ? batteryCurrent < 0
+          : terminalState ? terminalState.battery === 2 : batteryPower < 0);
+      const pvConnected = liveMeasurementsFresh && (Boolean(energyFlowState?.pvToRectifier) || (terminalState
         ? terminalState.pv1 !== 0 || terminalState.pv2 !== 0
-        : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .5);
-      const pvNormal = terminalState
+        : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .5));
+      const pvNormal = energyFlowState?.pvToRectifier || (terminalState
         ? terminalState.pv1 === 2 || terminalState.pv2 === 2
-        : pvConnected;
-      const pvAbnormal = terminalState
+        : pvConnected);
+      const pvAbnormal = !energyFlowState?.pvToRectifier && terminalState
         ? (terminalState.pv1 === 1 || terminalState.pv2 === 1) && !pvNormal
         : false;
       const pvActive = liveMeasurementsFresh && !flowSuppressedByState && pvConnected && pvNormal && (energyFlowState
@@ -602,12 +597,15 @@
         || (Number.isFinite(measuredGridPower) && Math.abs(measuredGridPower) > 20);
       // R81 is the physical mains input. R68 confirms whether that input is
       // electrically normal, but may lag a live R433/R434 measurement.
-      const gridTerminalConnected = terminalState
+      const gridTerminalConnected = energyFlowState?.gridToRectifier || energyFlowState?.gridToLoad || energyFlowState?.rectifierToGrid
+        ? true
+        : terminalState
         ? terminalState.grid !== 0 || measuredGridConnected
         : measuredGridConnected;
       const gridAvailable = liveMeasurementsFresh && gridTerminalConnected;
-      const gridNormal = terminalState?.grid === 1 ? false : gridAvailable;
-      const gridAbnormal = terminalState?.grid === 1 && !measuredGridConnected;
+      const gridRouteActive = Boolean(energyFlowState?.gridToRectifier || energyFlowState?.gridToLoad || energyFlowState?.rectifierToGrid);
+      const gridNormal = gridRouteActive || (terminalState?.grid === 1 ? false : gridAvailable);
+      const gridAbnormal = !gridRouteActive && terminalState?.grid === 1 && !measuredGridConnected;
       // R68 output bits can be stale while R537/R541 show a live household
       // load. The home is always the consuming endpoint of an online system;
       // never present it as a stopped inverter output.
@@ -646,11 +644,12 @@
           ? generatorPower / generatorVoltage
           : null;
       const measuredGeneratorConnected = Number.isFinite(generatorVoltage) && generatorVoltage > 80;
-      const generatorConnected = liveMeasurementsFresh && (terminalState
+      const generatorConnected = liveMeasurementsFresh && (energyFlowState?.generatorToRectifier || energyFlowState?.generatorToLoad || (terminalState
         ? terminalState.generator !== 0
-        : measuredGeneratorConnected);
-      const generatorNormal = terminalState ? terminalState.generator === 2 : generatorConnected;
-      const generatorAbnormal = terminalState?.generator === 1;
+        : measuredGeneratorConnected));
+      const generatorRouteActive = Boolean(energyFlowState?.generatorToRectifier || energyFlowState?.generatorToLoad);
+      const generatorNormal = generatorRouteActive || (terminalState ? terminalState.generator === 2 : generatorConnected);
+      const generatorAbnormal = !generatorRouteActive && terminalState?.generator === 1;
       const generatorActive = !flowSuppressedByState && generatorConnected && generatorNormal && (energyFlowState
         ? energyFlowState.generatorToRectifier || energyFlowState.generatorToLoad
         : (Number.isFinite(generatorPower) && generatorPower > 20)
@@ -763,9 +762,22 @@
         2: {label: 'PBG', description: 'modePbgShort'},
         3: {label: 'MKS', description: 'modeMksShort'}
       });
+      // The source badge is part of the live flow card: prefer the R69 route
+      // over R67's broad operating state or a ready-but-idle input terminal.
+      const routedInputMode = energyFlowState
+        ? energyFlowState.gridToRectifier || energyFlowState.gridToLoad
+          ? {label: t('grid'), description: 'modeGridInputShort', icon: 'grid'}
+          : energyFlowState.generatorToRectifier || energyFlowState.generatorToLoad
+            ? {label: t('generator'), description: 'modeGeneratorInputShort', icon: 'generator'}
+            : energyFlowState.pvToRectifier
+              ? {label: 'PV', description: 'modeSolarShort', icon: 'pv'}
+              : energyFlowState.batteryToInverter
+                ? {label: t('battery'), description: 'modeBatteryInputShort', icon: 'battery'}
+                : null
+        : null;
       const inverterInputMode = !inverterActive
         ? {label: '—', description: ''}
-        : inverterState === 3 && gridAvailable
+        : routedInputMode || inverterState === 3 && gridAvailable
           ? {label: t('grid'), description: 'modeGridInputShort', icon: 'grid'}
           : inverterState === 4 && pvActive
             ? {label: 'PV', description: 'modeSolarShort', icon: 'pv'}
