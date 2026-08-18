@@ -115,33 +115,6 @@
       const unit = String(register.unit || '').trim();
       return `${Number(value.toFixed(unit === 'A' || unit === 'V' || unit === '%' ? 1 : 2))}${unit ? ` ${unit}` : ''}`;
     }
-    function flowCardStateLabel(register) {
-      const raw = Number(register?.raw);
-      if (!register?.available || !Number.isInteger(raw) || raw < 0 || raw >= 65535) return '';
-      const enumLabels = {
-        67: ['ON', 'INIT', 'STBY', 'GRID', 'PV', 'BATT', 'GEN', 'FAULT', 'OFF', 'TEST', 'UPD'],
-        325: ['ON', 'INIT', 'STBY', 'GRID', 'PV', 'BATT', 'GEN', 'FAULT', 'OFF', 'TEST', 'UPD'],
-        529: ['GPB', 'PGB', 'PBG', 'MKS'],
-        323: ['GPB', 'PGB', 'PBG', 'MKS'],
-        530: ['APP', 'UPS', 'GEN'],
-        321: ['APP', 'UPS', 'GEN'],
-        324: ['PNG', 'OPV', 'PVF']
-      };
-      const label = enumLabels[Number(register.register)]?.[raw];
-      if (label) return label;
-      if (Number(register.register) !== 69) return '';
-      const flow = decodeEnergyFlowState(register);
-      if (!flow) return '';
-      const routes = [
-        flow.gridToRectifier && 'AC→REC', flow.gridToLoad && 'AC→OUT',
-        flow.generatorToRectifier && 'GEN→REC', flow.generatorToLoad && 'GEN→OUT',
-        flow.pvToRectifier && 'PV→REC', flow.rectifierToBattery && 'REC→BATT',
-        flow.rectifierToInverter && 'REC→INV', flow.rectifierToGrid && 'REC→AC',
-        flow.batteryToInverter && 'BATT→INV', flow.inverterToMainOutput && 'INV→OUT',
-        flow.inverterToSecondaryOutput && 'INV→OUT2'
-      ].filter(Boolean);
-      return routes.join(' · ');
-    }
     function renderFlowCardValues(cardKey, selector, registers, visible = true) {
       const host = document.querySelector(selector);
       if (!host) return;
@@ -154,9 +127,16 @@
         const row = document.createElement('span');
         const name = register ? localizeApiField(register, 'name') : `R${number}`;
         const interpretation = register ? registerInterpretation(register) : '';
-        const stateLabel = register ? flowCardStateLabel(register) : '';
-        row.textContent = stateLabel || interpretation || (register ? formatFlowCardRegister(register) : t('noData'));
-        row.classList.toggle('flow-card-state-value', Boolean(interpretation || stateLabel));
+        // The V1.31 interpreter is the single localized source for every
+        // enum and bit-field. Do not replace it with a partial English code
+        // list in the flow cards.
+        // Pair every decoded enum with its localized register name. For
+        // example, R323 is a configured output priority, never evidence of
+        // the currently active source of energy.
+        row.textContent = interpretation
+          ? `${name}: ${interpretation}`
+          : (register ? formatFlowCardRegister(register) : t('noData'));
+        row.classList.toggle('flow-card-state-value', Boolean(interpretation));
         row.title = `R${number} · ${name}${register ? ` · ${registerRawExplanation(register)}` : ''}`;
         return row;
       }));
@@ -637,7 +617,9 @@
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const calculatedGridPower = chartDemoRunning
-        ? gridAvailable && Number.isFinite(pvPower) && Number.isFinite(loadPower)
+        ? gridAvailable && Number.isFinite(measuredGridPower)
+          ? Math.abs(measuredGridPower)
+          : gridAvailable && Number.isFinite(pvPower) && Number.isFinite(loadPower)
           ? loadPower + batteryChargePower - pvPower - batteryDischargePower
           : gridAvailable ? null : 0
         : gridAvailable && Number.isFinite(measuredGridPower)
@@ -707,28 +689,62 @@
         : priorityOutputSource ? priorityOutputSource === 'battery' : batteryDischarging;
       const gridFlowState = !gridAvailable
         ? 'off'
-        : gridExporting ? 'export'
-          : gridFlowActive ? 'import' : 'ready';
+        : gridAbnormal ? 'abnormal'
+          : gridExporting ? 'export'
+            : gridFlowActive ? 'import' : 'ready';
       const batteryFlowState = !batteryConnected
         ? 'off'
-        : batteryCharging ? 'charge'
-          : batteryDischarging ? 'discharge' : 'idle';
-      if (chartDemoRunning || !data.online) {
+        : terminalState?.battery === 1 ? 'low'
+          : terminalState?.battery === 4 ? 'full'
+            : batteryCharging ? 'charge'
+              : batteryDischarging ? 'discharge' : 'idle';
+      const solarFlowState = !pvConnected
+        ? 'off'
+        : pvAbnormal ? 'abnormal'
+          : pvReceiving ? 'receiving'
+            : pvActive ? 'supplying' : 'idle';
+      const generatorFlowState = !generatorConnected
+        ? 'off'
+        : generatorAbnormal ? 'abnormal'
+          : generatorActive ? 'supplying' : 'idle';
+      if (!chartDemoRunning && !data.online) {
         lastRealFlowState = null;
       } else {
-        const nextRealFlowState = `${gridFlowState}|${batteryFlowState}`;
+        const nextRealFlowState = [
+          gridFlowState, batteryFlowState, solarFlowState, generatorFlowState
+        ].join('|');
         if (lastRealFlowState !== null && lastRealFlowState !== nextRealFlowState) {
-          const [previousGrid, previousBattery] = lastRealFlowState.split('|');
+          const [previousGrid, previousBattery, previousSolar, previousGenerator] = lastRealFlowState.split('|');
           const notices = [];
           if (previousGrid !== gridFlowState) {
-            const gridText = {off: t('notConnected'), ready: t('gridReady'), import: t('gridSupplying'), export: t('gridExporting')}[gridFlowState];
+            const gridText = {
+              off: t('notConnected'), abnormal: t('connectedAbnormal'), ready: t('gridReady'),
+              import: t('gridSupplying'), export: t('gridExporting')
+            }[gridFlowState];
             notices.push(`${t('grid')}: ${gridText}`);
           }
           if (previousBattery !== batteryFlowState) {
-            const batteryText = {off: t('notConnected'), idle: t('batteryIdle'), charge: t('charging'), discharge: t('discharging')}[batteryFlowState];
+            const batteryText = {
+              off: t('notConnected'), low: t('batteryLow'), full: t('batteryFull'),
+              idle: t('batteryIdle'), charge: t('charging'), discharge: t('discharging')
+            }[batteryFlowState];
             notices.push(`${t('battery')}: ${batteryText}`);
           }
-          window.showFlowChangeAlert?.(notices.join(' · '));
+          if (previousSolar !== solarFlowState) {
+            const solarText = {
+              off: t('notConnected'), abnormal: t('connectedAbnormal'), idle: t('batteryIdle'),
+              receiving: t('receiving'), supplying: t('supplying')
+            }[solarFlowState];
+            notices.push(`PV: ${solarText}`);
+          }
+          if (previousGenerator !== generatorFlowState) {
+            const generatorText = {
+              off: t('notConnected'), abnormal: t('connectedAbnormal'), idle: t('batteryIdle'),
+              supplying: t('supplying')
+            }[generatorFlowState];
+            notices.push(`${t('generator')}: ${generatorText}`);
+          }
+          if (notices.length) window.showFlowChangeAlert?.(notices.join(' · '));
         }
         lastRealFlowState = nextRealFlowState;
       }

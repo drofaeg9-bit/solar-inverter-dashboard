@@ -43,14 +43,14 @@
       if (!flowAlertText) return;
       if (flowAlertTimer !== null) window.clearTimeout(flowAlertTimer);
       const box = document.querySelector('#error');
-      if (box && !lastData?.error) {
+      if (box && (chartDemoRunning || !lastData?.error)) {
         box.textContent = flowAlertText;
         box.classList.add('show');
       }
       flowAlertTimer = window.setTimeout(() => {
         flowAlertTimer = null;
         flowAlertText = '';
-        if (!lastData?.error) document.querySelector('#error')?.classList.remove('show');
+        if (chartDemoRunning || !lastData?.error) document.querySelector('#error')?.classList.remove('show');
       }, 5000);
     };
     function savedSelections(name) {

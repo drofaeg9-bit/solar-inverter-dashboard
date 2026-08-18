@@ -65,7 +65,22 @@
     }
 
     function timelineDefinitions() {
-      return [...chartDefinitions.values()].filter(isTimelineValue);
+      // A counter can be present both as a dashboard meter and as the raw
+      // physical register from the register map. They are the same series;
+      // prefer the long-standing meter key so saved selections keep working.
+      const preferred = [...chartDefinitions.values()]
+        .filter(isTimelineValue)
+        .sort((left, right) => {
+          const leftMeter = left.key.startsWith('meter-') ? 0 : 1;
+          const rightMeter = right.key.startsWith('meter-') ? 0 : 1;
+          return leftMeter - rightMeter;
+        });
+      const registers = new Set();
+      return preferred.filter(item => {
+        if (registers.has(item.register)) return false;
+        registers.add(item.register);
+        return true;
+      });
     }
 
     function collectChartDefinitions(data) {
@@ -420,36 +435,38 @@
       const frame = CAPTURED_REGISTER_LOG_FRAMES[
         Math.floor(Math.max(0, elapsedSeconds) / 3) % CAPTURED_REGISTER_LOG_FRAMES.length
       ];
-      const chargingFromGrid = Math.floor(Math.max(0, elapsedSeconds) / 60) % 2 === 1;
-      const batteryCurrent = chargingFromGrid ? Math.abs(frame.current) : frame.current;
-      // All unchanged values come directly from the captured raw snapshot.
-      // Only these readings change to make the two real flow directions clear.
+      const scenarioIndex = Math.floor(Math.max(0, elapsedSeconds) / 20) % 6;
+      // Every V1.31 R69 power-route bit is demonstrated at least once. Each
+      // frame supplies the complete direction-related snapshot, so a value
+      // from the real inverter can never leak into the demo.
+      const scenarios = [
+        {caseKey: 'demoSolarChargeExport', inverterState: 4, terminal: 2 << 4 | 1 << 6 | 3 << 8 | 1 << 11, flow: 1 << 4 | 1 << 5 | 1 << 6 | 1 << 9, pvPower: 2700, batteryCurrent: 18, gridPower: 0, generatorPower: 0},
+        {caseKey: 'demoGridHome', inverterState: 3, terminal: 2 | 1 << 6 | 3 << 8 | 1 << 11, flow: 1 << 0 | 1 << 1 | 1 << 5 | 1 << 6 | 1 << 9, pvPower: 0, batteryCurrent: 12, gridPower: frame.load + 630, generatorPower: 0},
+        {caseKey: 'demoBatteryHome', inverterState: 5, terminal: 1 << 6 | 2 << 8, flow: 1 << 8 | 1 << 9, pvPower: 0, batteryCurrent: -Math.abs(frame.current), gridPower: 0, generatorPower: 0},
+        {caseKey: 'demoSolarExport', inverterState: 4, terminal: 2 << 4 | 1 << 6 | 4 << 8, flow: 1 << 4 | 1 << 6 | 1 << 7 | 1 << 9, pvPower: 3600, batteryCurrent: 0, gridPower: Math.max(0, 3600 - frame.load), generatorPower: 0},
+        {caseKey: 'demoGeneratorHome', inverterState: 6, terminal: 2 << 2 | 1 << 6 | 3 << 8 | 1 << 11, flow: 1 << 2 | 1 << 3 | 1 << 5 | 1 << 6 | 1 << 9, pvPower: 0, batteryCurrent: 8, gridPower: 0, generatorPower: frame.load + 420},
+        {caseKey: 'demoMixedSources', inverterState: 4, terminal: 2 << 4 | 1 << 6 | 2 << 8, flow: 1 << 4 | 1 << 6 | 1 << 8 | 1 << 10, pvPower: 1700, batteryCurrent: -8, gridPower: 0, generatorPower: 0}
+      ];
+      const scenario = scenarios[scenarioIndex];
+      const outputCurrent = frame.load / frame.voltage;
       const values = new Map();
-      values.set(130, batteryCurrent);
-      values.set(134, 52.8 * batteryCurrent);
-      values.set(405, batteryCurrent);
-      values.set(537, frame.voltage);
-      values.set(541, frame.load);
-      values.set(545, frame.loadPercent);
-      if (chargingFromGrid) {
-        const gridPower = frame.load + Math.abs(52.8 * batteryCurrent);
-        values.set(67, 3);
-        values.set(68, 2 | (1 << 6) | (3 << 8) | (1 << 11));
-        values.set(69, (1 << 0) | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 9));
-        values.set(81, 230); values.set(82, gridPower / 230); values.set(83, 50); values.set(84, gridPower);
-        values.set(433, 230); values.set(434, gridPower / 230); values.set(435, 50); values.set(436, gridPower);
-      } else {
-        values.set(67, 5);
-        values.set(68, 2 << 8);
-        values.set(69, 1 << 8);
-      }
+      values.set(67, scenario.inverterState); values.set(68, scenario.terminal); values.set(69, scenario.flow);
+      values.set(81, scenario.gridPower ? 230 : 0); values.set(82, Math.abs(scenario.gridPower) / 230); values.set(83, scenario.gridPower ? 50 : 0); values.set(84, scenario.gridPower);
+      values.set(433, scenario.gridPower ? 230 : 0); values.set(434, Math.abs(scenario.gridPower) / 230); values.set(435, scenario.gridPower ? 50 : 0); values.set(436, scenario.gridPower);
+      values.set(85, scenario.generatorPower ? 230 : 0); values.set(86, scenario.generatorPower / 230); values.set(87, scenario.generatorPower ? 50 : 0); values.set(88, scenario.generatorPower);
+      values.set(151, scenario.pvPower ? 330 : 0); values.set(152, scenario.pvPower / 330); values.set(153, scenario.pvPower);
+      values.set(154, 0); values.set(155, 0); values.set(156, 0); values.set(161, scenario.pvPower);
+      values.set(129, 52.8); values.set(130, scenario.batteryCurrent); values.set(134, 52.8 * scenario.batteryCurrent); values.set(137, 52.8); values.set(138, scenario.batteryCurrent); values.set(405, scenario.batteryCurrent); values.set(407, 71);
+      values.set(89, frame.voltage); values.set(90, outputCurrent); values.set(91, 50); values.set(92, frame.load); values.set(93, frame.load); values.set(94, frame.loadPercent);
+      values.set(188, frame.load); values.set(189, 0); values.set(190, 0);
+      values.set(537, frame.voltage); values.set(539, outputCurrent); values.set(541, frame.load); values.set(545, frame.loadPercent);
       return {
         elapsedSeconds: Math.max(0, elapsedSeconds),
-        statusCode: chargingFromGrid ? 3 : 5,
-        caseKey: chargingFromGrid ? 'demoGridHome' : 'demoBatteryHome',
-        generatorPower: 0,
-        pvVoltage: 0,
-        pvPower: 0,
+        statusCode: scenario.inverterState,
+        caseKey: scenario.caseKey,
+        generatorPower: scenario.generatorPower,
+        pvVoltage: scenario.pvPower ? 330 : 0,
+        pvPower: scenario.pvPower,
         values
       };
     }
@@ -782,15 +799,9 @@
       demoPvPower = registerNumericValue(demoRowsByNumber.get(161)) ?? 0;
       if (lastData) {
         updateChartDefinitions(dashboardDefinitionData(lastData));
-        if (!document.querySelector('#dashboard-view').hidden) {
-          renderEnergyFlow(lastData, demoRegisterRows);
-        } else {
-          const demoFanSpeed = registerNumericValue(demoRowsByNumber.get(801));
-          updateInverterFanAnimation(
-            document.querySelector('#energy-inverter-fan-row'),
-            Number.isFinite(demoFanSpeed) ? Math.max(0, Math.min(100, demoFanSpeed)) : 0
-          );
-        }
+        // A demo flow change must be observable from every tab, not only
+        // while the Dashboard tab happens to be visible.
+        renderEnergyFlow(lastData, demoRegisterRows);
         if (!document.querySelector('#lcd-view').hidden) {
           renderLcd(lastData, demoRegisterRows);
         }
@@ -844,6 +855,9 @@
       });
       chartDemoRunning = true;
       chartDemoCancelRequested = false;
+      // Establish the first demo frame as the baseline. Every later scenario
+      // change can then notify about grid and battery flow changes.
+      lastRealFlowState = null;
       document.documentElement.classList.add('demo-energy-flow');
       demoKeys.forEach(key => chartHistory.set(key, []));
       const initialScenario = realisticDemoScenario(0);
@@ -917,6 +931,7 @@
       } finally {
         chartDemoRunning = false;
         chartDemoCancelRequested = false;
+        lastRealFlowState = null;
         document.documentElement.classList.remove('demo-energy-flow');
         demoRegisterRows = null;
         demoFlowCase = '';
