@@ -14,7 +14,8 @@
         themeDark: 'Темна', themeLight: 'Світла',
         stopMonitoring: 'Зупинити моніторинг', startMonitoring: 'Запустити моніторинг',
         viewCharts: 'Переглянути графіки', dashboard: '← Панель',
-        viewTabsAria: 'Розділи застосунку', dashboardTab: 'Панель', chartsTab: 'Графіки', lcdTab: 'LCD',
+        viewTabsAria: 'Розділи застосунку', dashboardTab: 'Панель', chartsTab: 'Графіки', lcdTab: 'LCD', registerMapTab: 'Карта регістрів',
+        registerMapTitle: 'Карта регістрів', registerMapPollHelp: 'Показано всі регістри з останнього знімка інвертора; у демо — зі збереженого знімка. Виберіть будь-яку кількість для читання в кожному швидкому циклі.', searchRegisters: 'Пошук регістрів…', registerMapAddAria: 'Номер регістру для додавання', addRegister: 'Додати регістр', scanRegisterMap: 'Сканувати всі доступні', registerMapScanning: 'Сканування всіх відомих адрес виконується один раз…', registerMapScanError: 'Не вдалося запустити сканування: {error}', resetFastPoll: 'Відновити типовий вибір панелі', fastPoll: 'Кожен цикл', register: 'Регістр', group: 'Група', name: 'Назва', unit: 'Одиниця', actions: 'Дії', edit: 'Редагувати', fastPollAdded: '{register} додано до кожного циклу.', fastPollRemoved: '{register} вилучено з кожного циклу.', fastPollReset: 'Типовий вибір панелі відновлено.', registerMapUnknown: 'Невідомий регістр. Введіть адресу з карти регістрів.', registerMapEditGroup: 'Група', registerMapEditName: 'Назва регістру', registerMapEditUnit: 'Одиниця виміру', registerMapSaveError: 'Не вдалося зберегти карту: {error}',
         lcdTitle: 'LCD ІНВЕРТОРА', lcdSubtitle: 'Поточні показники з Modbus',
         grid: 'Мережа', generator: 'Генератор', inverter: 'Інвертор', load: 'Навантаження', pvInput: 'Вхід PV',
         energyFlowTitle: 'Потік енергії', energyFlowAria: 'Поточний потік енергії між сонячними панелями, міською мережею або генератором, інвертором, батареєю та домом', configureCardValues: 'Налаштувати значення картки', flowCardSettingsTitle: '{card}: значення для відображення', flowCardPickerHelp: 'Виберіть до трьох значень для цієї картки.',
@@ -151,7 +152,8 @@
         themeDark: 'Тёмная', themeLight: 'Светлая',
         stopMonitoring: 'Остановить мониторинг', startMonitoring: 'Запустить мониторинг',
         viewCharts: 'Просмотреть графики', dashboard: '← Панель',
-        viewTabsAria: 'Разделы приложения', dashboardTab: 'Панель', chartsTab: 'Графики', lcdTab: 'LCD',
+        viewTabsAria: 'Разделы приложения', dashboardTab: 'Панель', chartsTab: 'Графики', lcdTab: 'LCD', registerMapTab: 'Карта регистров',
+        registerMapTitle: 'Карта регистров', registerMapPollHelp: 'Показаны все регистры из последнего снимка инвертора; в демо — из сохранённого снимка. Выберите любое количество для чтения в каждом быстром цикле.', searchRegisters: 'Поиск регистров…', registerMapAddAria: 'Номер регистра для добавления', addRegister: 'Добавить регистр', scanRegisterMap: 'Сканировать все доступные', registerMapScanning: 'Однократно сканируются все известные адреса…', registerMapScanError: 'Не удалось запустить сканирование: {error}', resetFastPoll: 'Восстановить выбор панели', fastPoll: 'Каждый цикл', register: 'Регистр', group: 'Группа', name: 'Название', unit: 'Единица', actions: 'Действия', edit: 'Изменить', fastPollAdded: '{register} добавлен в каждый цикл.', fastPollRemoved: '{register} удалён из каждого цикла.', fastPollReset: 'Исходный выбор панели восстановлен.', registerMapUnknown: 'Неизвестный регистр. Введите адрес из карты регистров.', registerMapEditGroup: 'Группа', registerMapEditName: 'Название регистра', registerMapEditUnit: 'Единица измерения', registerMapSaveError: 'Не удалось сохранить карту: {error}',
         lcdTitle: 'LCD ИНВЕРТОРА', lcdSubtitle: 'Текущие показатели из Modbus',
         grid: 'Сеть', generator: 'Генератор', inverter: 'Инвертор', load: 'Нагрузка', pvInput: 'Вход PV',
         energyFlowTitle: 'Поток энергии', energyFlowAria: 'Текущий поток энергии между солнечными панелями, городской сетью или генератором, инвертором, батареей и домом', configureCardValues: 'Настроить значения карточки', flowCardSettingsTitle: '{card}: отображаемые значения', flowCardPickerHelp: 'Выберите до трёх значений для этой карточки.',
@@ -286,7 +288,8 @@
         themeDark: 'Dark', themeLight: 'Light',
         stopMonitoring: 'Stop monitoring', startMonitoring: 'Start monitoring',
         viewCharts: 'View charts', dashboard: '← Dashboard',
-        viewTabsAria: 'Application sections', dashboardTab: 'Dashboard', chartsTab: 'Charts', lcdTab: 'LCD',
+        viewTabsAria: 'Application sections', dashboardTab: 'Dashboard', chartsTab: 'Charts', lcdTab: 'LCD', registerMapTab: 'Register map',
+        registerMapTitle: 'Register map', registerMapPollHelp: 'Shows registers from the latest inverter snapshot; demo uses the saved snapshot. Select any number to read on every fast-poll cycle.', searchRegisters: 'Search registers…', registerMapAddAria: 'Register number to add', addRegister: 'Add register', scanRegisterMap: 'Scan all available', registerMapScanning: 'Scanning every known address once…', registerMapScanError: 'Could not start the scan: {error}', resetFastPoll: 'Restore dashboard default', fastPoll: 'Every cycle', register: 'Register', group: 'Group', name: 'Name', unit: 'Unit', actions: 'Actions', edit: 'Edit', fastPollAdded: '{register} was added to every cycle.', fastPollRemoved: '{register} was removed from every cycle.', fastPollReset: 'Dashboard default restored.', registerMapUnknown: 'Unknown register. Enter an address from the register map.', registerMapEditGroup: 'Group', registerMapEditName: 'Register name', registerMapEditUnit: 'Unit', registerMapSaveError: 'Could not save the map: {error}',
         lcdTitle: 'INVERTER LCD', lcdSubtitle: 'Live readings from Modbus',
         grid: 'Grid', generator: 'Generator', inverter: 'Inverter', load: 'Load', pvInput: 'PV input',
         energyFlowTitle: 'Energy flow', energyFlowAria: 'Current energy flow between the solar panels, city grid or generator, inverter, battery, and home', configureCardValues: 'Configure card values', flowCardSettingsTitle: '{card}: displayed values', flowCardPickerHelp: 'Choose up to three values for this card.',
@@ -407,6 +410,9 @@
         browserLabel: 'browser', viewportLabel: 'viewport'
       }
     };
+    Object.assign(UI_TRANSLATIONS.uk, {stopRegisterMapScan: 'Зупинити сканування', registerMapScanStopped: 'Сканування зупинено.'});
+    Object.assign(UI_TRANSLATIONS.ru, {stopRegisterMapScan: 'Остановить сканирование', registerMapScanStopped: 'Сканирование остановлено.'});
+    Object.assign(UI_TRANSLATIONS.en, {stopRegisterMapScan: 'Stop scan', registerMapScanStopped: 'Scan stopped.'});
     const DATA_TRANSLATIONS = {
       'AC': {ru:'AC', en:'AC'},
       'BMS': {ru:'BMS', en:'BMS'},
@@ -745,6 +751,26 @@
         en: `Alarm code ${number}`
       };
     }
+    const counterPeriods = [
+      ['за день', 'за день', 'today'], ['за місяць', 'за месяц', 'this month'],
+      ['за рік', 'за год', 'this year'], ['всього', 'всего', 'total']
+    ];
+    function addCounterTranslations(ukPrefix, ruPrefix, enPrefix, periods = counterPeriods) {
+      periods.forEach(([ukPeriod, ruPeriod, enPeriod]) => {
+        DATA_TRANSLATIONS[`${ukPrefix} ${ukPeriod}`] = {
+          ru: `${ruPrefix} ${ruPeriod}`,
+          en: enPeriod === 'total' ? `Total ${enPrefix}` : `${enPrefix} ${enPeriod}`
+        };
+      });
+    }
+    addCounterTranslations('Віддано в мережу', 'Отдано в сеть', 'Energy exported to grid');
+    addCounterTranslations('Споживання з мережі', 'Потребление из сети', 'Grid consumption');
+    addCounterTranslations('Енергія AC-виходу', 'Энергия AC-выхода', 'AC output energy');
+    addCounterTranslations('Вироблено PV', 'Выработано PV', 'PV generation');
+    addCounterTranslations('Вироблено PV1', 'Выработано PV1', 'PV1 generation');
+    addCounterTranslations('Вироблено PV2', 'Выработано PV2', 'PV2 generation');
+    addCounterTranslations('Енергія навантаження AC', 'Энергия нагрузки AC', 'AC load energy', counterPeriods.filter((_, index) => index !== 2));
+    addCounterTranslations('Вихідна енергія AC', 'Выходная энергия AC', 'AC output energy', counterPeriods.filter((_, index) => index !== 2));
     for (const [ukName, ruName, enName] of [
       ['заряджання', 'зарядки', 'charging'],
       ['розряджання', 'разрядки', 'discharging'],

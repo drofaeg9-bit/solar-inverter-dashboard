@@ -226,6 +226,16 @@
       font-weight: 750;
     }
     .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 18px }
+    .register-map-panel { padding: 20px; border: 1px solid var(--ui-border); border-radius: 16px; background: var(--panel); }
+    .register-map-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+    .register-map-controls input:first-child { flex: 1 1 260px; }
+    .register-map-controls input:not(:first-child) { width: 110px; }
+    .register-map-table-wrap { overflow: auto; max-height: min(64vh, 720px); border: 1px solid var(--ui-border); border-radius: 12px; }
+    .register-map-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+    .register-map-table th, .register-map-table td { padding: 9px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+    .register-map-table th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+    .register-map-table tr.fast-poll { background: rgba(34, 211, 238, .09); }
+    .register-map-table input[type="checkbox"] { min-height: auto; width: 18px; height: 18px; padding: 0; }
     .chip, select, button, input {
       min-height: 40px; border: 1px solid var(--line); border-radius: 12px;
       background: var(--control); color: var(--text); padding: 0 13px;

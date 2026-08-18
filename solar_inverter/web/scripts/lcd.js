@@ -76,8 +76,8 @@
       const gridLowVoltageThreshold = numberValue([16655]);
       const loadPower = numberValue([541, 92, 188]);
       const apparentLoadPower = numberValue([542, 93]);
-      const batteryVoltage = numberValue([404, 129, 137, 342]);
-      const batteryCurrent = numberValue([405, 130]);
+      const batteryVoltage = numberValue([137, 129, 404, 342]);
+      const batteryCurrent = numberValue([130, 405]);
       const measuredBatterySoc = numberValue([407]);
       const batteryPowerReading = numberValue([134]);
       const batteryTemperature = numberValue([140, 406]);
@@ -138,27 +138,30 @@
               ? t('charging')
               : batteryDischarging ? t('discharging') : t('batteryIdle');
       const lcdGridVoltagePresent = Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .5;
+      const measuredGridConnected = lcdGridVoltagePresent
+        || (Number.isFinite(gridCurrent) && Math.abs(gridCurrent) > .05)
+        || (Number.isFinite(measuredGridPower) && Math.abs(measuredGridPower) > 20);
       const gridConnected = liveMeasurementsFresh && (terminalState
-        ? terminalState.grid !== 0
-        : lcdGridVoltagePresent);
-      const gridNormal = terminalState ? terminalState.grid === 2 : gridConnected;
+        ? terminalState.grid !== 0 || measuredGridConnected
+        : measuredGridConnected);
+      const gridNormal = terminalState?.grid === 1 ? false : gridConnected;
       const pvConnected = liveMeasurementsFresh && (terminalState
         ? terminalState.pv1 !== 0 || terminalState.pv2 !== 0
         : Number.isFinite(pvVoltage) && Math.abs(pvVoltage) > .5);
       const pvNormal = terminalState
         ? terminalState.pv1 === 2 || terminalState.pv2 === 2
         : pvConnected;
-      const outputConnected = liveMeasurementsFresh && (terminalState ? terminalState.output !== 0 : true);
-      const outputCanSupply = terminalState ? terminalState.output === 1 : outputConnected;
+      // The household is the load endpoint. Do not let a stale R68 output
+      // state hide it when current output telemetry is live.
+      const outputConnected = liveMeasurementsFresh;
+      const outputCanSupply = liveMeasurementsFresh;
       const gridFlowActive = !flowSuppressed && gridConnected && gridNormal && (flowState
         ? flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid
         : Number.isFinite(measuredGridPower) && Math.abs(measuredGridPower) > 20);
       const pvFlowActive = !flowSuppressed && pvConnected && pvNormal && (flowState
         ? flowState.pvToRectifier
         : Number.isFinite(pvPower) && pvPower > 20);
-      const loadFlowActive = !flowSuppressed && outputConnected && outputCanSupply && (flowState
-        ? flowState.gridToLoad || flowState.generatorToLoad || flowState.inverterToMainOutput || flowState.inverterToSecondaryOutput
-        : Number.isFinite(loadPower) && loadPower > 20);
+      const loadFlowActive = outputConnected && outputCanSupply;
       const displayedGridVoltage = gridConnected && Number.isFinite(gridVoltage) ? gridVoltage : 0;
       const displayedGridCurrent = gridConnected && Number.isFinite(gridCurrent) ? gridCurrent : 0;
       const displayedGridFrequency = gridConnected && Number.isFinite(frequency) ? frequency : 0;

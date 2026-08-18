@@ -24,6 +24,7 @@ SCRIPT_NAMES = (
     "energy-flow.js",
     "lcd.js",
     "app.js",
+    "register-map.js",
     "app-events.js",
 )
 
@@ -404,12 +405,20 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("decodeEnergyTerminalState(terminalStateSource)", flow)
         self.assertNotIn("firstRegister([70, 322])", flow)
         self.assertIn("firstRegister([84, 436])", flow)
+        self.assertIn("const measuredGridConnected = gridVoltagePresent", flow)
+        self.assertIn("terminalState.grid !== 0 || measuredGridConnected", flow)
+        self.assertIn("let lastRealFlowState = null", flow)
+        self.assertIn("window.showFlowChangeAlert?.(notices.join(' · '))", flow)
+        self.assertIn("The home is always the consuming endpoint", flow)
+        self.assertIn("const homeFlowActive = liveMeasurementsFresh", flow)
+        self.assertIn("const homeConnected = true", flow)
+        self.assertIn("direction: t('consuming')", flow)
         self.assertIn("firstRegister([161, 153, 156])", flow)
         self.assertIn("firstAvailableValue([449, 184])", flow)
         self.assertIn("firstAvailableValue([451, 185])", flow)
         self.assertIn("firstAvailableValue([453, 186])", flow)
-        self.assertIn("firstRegister([404, 129, 137, 342])", flow)
-        self.assertIn("firstRegister([405, 130])", flow)
+        self.assertIn("firstRegister([137, 129, 404, 342])", flow)
+        self.assertIn("firstRegister([130, 405])", flow)
         self.assertIn("measuredBatteryActive\n        || (energyFlowState", flow)
         self.assertIn("const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online)", flow)
         self.assertIn("const demoStatus = chartDemoRunning ? t(demoFlowCase || 'demoMode') : ''", flow)
@@ -427,7 +436,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn(": [0, 1, 2, 8, 9, 10].includes(inverterState)", flow)
         self.assertIn("return modes[raw] || {label: '?', descriptionText: registerInterpretation(source)}", flow)
         self.assertIn("const description = mode.descriptionText || (mode.description ? t(mode.description) : '')", flow)
-        self.assertIn("const outputCanSupply = terminalState ? outputState === 1 : true", flow)
+        self.assertIn("const outputCanSupply = liveMeasurementsFresh", flow)
         self.assertNotIn("label: `#${raw}`", flow)
         self.assertIn("`${routeSources.join(' + ')} → ${routeDestinations.join(' + ')}`", flow)
         self.assertIn("parallelTopologyCode(parallelState)", flow)
@@ -890,18 +899,31 @@ class DashboardAssetTests(unittest.TestCase):
         from solar_inverter.services.inverter_service_core import (
             FAST_BLOCKS,
             KNOWN_REGISTERS,
+            OBSERVED_AVAILABLE_REGISTERS,
+            COUNTER_32BIT_LOW_WORD_REGISTERS,
             REGISTER_CONFIG,
         )
         from solar_inverter.services.register_profile_12ku import REGISTER_BY_NUMBER, REGISTER_PROFILE
 
         self.assertEqual(len(REGISTER_PROFILE), 696)
         self.assertEqual(KNOWN_REGISTERS, [row[0] for row in REGISTER_PROFILE])
+        self.assertEqual(len(OBSERVED_AVAILABLE_REGISTERS), 386)
+        self.assertTrue(set(OBSERVED_AVAILABLE_REGISTERS).issubset(KNOWN_REGISTERS))
+        self.assertEqual(OBSERVED_AVAILABLE_REGISTERS[:3], (1, 2, 3))
+        self.assertEqual(OBSERVED_AVAILABLE_REGISTERS[-3:], (16768, 16779, 16780))
+        self.assertEqual(len(COUNTER_32BIT_LOW_WORD_REGISTERS), 30)
+        for low_register, high_register in COUNTER_32BIT_LOW_WORD_REGISTERS.items():
+            with self.subTest(low_register=low_register):
+                self.assertEqual(REGISTER_CONFIG[high_register][0], REGISTER_CONFIG[low_register][0])
+                self.assertNotRegex(REGISTER_CONFIG[low_register][0], r"(?:слово|\bH\b|\bL\b)")
         self.assertEqual(REGISTER_BY_NUMBER[58][2], "Model ID / Protocol ID B")
         self.assertEqual(REGISTER_BY_NUMBER[16651][5:7], (0.1, "V"))
         self.assertEqual(REGISTER_CONFIG[142][1:3], (0.01, "Ah"))
         self.assertEqual(REGISTER_CONFIG[143][1:3], (0.01, "Ah"))
         self.assertEqual(REGISTER_CONFIG[157][1:3], (0.01, "kWh"))
         self.assertEqual(REGISTER_CONFIG[187][1:3], (0.01, "kWh"))
+        self.assertEqual(REGISTER_CONFIG[450][0], "Споживання з мережі за місяць")
+        self.assertEqual(REGISTER_CONFIG[451][0], "Споживання з мережі за місяць")
         self.assertEqual(
             REGISTER_BY_NUMBER[68][2:5],
             ("Состояние силовых клемм", "только чтение", "uint16_t"),
@@ -1052,6 +1074,36 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertEqual([(frame[1] >> 2) & 3 for frame in frames], [0, 0, 0, 0, 2, 0])
         self.assertEqual([frames[index][6:] for index in (3, 4)], [[100, 100, 100], [100, 100, 100]])
 
+    def test_captured_demo_grid_charge_has_a_matching_grid_route(self) -> None:
+        chart_path = WEB_ROOT / "scripts" / "charts.js"
+        probe = textwrap.dedent(
+            """
+            const fs = require('fs');
+            const source = fs.readFileSync(process.argv[1], 'utf8');
+            const start = source.indexOf('function interpolate');
+            const end = source.indexOf('function realisticDemoScenario', start);
+            eval(source.slice(start, end));
+            const discharge = capturedRegisterLogDemoScenario(6).values;
+            const charge = capturedRegisterLogDemoScenario(66).values;
+            console.log(JSON.stringify({
+              discharge: [discharge.get(130), discharge.get(134), discharge.get(69)],
+              charge: [charge.get(81), charge.get(130), charge.get(134), charge.get(69)]
+            }));
+            """
+        )
+        result = subprocess.run(
+            [shutil.which("node") or "node", "-e", probe, str(chart_path)],
+            check=True, capture_output=True, text=True,
+        )
+        demo = json.loads(result.stdout)
+        self.assertLess(demo["discharge"][0], 0)
+        self.assertLess(demo["discharge"][1], 0)
+        self.assertEqual(demo["discharge"][2] & (1 << 8), 1 << 8)
+        self.assertEqual(demo["charge"][0], 230)
+        self.assertGreater(demo["charge"][1], 0)
+        self.assertGreater(demo["charge"][2], 0)
+        self.assertEqual(demo["charge"][3] & ((1 << 0) | (1 << 5)), (1 << 0) | (1 << 5))
+
     def test_full_r68_battery_state_forces_a_complete_soc_display(self) -> None:
         flow = (WEB_ROOT / "scripts" / "energy-flow.js").read_text(encoding="utf-8")
         lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
@@ -1071,6 +1123,25 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertEqual(effective_battery_soc(73.0, 3 << 8), 73.0)
         self.assertEqual(effective_battery_soc(None, full_terminal_state), 100.0)
         self.assertIsNone(effective_battery_soc(None, None))
+
+    def test_api_signs_battery_current_and_power_during_discharge(self) -> None:
+        from solar_inverter.components.web_dashboard import web_state
+        from solar_inverter.services.inverter_service import state, state_lock
+
+        with state_lock:
+            original_values = dict(state["values"])
+            state["values"].update({68: 2 << 8, 69: 1 << 8, 130: 57, 134: 306})
+        try:
+            snapshot = web_state("en")
+            readings = {item["register"]: item for item in snapshot["registers"]}
+            meters = {item["register"]: item for item in snapshot["meters"]}
+            self.assertEqual(readings[130]["value"], -5.7)
+            self.assertEqual(readings[134]["value"], -306)
+            self.assertEqual(meters[130]["value"], -5.7)
+            self.assertEqual(meters[134]["value"], -306)
+        finally:
+            with state_lock:
+                state["values"] = original_values
 
     def test_lcd_uses_canonical_state_registers_for_connections_and_flow(self) -> None:
         lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
@@ -1141,6 +1212,7 @@ class DashboardRendererTests(unittest.TestCase):
         css_source = dashboard_css()
         self.assertIn("const fanSpeed =", chart_source)
         self.assertIn("function capturedRegisterLogDemoScenario(elapsedSeconds)", chart_source)
+        self.assertIn("Values change every demo frame", chart_source)
         self.assertIn("[67, 5], [68, 576], [69, 33536]", chart_source)
         self.assertIn("values.set(405, frame.current)", chart_source)
         self.assertIn("Number.isFinite(currentValue)", chart_source)

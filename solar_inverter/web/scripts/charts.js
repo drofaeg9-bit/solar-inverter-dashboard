@@ -201,6 +201,13 @@
       const items = timelineDefinitions().filter(item =>
         `${item.label} ${item.detail} ${item.unit}`.toLowerCase().includes(query)
       );
+      const signature = `${currentLanguage}|${query}|${items.map(item =>
+        `${item.key}:${item.label}:${item.detail}:${item.unit}:${chartSelections.has(item.key)}`
+      ).join('|')}`;
+      // Polls and demo frames update values continuously. Preserve the existing
+      // checkbox nodes unless the selectable chart list actually changed.
+      if (host.dataset.signature === signature) return;
+      host.dataset.signature = signature;
       host.innerHTML = items.map(item => `<label class="chart-selection-option">
         <input type="checkbox" data-chart-selection-key="${item.key}" ${chartSelections.has(item.key) ? 'checked' : ''}>
         <span>${item.label}<small>${item.detail}${item.unit ? ` · ${item.unit}` : ''}</small></span>
@@ -234,18 +241,21 @@
     }
     function updateChartDefinitions(data) {
       const next = collectChartDefinitions(data);
-      const definitionSignature = definitions => [...definitions.values()].map(item =>
-        `${item.key}:${item.label}:${item.detail}:${item.interpretation || ''}:${item.unit}:${item.minimum}:${item.maximum}`
-      ).join('|');
-      const oldSignature = definitionSignature(chartDefinitions);
-      const nextSignature = definitionSignature(next);
+      const chartMetadataSignature = definitions => [...definitions.values()]
+        .filter(isTimelineValue)
+        .map(item => `${item.key}:${item.label}:${item.detail}:${item.unit}:${chartPeriodForItem(item)}`)
+        .join('|');
+      const oldChartMetadata = chartMetadataSignature(chartDefinitions);
+      const nextChartMetadata = chartMetadataSignature(next);
       chartDefinitions = next;
       synchronizeTimelineCharts();
-      renderChartSelectionList();
-      if (oldSignature !== nextSignature) {
-        renderGaugePickerList();
+      if (oldChartMetadata !== nextChartMetadata) {
+        // Do not let unrelated live register states rebuild graph controls.
+        // Only the small set of selectable time-series metadata can do that.
+        renderChartSelectionList();
         renderChartCards();
       }
+      renderGaugePickerList();
       if (!chartDemoRunning) renderDashboardValues();
     }
     function renderChartCards() {
@@ -381,6 +391,17 @@
       [529, 0], [530, 1], [537, 230.1], [539, 2.35], [541, 208], [542, 540], [545, 4.6],
       [801, 30], [818, 40], [822, 38]
     ]);
+    // Packed (register, raw) uint16 pairs from the 18-Aug-2026 live capture.
+    // Keeping the source data raw preserves every one of its 386 real readings.
+    const CAPTURED_REGISTER_LOG_RAW_BASE64 = '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';
+    const CAPTURED_REGISTER_LOG_RAW_VALUES = (() => {
+      const bytes = Uint8Array.from(atob(CAPTURED_REGISTER_LOG_RAW_BASE64), character => character.charCodeAt(0));
+      const values = new Map();
+      for (let offset = 0; offset < bytes.length; offset += 4) {
+        values.set((bytes[offset] << 8) | bytes[offset + 1], (bytes[offset + 2] << 8) | bytes[offset + 3]);
+      }
+      return values;
+    })();
     const CAPTURED_REGISTER_LOG_FRAMES = Object.freeze([
       {current: -5.7, voltage: 230.1, load: 208, loadPercent: 4.6},
       {current: -4.8, voltage: 229.9, load: 200, loadPercent: 4.6},
@@ -399,15 +420,33 @@
       const frame = CAPTURED_REGISTER_LOG_FRAMES[
         Math.floor(Math.max(0, elapsedSeconds) / 3) % CAPTURED_REGISTER_LOG_FRAMES.length
       ];
-      const values = new Map(CAPTURED_REGISTER_LOG_VALUES);
-      values.set(405, frame.current);
+      const chargingFromGrid = Math.floor(Math.max(0, elapsedSeconds) / 60) % 2 === 1;
+      const batteryCurrent = chargingFromGrid ? Math.abs(frame.current) : frame.current;
+      // All unchanged values come directly from the captured raw snapshot.
+      // Only these readings change to make the two real flow directions clear.
+      const values = new Map();
+      values.set(130, batteryCurrent);
+      values.set(134, 52.8 * batteryCurrent);
+      values.set(405, batteryCurrent);
       values.set(537, frame.voltage);
       values.set(541, frame.load);
       values.set(545, frame.loadPercent);
+      if (chargingFromGrid) {
+        const gridPower = frame.load + Math.abs(52.8 * batteryCurrent);
+        values.set(67, 3);
+        values.set(68, 2 | (1 << 6) | (3 << 8) | (1 << 11));
+        values.set(69, (1 << 0) | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 9));
+        values.set(81, 230); values.set(82, gridPower / 230); values.set(83, 50); values.set(84, gridPower);
+        values.set(433, 230); values.set(434, gridPower / 230); values.set(435, 50); values.set(436, gridPower);
+      } else {
+        values.set(67, 5);
+        values.set(68, 2 << 8);
+        values.set(69, 1 << 8);
+      }
       return {
         elapsedSeconds: Math.max(0, elapsedSeconds),
-        statusCode: 5,
-        caseKey: 'demoBatteryHome',
+        statusCode: chargingFromGrid ? 3 : 5,
+        caseKey: chargingFromGrid ? 'demoGridHome' : 'demoBatteryHome',
         generatorPower: 0,
         pvVoltage: 0,
         pvPower: 0,
@@ -681,6 +720,11 @@
       value = Number(value.toFixed(6));
       return {raw, value, display: demoDisplayValue(value, scale), available: true};
     }
+    function demoCapturedRawReading(register, raw) {
+      if (!Number.isInteger(raw) || raw >= 65534) return {raw, value: null, display: '—', available: false};
+      const value = (register.signed && raw >= 32768 ? raw - 65536 : raw) * (Number(register.scale) || 1);
+      return {raw, value: Number(value.toFixed(6)), display: demoDisplayValue(value, Number(register.scale) || 1), available: true};
+    }
     function continuousDemoChartValue(item, history) {
       const value = Number(item?.value);
       const previous = history.at(-1)?.value;
@@ -719,15 +763,12 @@
       demoFlowCase = scenario.caseKey;
       demoRegisterRows = lastData ? lastData.registers.map(register => {
         const scenarioValue = scenario.values.get(register.register);
-        const currentValue = registerNumericValue(register);
-        const value = Number.isFinite(scenarioValue)
-          ? scenarioValue
-          : Number.isFinite(currentValue)
-            ? currentValue
-            : null;
-        const reading = Number.isFinite(value)
-          ? demoRegisterReading(register, value)
-          : {raw: null, value: null, display: '—', available: false};
+        const capturedRaw = CAPTURED_REGISTER_LOG_RAW_VALUES.get(Number(register.register));
+        const reading = Number.isFinite(scenarioValue)
+          ? demoRegisterReading(register, scenarioValue)
+          : Number.isInteger(capturedRaw)
+            ? demoCapturedRawReading(register, capturedRaw)
+            : {raw: null, value: null, display: '—', available: false};
         return {
           ...register,
           ...reading
@@ -869,6 +910,9 @@
             renderGridConsumptionEnergy(demoRegisterRows);
           }
           if (!document.querySelector('#charts-view').hidden) scheduleVisibleChartDraw();
+          if (!document.querySelector('#register-map-view').hidden && lastData) {
+            renderRegisterMap(registerMapDisplayData(lastData));
+          }
         }
       } finally {
         chartDemoRunning = false;

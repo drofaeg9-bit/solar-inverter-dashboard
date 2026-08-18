@@ -34,15 +34,10 @@
         (demoRegisterRows || []).map(register => [register.register, register])
       );
       chartDefinitions.forEach(item => {
-        const scenarioValue = scenario.values.get(item.register);
         const matchingRegister = demoRegistersByNumber.get(item.register);
-        const requestedValue = Number.isFinite(scenarioValue)
-          ? scenarioValue
-          : demoFallbackValue(item, scenario.elapsedSeconds);
-        const demoReading = matchingRegister
-          || demoRegisterReading(item, requestedValue);
+        const demoReading = matchingRegister || {raw: null, value: null, available: false};
         item.value = demoReading.value;
-        item.available = true;
+        item.available = Boolean(demoReading.available);
         item.source = `R${item.register} · ${t('demoMode')}`;
         if (matchingRegister) {
           item.displayValue = registerVersionDisplay(matchingRegister, demoRegisterRows);
@@ -75,7 +70,17 @@
           const ratio = index / (pointCount - 1);
           const scenario = realisticDemoScenario(ratio * 119.999);
           const base = scenario.values.get(item.register);
-          const baseline = Number.isFinite(base) ? base : demoFallbackValue(item, ratio * 120);
+          const capturedRaw = CAPTURED_REGISTER_LOG_RAW_VALUES.get(Number(item.register));
+          const baseline = Number.isFinite(base)
+            ? base
+            : Number.isInteger(capturedRaw)
+              ? demoCapturedRawReading(item, capturedRaw).value
+              : null;
+          if (!Number.isFinite(baseline)) {
+            chartHistory.set(item.key, []);
+            item.available = false;
+            return;
+          }
           const scale = Number(item.scale) || 1;
           const jitter = random() * Math.max(Math.abs(baseline) * .00002, scale * .02);
           let value = baseline + jitter;

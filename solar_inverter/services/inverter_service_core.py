@@ -412,8 +412,8 @@ REGISTER_CONFIG: dict[int, tuple[str, float, str, bool, str]] = {
     437: ("Резерв", 1.0, "", False, "AC"),
     448: ("Споживання мережі за день, старше слово", 1.0, "", False, "Енергія"),
     449: ("Споживання мережі за день, молодше слово", 1.0, "", False, "Енергія"),
-    450: ("Споживання мережі за місяць, старше слово", 1.0, "", False, "Енергія"),
-    451: ("Споживання мережі за місяць, молодше слово", 1.0, "", False, "Енергія"),
+    450: ("Споживання з мережі за місяць", 1.0, "", False, "Енергія"),
+    451: ("Споживання з мережі за місяць", 1.0, "", False, "Енергія"),
     452: ("Споживання мережі за рік, старше слово", 1.0, "", False, "Енергія"),
     453: ("Споживання мережі за рік, молодше слово", 1.0, "", False, "Енергія"),
     454: ("Загальне споживання мережі, старше слово", 1.0, "", False, "Енергія"),
@@ -496,6 +496,27 @@ COUNTER_32BIT_LOW_WORD_REGISTERS: dict[int, int] = {
     in REGISTER_PROFILE
     if _is_32bit_counter_low_word(low_register, data_type, scale, unit, has_hl)
 }
+
+# A counter is exposed as one human-readable measurement even though the
+# inverter transports it in two 16-bit words.  Both physical rows retain the
+# same label in Register Map; the low row carries the combined value.
+COUNTER_32BIT_DISPLAY_NAMES: dict[int, str] = {
+    441: "Віддано в мережу за день", 443: "Віддано в мережу за місяць",
+    445: "Віддано в мережу за рік", 447: "Віддано в мережу всього",
+    449: "Споживання з мережі за день", 451: "Споживання з мережі за місяць",
+    453: "Споживання з мережі за рік", 455: "Споживання з мережі всього",
+    547: "Енергія AC-виходу за день", 549: "Енергія AC-виходу за місяць",
+    551: "Енергія AC-виходу за рік", 553: "Енергія AC-виходу всього",
+    617: "Вироблено PV за день", 619: "Вироблено PV за місяць",
+    621: "Вироблено PV за рік", 623: "Вироблено PV всього",
+    631: "Вироблено PV1 за день", 633: "Вироблено PV1 за місяць",
+    635: "Вироблено PV1 за рік", 637: "Вироблено PV1 всього",
+    647: "Вироблено PV2 за день", 649: "Вироблено PV2 за місяць",
+    651: "Вироблено PV2 за рік", 653: "Вироблено PV2 всього",
+    688: "Енергія навантаження AC за день", 690: "Енергія навантаження AC за місяць",
+    692: "Енергія навантаження AC всього", 694: "Вихідна енергія AC за день",
+    696: "Вихідна енергія AC за місяць", 698: "Вихідна енергія AC всього",
+}
 for register, group, name, _access, data_type, scale, unit, _has_hl in REGISTER_PROFILE:
     profile_scale = 0.01 if scale == 10.0 and unit == "Wh" else scale
     profile_unit = "kWh" if scale == 10.0 and unit == "Wh" else unit
@@ -508,11 +529,37 @@ for register, group, name, _access, data_type, scale, unit, _has_hl in REGISTER_
         label, profile_scale, profile_unit or (existing[2] if existing else ""),
         existing[3] if existing else data_type.lower().startswith("int"), label_group
     )
+for low_register, high_register in COUNTER_32BIT_LOW_WORD_REGISTERS.items():
+    display_name = COUNTER_32BIT_DISPLAY_NAMES[low_register]
+    for register in (high_register, low_register):
+        _name, scale, unit, signed, group = REGISTER_CONFIG[register]
+        REGISTER_CONFIG[register] = (display_name, scale, unit, signed, group)
 
 # Show every physical register from the 12KU workbook.  Fast mode continues to
 # use only the operational blocks above; Compatible mode deliberately reads the
 # full catalog on demand.
 KNOWN_REGISTERS = list(REGISTER_NUMBERS)
+
+# Addresses that responded in the 2026-08-18 live inverter capture
+# (386 of the 696 documented 12KU registers).  Use this proven set on every
+# normal poll by default; users can still adjust it in Register Map.
+OBSERVED_AVAILABLE_REGISTERS = tuple(int(register) for register in """
+1 2 3 4 5 6 7 8 9 10 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37
+57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+129 130 131 132 133 134 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161
+321 323 324 325 337 339 341 342 343 344 345 346 349 350 357 358 359 360 361 362 365 366 367 375 376 377 378 379 380 381 382 383 384 385 386 387 388
+401 402 403 404 405 406 407 408 409 410 411 412 413 414 415 416 417 418 419
+433 434 435 436 437 440 441 442 443 444 445 446 447 448 449 450 451 452 453 454 455
+529 530 537 538 539 540 541 542 543 544 545 546 547 548 549 550 551 552 553
+609 610 611 612 613 614 615 616 617 618 619 620 621 622 623 625 626 627 628 629 630 631 632 633 634 635 636 637
+641 642 643 644 645 646 647 648 649 650 651 652 653 673 674 677 683 684 685 686 687 688 689 690 691 692 693 694 695 696 697 698
+801 802 817 818 819 820 821 822 823 849 850 865 866 867 868 869 870
+4097 4098 4099 4107 4108 4109 4143
+4609 4610 4611 4612 4613 4614 4617 4618 4619 4620 4621 4622 4623 4624
+8193 8194 8195 8196
+16385 16529 16531 16533 16534 16535 16536 16537 16538 16540 16541 16542 16543 16544 16545 16546 16547
+16641 16642 16643 16644 16645 16646 16647 16648 16649 16650 16651 16652 16653 16654 16655 16656 16659 16660 16661 16662 16663 16664 16665 16666 16667 16668 16669 16670 16671 16672 16673 16674 16675 16676 16678 16680 16681 16682 16683 16684 16685 16686 16687 16688 16689 16690 16691 16692 16693 16694 16695 16696 16697 16698 16699 16700 16701 16702 16703 16704 16716 16717 16763 16764 16765 16766 16767 16768 16779 16780
+""".split())
 
 REGISTER_MAP_COLUMNS = ("register", "name", "unit", "scale", "display")
 register_map_lock = threading.RLock()
@@ -907,12 +954,13 @@ state: dict[str, Any] = {
     "cycle_id": 0,
     "poll_rate_index": 2,
     "read_mode": "fast",
+    "scan_active": False,
     "requests": 0,
     "successful": 0,
     "ошибок": 0,
     "error": "",
     "identifier": DEVICE_MODEL_NAME,
-    "fast_selected_registers": [],
+    "fast_selected_registers": list(OBSERVED_AVAILABLE_REGISTERS),
     "values": {},
     "paused": False,
     "stop": False,
@@ -1103,6 +1151,10 @@ def read_compatible() -> tuple[dict[int, int], int, int, str | None]:
     last_error = None
 
     for register in KNOWN_REGISTERS:
+        # A scan can be stopped from the Register Map between Modbus requests.
+        with state_lock:
+            if state.get("scan_active") is False and state["read_mode"] != "compatible":
+                break
         one, error = run_mbpoll(register, 1)
         requests += 1
 

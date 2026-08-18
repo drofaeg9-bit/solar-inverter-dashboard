@@ -688,6 +688,7 @@ def poll_worker() -> None:
             # register snapshot, then restores low-latency live monitoring.
             if mode == "scan":
                 state["read_mode"] = "fast"
+                state["scan_active"] = False
             log_cycle_id = int(state["cycle_id"])
             log_values = dict(cached)
 

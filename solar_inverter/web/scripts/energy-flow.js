@@ -12,6 +12,7 @@
     const INVERTER_FAN_RATE_SMOOTHING_MS = 280;
     const FLOW_CARD_MAX_VALUES = 3;
     const FLOW_CARD_SELECTION_KEY_PREFIX = 'inverter-flow-card-values-v2:';
+    const FAST_POLL_SELECTION_KEY = 'inverter-fast-poll-registers-v1';
     const LEGACY_FLOW_CARD_SELECTION_KEY = 'inverter-flow-card-values-v1';
     const FLOW_CARD_CONFIG = Object.freeze({
       solar: {label: 'solarPanels', defaults: [151, 153, 152], registers: [151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163]},
@@ -23,6 +24,7 @@
     });
     let activeFlowCardPicker = null;
     let lastFastPollSelection = '';
+    let lastRealFlowState = null;
 
     function legacyFlowCardSelections() {
       try {
@@ -69,8 +71,7 @@
       }
     }
     function syncFlowCardSelectionsForFastPoll() {
-      const registers = Object.keys(FLOW_CARD_CONFIG)
-        .flatMap(cardKey => flowCardSelection(cardKey));
+      const registers = fastPollSelection();
       const signature = registers.join(',');
       if (signature === lastFastPollSelection) return;
       lastFastPollSelection = signature;
@@ -81,6 +82,32 @@
       }).catch(() => {
         // The dashboard remains usable if the local browser cannot reach the API.
       });
+    }
+    function defaultFastPollSelection() {
+      const reported = Array.isArray(lastData?.fast_selected_registers)
+        ? [...new Set(lastData.fast_selected_registers.map(Number))].filter(Number.isInteger)
+        : [];
+      if (reported.length) return reported;
+      return [...new Set(Object.keys(FLOW_CARD_CONFIG).flatMap(cardKey => flowCardSelection(cardKey)))];
+    }
+    function fastPollSelection() {
+      const reported = Array.isArray(lastData?.fast_selected_registers)
+        ? [...new Set(lastData.fast_selected_registers.map(Number))].filter(Number.isInteger)
+        : [];
+      if (reported.length) return reported;
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(FAST_POLL_SELECTION_KEY) || 'null');
+        if (Array.isArray(saved)) return [...new Set(saved.map(Number))].filter(Number.isInteger);
+      } catch {}
+      return defaultFastPollSelection();
+    }
+    function setFastPollSelection(registers) {
+      const selected = [...new Set(registers.map(Number))].filter(Number.isInteger);
+      try { window.localStorage.setItem(FAST_POLL_SELECTION_KEY, JSON.stringify(selected)); } catch {}
+      lastFastPollSelection = '';
+      syncFlowCardSelectionsForFastPoll();
+      if (lastData) lastData.fast_selected_registers = selected;
+      return selected;
     }
     function formatFlowCardRegister(register) {
       const value = registerNumericValue(register);
@@ -486,8 +513,8 @@
       // live source shown by the battery card.  Prefer it over the optional
       // inverter fast-bank values so a BMS-reported discharge is animated even
       // when R130 was not selected for an extra read.
-      const batteryVoltageSource = firstRegister([404, 129, 137, 342]);
-      const batteryCurrentSource = firstRegister([405, 130]);
+      const batteryVoltageSource = firstRegister([137, 129, 404, 342]);
+      const batteryCurrentSource = firstRegister([130, 405]);
       const batterySocSource = firstRegister([407]);
       const batteryPowerSource = firstRegister([134, 149]);
       const inverterPrioritySource = firstRegister([529, 323, 16643]);
@@ -590,15 +617,22 @@
       const solarDataVisible = liveMeasurementsFresh && pvConnected;
       const pvReceiving = false;
       const gridVoltagePresent = Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .5;
+      const measuredGridConnected = gridVoltagePresent
+        || (Number.isFinite(measuredGridCurrent) && Math.abs(measuredGridCurrent) > .05)
+        || (Number.isFinite(measuredGridPower) && Math.abs(measuredGridPower) > 20);
       // R81 is the physical mains input. R68 confirms whether that input is
-      // electrically normal; output voltage remains separate (R537, then R89).
-      const gridTerminalConnected = terminalState ? terminalState.grid !== 0 : gridVoltagePresent;
+      // electrically normal, but may lag a live R433/R434 measurement.
+      const gridTerminalConnected = terminalState
+        ? terminalState.grid !== 0 || measuredGridConnected
+        : measuredGridConnected;
       const gridAvailable = liveMeasurementsFresh && gridTerminalConnected;
-      const gridNormal = terminalState ? terminalState.grid === 2 : gridAvailable;
-      const gridAbnormal = terminalState?.grid === 1;
-      const outputState = terminalState?.output;
-      const outputConnected = terminalState ? outputState !== 0 : true;
-      const outputCanSupply = terminalState ? outputState === 1 : true;
+      const gridNormal = terminalState?.grid === 1 ? false : gridAvailable;
+      const gridAbnormal = terminalState?.grid === 1 && !measuredGridConnected;
+      // R68 output bits can be stale while R537/R541 show a live household
+      // load. The home is always the consuming endpoint of an online system;
+      // never present it as a stopped inverter output.
+      const outputConnected = liveMeasurementsFresh;
+      const outputCanSupply = liveMeasurementsFresh;
       const loadPower = Number.isFinite(measuredLoadPower) ? Math.max(0, measuredLoadPower) : null;
       const batteryChargePower = batteryCharging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
       const batteryDischargePower = batteryDischarging && Number.isFinite(batteryPower) ? Math.abs(batteryPower) : 0;
@@ -648,8 +682,11 @@
           ? [loadPowerSource, pvPowerSource, batteryPowerSources, gridVoltageSource, gridModeSource]
         : gridAvailable ? [gridModeSource, gridVoltageSource] : [gridModeSource];
 
-      const homeConnected = liveMeasurementsFresh && outputConnected;
-      const homeActive = homeConnected && Number.isFinite(loadPower) && loadPower > 20;
+      // The home is the load endpoint, not an inverter-controlled device.
+      // Keep it visible and consuming even when output telemetry is delayed;
+      // only the flow animation needs a fresh measurement.
+      const homeConnected = true;
+      const homeActive = liveMeasurementsFresh;
       const outputPriority = decodeBoundedRegister(inverterPrioritySource, 3);
       const priorityOutputSource = !energyFlowState && !flowSuppressedByState && homeActive
         ? outputSourceFromPriority(outputPriority, {
@@ -659,12 +696,7 @@
           generator: generatorActive
         })
         : null;
-      const homeFlowActive = !flowSuppressedByState && homeConnected && outputCanSupply && (energyFlowState
-        ? energyFlowState.inverterToMainOutput
-          || energyFlowState.inverterToSecondaryOutput
-          || energyFlowState.gridToLoad
-          || energyFlowState.generatorToLoad
-        : Boolean(priorityOutputSource) || homeActive);
+      const homeFlowActive = liveMeasurementsFresh;
       const gridImporting = energyFlowState
         ? energyFlowState.gridToRectifier || energyFlowState.gridToLoad
         : priorityOutputSource ? priorityOutputSource === 'grid' : Number.isFinite(gridPower) && gridPower > 20;
@@ -673,6 +705,33 @@
       const batterySupplyingOutput = energyFlowState
         ? batteryDischarging
         : priorityOutputSource ? priorityOutputSource === 'battery' : batteryDischarging;
+      const gridFlowState = !gridAvailable
+        ? 'off'
+        : gridExporting ? 'export'
+          : gridFlowActive ? 'import' : 'ready';
+      const batteryFlowState = !batteryConnected
+        ? 'off'
+        : batteryCharging ? 'charge'
+          : batteryDischarging ? 'discharge' : 'idle';
+      if (chartDemoRunning || !data.online) {
+        lastRealFlowState = null;
+      } else {
+        const nextRealFlowState = `${gridFlowState}|${batteryFlowState}`;
+        if (lastRealFlowState !== null && lastRealFlowState !== nextRealFlowState) {
+          const [previousGrid, previousBattery] = lastRealFlowState.split('|');
+          const notices = [];
+          if (previousGrid !== gridFlowState) {
+            const gridText = {off: t('notConnected'), ready: t('gridReady'), import: t('gridSupplying'), export: t('gridExporting')}[gridFlowState];
+            notices.push(`${t('grid')}: ${gridText}`);
+          }
+          if (previousBattery !== batteryFlowState) {
+            const batteryText = {off: t('notConnected'), idle: t('batteryIdle'), charge: t('charging'), discharge: t('discharging')}[batteryFlowState];
+            notices.push(`${t('battery')}: ${batteryText}`);
+          }
+          window.showFlowChangeAlert?.(notices.join(' · '));
+        }
+        lastRealFlowState = nextRealFlowState;
+      }
       const displayedGridVoltage = gridAvailable && Number.isFinite(gridVoltage)
         ? Math.abs(gridVoltage)
         : 0;
@@ -725,10 +784,8 @@
         (routeFlowState ? routeFlowState.batteryToInverter : batterySupplyingOutput) && t('battery')
       ]);
       const routeDestinations = uniqueLabels([
-        (routeFlowState
-          ? routeFlowState.gridToLoad || routeFlowState.generatorToLoad
-            || routeFlowState.inverterToMainOutput || routeFlowState.inverterToSecondaryOutput
-          : homeFlowActive) && t('home'),
+        // R69 can lag actual output measurements; a live load always has a home destination.
+        homeFlowActive && t('home'),
         (routeFlowState ? routeFlowState.rectifierToBattery : batteryCharging) && t('battery'),
         (routeFlowState ? routeFlowState.rectifierToGrid : gridExporting) && t('grid'),
         routeFlowState?.rectifierToInverter && !(
@@ -839,13 +896,7 @@
           '#energy-home-power': Number.isFinite(loadPower) ? reading(loadPower, 'W') : '— W'
         },
         directionSelector: '#energy-home-direction',
-        direction: outputState === 2
-          ? t('outputOverload')
-          : outputState === 3
-            ? t('outputShort')
-            : outputState === 0
-              ? t('outputStopped')
-              : homeFlowActive ? t('consuming') : t('batteryIdle')
+        direction: t('consuming')
       });
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-grid-node',
@@ -904,8 +955,8 @@
       setFlow('#energy-pv-flow', pvActive && inverterActive && !pvReceiving, false, pvPower);
       document.querySelector('#energy-pv-flow')?.classList.toggle('disconnected', !pvConnected);
       // Home is deliberately one-way: it can consume energy but never supply it.
-      setFlow('#energy-home-flow', inverterActive && homeFlowActive, false, loadPower);
-      document.querySelector('#energy-home-flow')?.classList.toggle('disconnected', !outputConnected);
+      setFlow('#energy-home-flow', homeFlowActive, false, loadPower);
+      document.querySelector('#energy-home-flow')?.classList.toggle('disconnected', !homeConnected);
       // Generator is a one-way source: animation always travels toward the inverter.
       setFlow(
         '#energy-generator-flow',

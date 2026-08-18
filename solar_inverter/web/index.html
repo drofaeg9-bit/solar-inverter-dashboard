@@ -17,6 +17,7 @@
   <script defer src="/static/scripts/energy-flow.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/lcd.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/app.js?v=__ASSET_VERSION__"></script>
+  <script defer src="/static/scripts/register-map.js?v=__ASSET_VERSION__"></script>
   <script defer src="/static/scripts/app-events.js?v=__ASSET_VERSION__"></script>
 </head>
 <body>
@@ -48,6 +49,7 @@
           <button class="view-tab active" id="dashboard-tab" type="button" role="tab" data-view="dashboard" aria-controls="dashboard-view" aria-selected="true" tabindex="0" data-i18n="dashboardTab">Панель</button>
           <button class="view-tab" id="charts-tab" type="button" role="tab" data-view="charts" aria-controls="charts-view" aria-selected="false" tabindex="-1" data-i18n="chartsTab">Графіки</button>
           <button class="view-tab" id="lcd-tab" type="button" role="tab" data-view="lcd" aria-controls="lcd-view" aria-selected="false" tabindex="-1" data-i18n="lcdTab">LCD</button>
+          <button class="view-tab" id="register-map-tab" type="button" role="tab" data-view="register-map" aria-controls="register-map-view" aria-selected="false" tabindex="-1" data-i18n="registerMapTab">Карта регістрів</button>
           <button id="settings-button" type="button" data-i18n-title="settingsAria" data-i18n-aria="settingsAria" aria-label="Налаштування">⚙</button>
           <button id="logs-button" type="button" data-i18n-title="logsAria" data-i18n-aria="logsAria" aria-label="Логи сервера">📋</button>
           <button id="modbus-debug-button" type="button" data-i18n-title="modbusDebugAria" data-i18n-aria="modbusDebugAria" aria-label="Modbus налагодження">🔧</button>
@@ -346,6 +348,21 @@
             <div class="lcd-controls-note" data-i18n="lcdControlsLocalOnly">Віртуальні клавіші керують лише сторінками застосунку. У демо активний CSV-журнал фіксує кожне натискання. Налаштування інвертора не змінюються.</div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section id="register-map-view" role="tabpanel" aria-labelledby="register-map-tab" tabindex="0" hidden>
+      <div class="register-map-panel">
+        <div class="panel-head"><div><h2 data-i18n="registerMapTitle">Register map</h2><p class="muted" data-i18n="registerMapPollHelp">Shows registers from the latest inverter snapshot; demo uses the saved snapshot. Select any number for every fast-poll cycle.</p></div><span class="chip" id="fast-poll-count">0</span></div>
+        <div class="register-map-controls">
+          <input id="register-map-search" type="search" data-i18n-placeholder="searchRegisters" placeholder="Search registers…" data-i18n-aria="searchRegisters" aria-label="Search registers">
+          <input id="register-map-add" inputmode="numeric" placeholder="R130" data-i18n-aria="registerMapAddAria" aria-label="Register number to add">
+          <button id="register-map-add-button" type="button" data-i18n="addRegister">Add register</button>
+          <button id="register-map-scan" type="button" data-i18n="scanRegisterMap">Scan all available</button>
+          <button id="register-map-reset" type="button" data-i18n="resetFastPoll">Restore dashboard default</button>
+        </div>
+        <p class="muted" id="register-map-message" aria-live="polite"></p>
+        <div class="register-map-table-wrap"><table class="register-map-table"><thead><tr><th data-i18n="fastPoll">Every cycle</th><th data-i18n="register">Register</th><th data-i18n="group">Group</th><th data-i18n="name">Name</th><th data-i18n="unit">Unit</th><th data-i18n="actions">Actions</th></tr></thead><tbody id="register-map-rows"></tbody></table></div>
       </div>
     </section>
 

@@ -132,8 +132,30 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             return None
         return normalize(register, values[register])[3]
 
-    battery_current_value: float | None = None
-    battery_current_value = effective_value(130)
+    def battery_direction() -> int:
+        """Return the physical battery direction: charge +1, discharge -1."""
+        flow_state = effective_value(69)
+        if flow_state is not None:
+            flow_bits = int(flow_state)
+            if flow_bits & (1 << 8):  # battery → inverter
+                return -1
+            if flow_bits & (1 << 5):  # rectifier → battery
+                return 1
+        terminal_state = effective_value(68)
+        if terminal_state is not None:
+            battery_state = (int(terminal_state) >> 8) & 0x07
+            if battery_state == 2:
+                return -1
+            if battery_state == 3:
+                return 1
+        return 0
+
+    def battery_current_with_flow_direction(value: float | None) -> float | None:
+        """Apply the physical flow sign when a device reports current as magnitude."""
+        direction = battery_direction()
+        return direction * abs(value) if value is not None and direction else value
+
+    battery_current_value = battery_current_with_flow_direction(effective_value(130))
     def battery_power_with_current_direction(value: float | None) -> float | None:
         """Use positive charge and negative discharge consistently for R134."""
         if value is None or battery_current_value is None or abs(battery_current_value) < 0.3:
@@ -151,7 +173,9 @@ def web_state(language: str = "uk") -> dict[str, Any]:
         metadata_override = register_override(register)
         label = str(metadata_override.get("name", label))
         unit = str(metadata_override.get("unit", unit))
-        if register == 134:
+        if register == 130:
+            value = battery_current_with_flow_direction(value)
+        elif register == 134:
             value = battery_power_with_current_direction(value)
         elif register == 133:
             value = effective_battery_soc(value, None)
@@ -192,6 +216,10 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             if counter_value is not None:
                 normalized_value = counter_value
                 display = f"{counter_value:.2f}" if scale == 0.01 else f"{counter_value:g}"
+            elif register == 130:
+                normalized_value = battery_current_with_flow_direction(normalized_value)
+                if normalized_value is not None:
+                    display = f"{normalized_value:g}"
             elif register == 134:
                 normalized_value = battery_power_with_current_direction(normalized_value)
                 if normalized_value is not None:
@@ -255,6 +283,7 @@ def web_state(language: str = "uk") -> dict[str, Any]:
         "cycle_id": snapshot["cycle_id"],
         "poll_rate_index": snapshot["poll_rate_index"],
         "read_mode": snapshot["read_mode"],
+        "fast_selected_registers": list(snapshot["fast_selected_registers"]),
         "requests": snapshot["requests"],
         "successful": snapshot["successful"],
         "failed": snapshot["ошибок"],
@@ -986,10 +1015,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     if mode not in {"fast", "compatible", "scan"}:
                         raise ValueError("неправильний режим читання")
                     state["read_mode"] = mode
+                    state["scan_active"] = mode == "scan"
                 if "fast_selected_registers" in payload:
                     registers = payload["fast_selected_registers"]
-                    if not isinstance(registers, list) or len(registers) > 18:
-                        raise ValueError("fast_selected_registers must contain at most 18 registers")
+                    if not isinstance(registers, list):
+                        raise ValueError("fast_selected_registers must be a list")
                     selected_registers = []
                     for register in registers:
                         if isinstance(register, bool) or not isinstance(register, int) or register not in KNOWN_REGISTERS:

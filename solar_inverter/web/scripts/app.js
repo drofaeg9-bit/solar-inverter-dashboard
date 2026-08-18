@@ -27,10 +27,32 @@
     let versionCheckController = null;
     let pageIsActive = true;
     let lastLoggedSiteVisits = null;
+    let flowAlertText = '';
+    let flowAlertTimer = null;
     const requestIntervals = [500, 1000, 2000, 5000, 10000];
     const hiddenRefreshInterval = 30000;
     const flowAnimationStates = new Map();
     let chartDefinitions = new Map();
+    function registerMapDisplayData(data) {
+      return chartDemoRunning && demoRegisterRows
+        ? {...data, registers: demoRegisterRows}
+        : data;
+    }
+    window.showFlowChangeAlert = function showFlowChangeAlert(message) {
+      flowAlertText = String(message || '');
+      if (!flowAlertText) return;
+      if (flowAlertTimer !== null) window.clearTimeout(flowAlertTimer);
+      const box = document.querySelector('#error');
+      if (box && !lastData?.error) {
+        box.textContent = flowAlertText;
+        box.classList.add('show');
+      }
+      flowAlertTimer = window.setTimeout(() => {
+        flowAlertTimer = null;
+        flowAlertText = '';
+        if (!lastData?.error) document.querySelector('#error')?.classList.remove('show');
+      }, 5000);
+    };
     function savedSelections(name) {
       try {
         return new Set(JSON.parse(window.localStorage.getItem(name) || '[]'));
@@ -412,10 +434,11 @@
       // Poll rate and read mode are now in the modbus debug modal
       const error = document.querySelector('#error');
       const connectionError = chartDemoRunning ? '' : data.error;
-      error.textContent = connectionError
+      const visibleNotice = connectionError
         ? t('connectionError', {error: localizeApiField(data, 'error')})
-        : '';
-      error.classList.toggle('show', Boolean(connectionError));
+        : flowAlertText;
+      error.textContent = visibleNotice;
+      error.classList.toggle('show', Boolean(visibleNotice));
       renderRegisterLog(data.register_log);
       renderGridConsumptionEnergy(data.registers);
       const displayedRegisters = chartDemoRunning && demoRegisterRows ? demoRegisterRows : data.registers;
@@ -423,6 +446,7 @@
       renderEnergyFlow(data, displayedRegisters);
       renderLcd(data, displayedRegisters);
       updateChartDefinitions(dashboardDefinitionData(data));
+      if (currentView === 'register-map') renderRegisterMap(registerMapDisplayData(data));
     }
 
     function reloadDashboardForVersion(data) {
@@ -609,10 +633,11 @@
     }
 
     function showView(view) {
-      currentView = ['dashboard', 'charts', 'lcd'].includes(view) ? view : 'dashboard';
+      currentView = ['dashboard', 'charts', 'lcd', 'register-map'].includes(view) ? view : 'dashboard';
       document.querySelector('#dashboard-view').hidden = currentView !== 'dashboard';
       document.querySelector('#charts-view').hidden = currentView !== 'charts';
       document.querySelector('#lcd-view').hidden = currentView !== 'lcd';
+      document.querySelector('#register-map-view').hidden = currentView !== 'register-map';
       document.querySelectorAll('.view-tab').forEach(button => {
         const active = button.dataset.view === currentView;
         button.classList.toggle('active', active);
@@ -632,6 +657,7 @@
         renderLcd(lastData, chartDemoRunning && demoRegisterRows ? demoRegisterRows : lastData.registers);
       }
       if (currentView === 'dashboard') renderDashboardValues();
+      if (currentView === 'register-map' && lastData) renderRegisterMap(registerMapDisplayData(lastData));
       if (currentView === 'dashboard' && chartDemoRunning && lastData && demoRegisterRows) {
         requestAnimationFrame(() => renderEnergyFlow(lastData, demoRegisterRows));
       }
