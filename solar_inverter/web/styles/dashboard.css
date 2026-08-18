@@ -419,6 +419,7 @@
       height: 148px; padding-inline: 8px;
       --node-icon: url('/assets/inverter.svg?v=__ASSET_VERSION__');
     }
+    .energy-inverter .energy-card-settings { display: none }
     .energy-inverter .energy-node-icon {
       inset: 0; z-index: 0; width: 100%; height: 100%; opacity: .13;
       font-size: 76px; filter: none;

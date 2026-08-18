@@ -11,6 +11,7 @@
     const INVERTER_FAN_MAX_RPM = 3000;
     const INVERTER_FAN_RATE_SMOOTHING_MS = 280;
     const FLOW_CARD_MAX_VALUES = 3;
+    const INVERTER_CARD_REGISTERS = Object.freeze([323, 321, 67]);
     const FLOW_CARD_SELECTION_KEY_PREFIX = 'inverter-flow-card-values-v2:';
     const FAST_POLL_SELECTION_KEY = 'inverter-fast-poll-registers-v1';
     const LEGACY_FLOW_CARD_SELECTION_KEY = 'inverter-flow-card-values-v1';
@@ -88,18 +89,27 @@
         ? [...new Set(lastData.fast_selected_registers.map(Number))].filter(Number.isInteger)
         : [];
       if (reported.length) return reported;
-      return [...new Set(Object.keys(FLOW_CARD_CONFIG).flatMap(cardKey => flowCardSelection(cardKey)))];
+      return [...new Set([
+        ...Object.keys(FLOW_CARD_CONFIG).flatMap(cardKey => flowCardSelection(cardKey)),
+        ...INVERTER_CARD_REGISTERS
+      ])];
     }
     function fastPollSelection() {
+      const withInverterCardRegisters = registers => [...new Set([
+        ...registers,
+        ...INVERTER_CARD_REGISTERS
+      ])];
       const reported = Array.isArray(lastData?.fast_selected_registers)
         ? [...new Set(lastData.fast_selected_registers.map(Number))].filter(Number.isInteger)
         : [];
-      if (reported.length) return reported;
+      if (reported.length) return withInverterCardRegisters(reported);
       try {
         const saved = JSON.parse(window.localStorage.getItem(FAST_POLL_SELECTION_KEY) || 'null');
-        if (Array.isArray(saved)) return [...new Set(saved.map(Number))].filter(Number.isInteger);
+        if (Array.isArray(saved)) return withInverterCardRegisters(
+          [...new Set(saved.map(Number))].filter(Number.isInteger)
+        );
       } catch {}
-      return defaultFastPollSelection();
+      return withInverterCardRegisters(defaultFastPollSelection());
     }
     function setFastPollSelection(registers) {
       const selected = [...new Set(registers.map(Number))].filter(Number.isInteger);
@@ -497,8 +507,8 @@
       const batteryCurrentSource = firstRegister([130, 405]);
       const batterySocSource = firstRegister([407]);
       const batteryPowerSource = firstRegister([134, 149]);
-      const inverterPrioritySource = firstRegister([529, 323, 16643]);
-      const inverterAcModeSource = firstRegister([530, 321, 16644]);
+      const inverterPrioritySource = firstRegister([323, 529, 16643]);
+      const inverterAcModeSource = firstRegister([321, 530, 16644]);
       const inverterChargeModeSource = firstRegister([324, 16645]);
       const inverterStateSource = simplifiedStateSource;
       const gridVoltage = registerNumericValue(gridVoltageSource);
@@ -762,6 +772,17 @@
         2: {label: 'PBG', description: 'modePbgShort'},
         3: {label: 'MKS', description: 'modeMksShort'}
       });
+      const inverterAcMode = modeDetails(inverterAcModeSource, {
+        0: {label: 'APP', description: 'modeAppShort'},
+        1: {label: 'UPS', description: 'modeUpsShort'},
+        2: {label: 'GEN', description: 'modeGenShort'}
+      });
+      const inverterOperatingMode = modeDetails(inverterStateSource, {
+        0: {label: 'BOOT'}, 1: {label: 'INIT'}, 2: {label: 'IDLE'},
+        3: {label: 'GRID'}, 4: {label: 'PV'}, 5: {label: 'BATT'},
+        6: {label: 'GEN'}, 7: {label: 'FAULT'}, 8: {label: 'OFF'},
+        9: {label: 'TEST'}, 10: {label: 'UPDATE'}
+      });
       // The source badge is part of the live flow card: prefer the R69 route
       // over R67's broad operating state or a ready-but-idle input terminal.
       const routedInputMode = energyFlowState
@@ -858,8 +879,10 @@
         ? t('demoMode')
         : registerText([generatorVoltageSource, generatorCurrentSource, generatorPowerSource, flowStateSource], [85, 86, 88, 69]));
       for (const cardKey of Object.keys(FLOW_CARD_CONFIG)) {
+        if (cardKey === 'inverter') continue;
         setText(`#energy-${cardKey}-registers`, selectedRegisterText(cardKey));
       }
+      setText('#energy-inverter-registers', INVERTER_CARD_REGISTERS.map(number => `R${number}`).join(', '));
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-solar-node',
         active: pvActive,
@@ -911,8 +934,8 @@
       const inverterFanRow = document.querySelector('#energy-inverter-fan-row');
       updateInverterFanAnimation(inverterFanRow, normalizedFanSpeed);
       setModeText('#energy-inverter-ac-mode', '#energy-inverter-ac-definition', inverterOutputPriority);
-      setModeText('#energy-inverter-input-mode', '#energy-inverter-input-definition', inverterInputMode);
-      setModeText('#energy-inverter-charge-mode', '#energy-inverter-charge-definition', inverterBatteryMode);
+      setModeText('#energy-inverter-input-mode', '#energy-inverter-input-definition', inverterAcMode);
+      setModeText('#energy-inverter-charge-mode', '#energy-inverter-charge-definition', inverterOperatingMode);
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-home-node',
         active: homeConnected,
@@ -973,7 +996,6 @@
         batteryLevelKnown ? `${t('battery')} ${Math.round(batteryLevel)}%` : `${t('battery')} ${t('noData')}`
       );
       renderFlowCardValues('solar', '.energy-solar-values', registers, solarDataVisible);
-      renderFlowCardValues('inverter', '.energy-inverter-values', registers, true);
       renderFlowCardValues('generator', '.energy-generator-values', registers, generatorConnected);
       renderFlowCardValues('home', '.energy-home-values', registers, homeConnected);
       renderFlowCardValues('grid', '.energy-grid-values', registers, gridAvailable);
