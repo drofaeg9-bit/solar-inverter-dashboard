@@ -1058,9 +1058,9 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("? measuredBatteryDirection > 0", flow)
         self.assertIn("? measuredBatteryDirection < 0", flow)
         translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
-        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДІМ · + розряд'", translations)
-        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДОМ · + разрядка'", translations)
-        self.assertIn("demoBatteryHome: 'DEMO · BAT. → HOME · + discharging'", translations)
+        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДІМ · − розряд'", translations)
+        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДОМ · − разрядка'", translations)
+        self.assertIn("demoBatteryHome: 'DEMO · BAT. → HOME · − discharging'", translations)
         self.assertNotIn("numberValue([84, 437, 436])", lcd)
 
     def test_build_and_installer_payload_manifests_match(self) -> None:
@@ -1195,12 +1195,12 @@ class DashboardRendererTests(unittest.TestCase):
             check=True, capture_output=True, text=True,
         )
         demo = json.loads(result.stdout)
-        self.assertGreater(demo["discharge"][0], 0)
-        self.assertGreater(demo["discharge"][1], 0)
+        self.assertLess(demo["discharge"][0], 0)
+        self.assertLess(demo["discharge"][1], 0)
         self.assertEqual(demo["discharge"][2] & (1 << 8), 1 << 8)
         self.assertEqual(demo["charge"][0], 230)
-        self.assertLess(demo["charge"][1], 0)
-        self.assertLess(demo["charge"][2], 0)
+        self.assertGreater(demo["charge"][1], 0)
+        self.assertGreater(demo["charge"][2], 0)
         self.assertEqual(demo["charge"][3] & ((1 << 0) | (1 << 5)), (1 << 0) | (1 << 5))
 
     def test_full_r68_battery_state_forces_a_complete_soc_display(self) -> None:
@@ -1223,7 +1223,7 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertEqual(effective_battery_soc(None, full_terminal_state), 100.0)
         self.assertIsNone(effective_battery_soc(None, None))
 
-    def test_api_uses_positive_battery_current_and_power_during_discharge(self) -> None:
+    def test_api_signs_battery_current_and_power_during_discharge(self) -> None:
         from solar_inverter.components.web_dashboard import web_state
         from solar_inverter.services.inverter_service import state, state_lock
 
@@ -1234,10 +1234,10 @@ class DashboardRendererTests(unittest.TestCase):
             snapshot = web_state("en")
             readings = {item["register"]: item for item in snapshot["registers"]}
             meters = {item["register"]: item for item in snapshot["meters"]}
-            self.assertEqual(readings[130]["value"], 5.7)
-            self.assertEqual(readings[134]["value"], 306)
-            self.assertEqual(meters[130]["value"], 5.7)
-            self.assertEqual(meters[134]["value"], 306)
+            self.assertEqual(readings[130]["value"], -5.7)
+            self.assertEqual(readings[134]["value"], -306)
+            self.assertEqual(meters[130]["value"], -5.7)
+            self.assertEqual(meters[134]["value"], -306)
         finally:
             with state_lock:
                 state["values"] = original_values
@@ -1249,8 +1249,7 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("firstRegister([69])", lcd)
         self.assertIn("decodeEnergyTerminalState(terminalStateSource)", lcd)
         self.assertIn("decodeEnergyFlowState(flowStateSource)", lcd)
-        self.assertIn("flowState.gridToRectifier || flowState.gridToLoad", lcd)
-        self.assertNotIn("flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid", lcd)
+        self.assertIn("flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid", lcd)
         self.assertIn("const loadFlowActive = outputConnected && outputCanSupply", lcd)
 
     def test_all_tabs_use_complete_translation_catalogs(self) -> None:

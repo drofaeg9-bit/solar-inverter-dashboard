@@ -576,8 +576,8 @@
           || (Number.isFinite(batteryCurrent) && batteryCurrent >= .05)
           ? 1
           : 0;
-      // The signed live reading is authoritative: negative is charge and
-      // positive is discharge. R69/R68 are fallbacks only while power/current is
+      // The signed live reading is authoritative: negative is discharge and
+      // positive is charge. R69/R68 are fallbacks only while power/current is
       // too close to zero to establish a real direction.
       const batteryActive = liveMeasurementsFresh && batteryConnected
         && (!flowSuppressedByState || measuredBatteryActive) && (energyFlowState
@@ -586,11 +586,11 @@
         : measuredBatteryActive || (terminalState ? terminalState.battery === 2 || terminalState.battery === 3 : false)
       );
       const batteryCharging = batteryActive && (measuredBatteryDirection
-        ? measuredBatteryDirection < 0
+        ? measuredBatteryDirection > 0
         : energyFlowState ? energyFlowState.rectifierToBattery && !energyFlowState.batteryToInverter
           : terminalState?.battery === 3);
       const batteryDischarging = batteryActive && (measuredBatteryDirection
-        ? measuredBatteryDirection > 0
+        ? measuredBatteryDirection < 0
         : energyFlowState ? energyFlowState.batteryToInverter
           : terminalState?.battery === 2);
       const pvConnected = liveMeasurementsFresh && (Boolean(energyFlowState?.pvToRectifier) || (terminalState
