@@ -222,6 +222,14 @@ FAST_BLOCKS = [
     (16641, 16),
 ]
 
+# Static device identity is read once at startup, outside recurring fast polls.
+IDENTITY_BLOCKS = ((1, 10), (57, 9))
+IDENTITY_REGISTERS = frozenset(
+    register
+    for start, count in IDENTITY_BLOCKS
+    for register in range(start, start + count)
+)
+
 def fast_selected_blocks(selected_registers: list[int]) -> list[tuple[int, int]]:
     """Group card-selected registers into efficient extra Fast-poll reads."""
     always_read = {
@@ -231,7 +239,7 @@ def fast_selected_blocks(selected_registers: list[int]) -> list[tuple[int, int]]
     }
     registers = sorted({
         register for register in selected_registers
-        if register in KNOWN_REGISTERS and register not in always_read
+        if register in AVAILABLE_FAST_POLL_REGISTERS and register not in always_read
     })
     blocks: list[tuple[int, int]] = []
     for register in registers:
@@ -560,6 +568,21 @@ OBSERVED_AVAILABLE_REGISTERS = tuple(int(register) for register in """
 16385 16529 16531 16533 16534 16535 16536 16537 16538 16540 16541 16542 16543 16544 16545 16546 16547
 16641 16642 16643 16644 16645 16646 16647 16648 16649 16650 16651 16652 16653 16654 16655 16656 16659 16660 16661 16662 16663 16664 16665 16666 16667 16668 16669 16670 16671 16672 16673 16674 16675 16676 16678 16680 16681 16682 16683 16684 16685 16686 16687 16688 16689 16690 16691 16692 16693 16694 16695 16696 16697 16698 16699 16700 16701 16702 16703 16704 16716 16717 16763 16764 16765 16766 16767 16768 16779 16780
 """.split())
+AVAILABLE_FAST_POLL_REGISTERS = frozenset(OBSERVED_AVAILABLE_REGISTERS)
+
+# Fast mode starts with a useful broad snapshot rather than only the few values
+# needed by the dashboard cards. Users may then reduce that selection to any
+# size. Put the four changing R1-R127 values observed in the 2026-08-19 capture
+# first, then fill the initial selection from proven responsive addresses.
+MIN_FAST_POLL_REGISTER_COUNT = 0
+DEFAULT_FAST_POLL_REGISTER_COUNT = 120
+_FAST_POLL_PRIORITY_REGISTERS = (90, 92, 93, 94)
+DEFAULT_FAST_SELECTED_REGISTERS = tuple(dict.fromkeys(
+    (
+        *_FAST_POLL_PRIORITY_REGISTERS,
+        *(register for register in OBSERVED_AVAILABLE_REGISTERS if register not in IDENTITY_REGISTERS),
+    )
+))[:DEFAULT_FAST_POLL_REGISTER_COUNT]
 
 REGISTER_MAP_COLUMNS = ("register", "name", "unit", "scale", "display")
 register_map_lock = threading.RLock()
@@ -939,11 +962,6 @@ OPERATING_STATUS = {
 
 VALUE_PATTERN = re.compile(r"\[(\d+)\]:\s*(-?\d+)")
 
-# This dashboard uses the TTN 12KU U3.0 register profile.  R1–R10 contain
-# the inverter's own ASCII identifier; when those words are blank, the verified
-# model name still identifies a connected inverter instead of showing unknown.
-DEVICE_MODEL_NAME = "TTN 12KU U3.0 Single"
-
 state_lock = threading.Lock()
 poll_wake_event = threading.Event()
 state: dict[str, Any] = {
@@ -959,8 +977,8 @@ state: dict[str, Any] = {
     "successful": 0,
     "ошибок": 0,
     "error": "",
-    "identifier": DEVICE_MODEL_NAME,
-    "fast_selected_registers": list(OBSERVED_AVAILABLE_REGISTERS),
+    "identifier": "",
+    "fast_selected_registers": list(DEFAULT_FAST_SELECTED_REGISTERS),
     "values": {},
     "paused": False,
     "stop": False,
@@ -1014,7 +1032,7 @@ def normalize(register: int, raw: int) -> tuple[str, str, str, float | None, str
 
 
 def decode_identifier(values: dict[int, int]) -> str:
-    """Return the verified inverter model and its R1–R10 identifier when present."""
+    """Build an identity label only from values reported by the inverter."""
     data = bytearray()
 
     for register in range(1, 11):
@@ -1032,7 +1050,22 @@ def decode_identifier(values: dict[int, int]) -> str:
     if not all(0x20 <= ord(character) <= 0x7E for character in serial):
         serial = ""
     serial = serial.strip()
-    return f"{DEVICE_MODEL_NAME} · {serial}" if serial else DEVICE_MODEL_NAME
+
+    def valid_word(register: int) -> int | None:
+        value = values.get(register)
+        return value if value is not None and 0 <= value < 65534 else None
+
+    identity_parts: list[str] = []
+    model_id = valid_word(58)
+    device_type_high = valid_word(61)
+    device_type_low = valid_word(62)
+    if model_id is not None:
+        identity_parts.append(f"Model ID {model_id}")
+    if device_type_high is not None and device_type_low is not None:
+        identity_parts.append(f"Device type {(device_type_high << 16) | device_type_low}")
+    if serial:
+        identity_parts.append(f"SN {serial}")
+    return " · ".join(identity_parts)
 
 
 def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:
@@ -1117,6 +1150,23 @@ def run_mbpoll(start: int, count: int) -> tuple[dict[int, int], str | None]:
     else:
         print(f"[Modbus RTU] ERROR: No values read. Output: {output[:200]}")
         return {}, output.strip() or "помилка читання"
+
+
+def read_initial_identity() -> tuple[dict[int, int], int, int, str | None]:
+    """Read the inverter identity once before normal polling begins."""
+    values: dict[int, int] = {}
+    failed = 0
+    requests = 0
+    last_error = None
+    for start, count in IDENTITY_BLOCKS:
+        block_values, error = run_mbpoll(start, count)
+        requests += 1
+        if block_values:
+            values.update(block_values)
+        else:
+            failed += count
+            last_error = error
+    return values, failed, requests, last_error
 
 
 def read_fast() -> tuple[dict[int, int], int, int, str | None]:

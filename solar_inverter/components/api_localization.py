@@ -150,11 +150,13 @@ def resolve_api_language(explicit: str = "", accept_language: str = "") -> str:
 def localize_api_text(value: Any, language: str) -> Any:
     """Translate known user-facing API text while preserving raw values."""
     value = repair_legacy_text(value)
-    if language == "uk" or not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value:
         return value
     translation = DATA_TRANSLATIONS.get(value, {}).get(language)
     if translation:
         return translation
+    if language == "uk":
+        return value
     if value.startswith("Регістр ") and value[8:].isdigit():
         prefix = "Регистр" if language == "ru" else "Register"
         return f"{prefix} {value[8:]}"

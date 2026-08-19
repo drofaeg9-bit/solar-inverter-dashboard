@@ -1,7 +1,7 @@
     const UI_TRANSLATIONS = {
       uk: {
-        deviceTypeSingle: 'TTN 12KU U3.0, один інвертор',
-        unknownDeviceType: 'Невідомий тип пристрою U3.0 ({code})',
+        deviceTypeSingle: 'Один інвертор (код пристрою 72)',
+        unknownDeviceType: 'Невідомий тип пристрою ({code})',
         registerDescriptionSource: 'Джерело опису: {source}',
         githubStatusTitle: 'Версія GitHub', githubStatusDashboard: 'Версія панелі: {version}', githubStatusLocal: 'Локальний коміт: {hash} — {subject}', githubStatusRemote: 'Останній коміт GitHub: {hash} — {subject}', githubStatusUpToDate: 'Панель оновлена', githubStatusUpdateAvailable: 'Доступні оновлення: {count}', githubStatusLocalAhead: 'Локальних комітів поза GitHub: {count}', githubStatusDiverged: 'Історії розійшлися: +{ahead} / -{behind}', githubStatusUnavailable: 'Статус GitHub недоступний: {error}',
         appTitle: 'Вебпанель сонячного інвертора',
@@ -86,7 +86,7 @@
         selectedSummary: 'Вибрано значень: {count} · {period}', chartCount: 'Графіків: {count} · {period}',
         chartAria: 'Графік {label} · {period}',
         waiting: 'Очікування…', waitingForChartData: 'Очікування даних енергетичних лічильників…', noData: 'Немає даних',
-        registerCount: 'TTN 12KU U3.0: отримано {available} · без даних / не підтримується: {waiting} · у каталозі: {catalog} · показано: {shown}', loadMoreRegisters: 'Показати ще ({count})',
+        registerCount: 'Modbus: отримано {available} · без даних / не підтримується: {waiting} · у каталозі: {catalog} · показано: {shown}', loadMoreRegisters: 'Показати ще ({count})',
         registerLogger: 'Журнал змін регістрів',
         registerLoggerHelp: 'Після запуску фіксує зміни регістрів від фізичних кнопок у CSV: швидке опитування 0,5 с та час Мадрида.',
         registerLogNotePlaceholder: 'Напр. панелі вимкнено', markRegisterLog: '＋ Додати позначку',
@@ -138,8 +138,8 @@
         browserLabel: 'браузер', viewportLabel: 'розмір вікна'
       },
       ru: {
-        deviceTypeSingle: 'TTN 12KU U3.0, один инвертор',
-        unknownDeviceType: 'Неизвестный тип устройства U3.0 ({code})',
+        deviceTypeSingle: 'Один инвертор (код устройства 72)',
+        unknownDeviceType: 'Неизвестный тип устройства ({code})',
         registerDescriptionSource: 'Источник описания: {source}',
         githubStatusTitle: 'Версия GitHub', githubStatusDashboard: 'Версия панели: {version}', githubStatusLocal: 'Локальный коммит: {hash} — {subject}', githubStatusRemote: 'Последний коммит GitHub: {hash} — {subject}', githubStatusUpToDate: 'Панель обновлена', githubStatusUpdateAvailable: 'Доступны обновления: {count}', githubStatusLocalAhead: 'Локальных коммитов вне GitHub: {count}', githubStatusDiverged: 'Истории разошлись: +{ahead} / -{behind}', githubStatusUnavailable: 'Статус GitHub недоступен: {error}',
         appTitle: 'Веб-панель солнечного инвертора',
@@ -259,7 +259,7 @@
         selectedSummary: 'Выбрано значений: {count} · {period}', chartCount: 'Графиков: {count} · {period}',
         chartAria: 'График {label} · {period}',
         waiting: 'Ожидание…', waitingForChartData: 'Ожидание данных счётчиков энергии…', noData: 'Нет данных',
-        registerCount: 'TTN 12KU U3.0: получено {available} · нет данных / не поддерживается: {waiting} · в каталоге: {catalog} · показано: {shown}', loadMoreRegisters: 'Показать ещё ({count})',
+        registerCount: 'Modbus: получено {available} · нет данных / не поддерживается: {waiting} · в каталоге: {catalog} · показано: {shown}', loadMoreRegisters: 'Показать ещё ({count})',
         unknownDevice: 'Неизвестное устройство', updated: 'Обновлено {time}',
         cyclePaused: 'Цикл {cycle} · мониторинг приостановлен',
         cycleReads: 'Цикл {cycle} · интервал {seconds} с · Modbus {readSeconds} с · считано: {reads}',
@@ -274,8 +274,8 @@
         browserLabel: 'браузер', viewportLabel: 'размер окна'
       },
       en: {
-        deviceTypeSingle: 'TTN 12KU U3.0, single inverter',
-        unknownDeviceType: 'Unknown U3.0 device type ({code})',
+        deviceTypeSingle: 'Single inverter (device code 72)',
+        unknownDeviceType: 'Unknown device type ({code})',
         registerDescriptionSource: 'Description source: {source}',
         githubStatusTitle: 'GitHub version', githubStatusDashboard: 'Dashboard version: {version}', githubStatusLocal: 'Local commit: {hash} - {subject}', githubStatusRemote: 'Latest GitHub commit: {hash} - {subject}', githubStatusUpToDate: 'Dashboard is up to date', githubStatusUpdateAvailable: 'Updates available: {count}', githubStatusLocalAhead: 'Local commits not on GitHub: {count}', githubStatusDiverged: 'Histories have diverged: +{ahead} / -{behind}', githubStatusUnavailable: 'GitHub status unavailable: {error}',
         appTitle: 'Solar Inverter Web',
@@ -395,7 +395,7 @@
         selectedSummary: '{count} values selected · {period}', chartCount: '{count} charts · {period}',
         chartAria: '{label} chart · {period}',
         waiting: 'Waiting…', waitingForChartData: 'Waiting for energy-counter data…', noData: 'No data',
-        registerCount: 'TTN 12KU U3.0: {available} received · {waiting} without data / unsupported · {catalog} in catalog · {shown} shown', loadMoreRegisters: 'Show more ({count})',
+        registerCount: 'Modbus: {available} received · {waiting} without data / unsupported · {catalog} in catalog · {shown} shown', loadMoreRegisters: 'Show more ({count})',
         unknownDevice: 'Unknown device', updated: 'Updated {time}',
         cyclePaused: 'Cycle {cycle} · monitoring paused',
         cycleReads: 'Cycle {cycle} · interval {seconds} s · Modbus {readSeconds} s · {reads} reads',
@@ -410,9 +410,9 @@
         browserLabel: 'browser', viewportLabel: 'viewport'
       }
     };
-    Object.assign(UI_TRANSLATIONS.uk, {stopRegisterMapScan: 'Зупинити сканування', registerMapScanStopped: 'Сканування зупинено.'});
-    Object.assign(UI_TRANSLATIONS.ru, {stopRegisterMapScan: 'Остановить сканирование', registerMapScanStopped: 'Сканирование остановлено.'});
-    Object.assign(UI_TRANSLATIONS.en, {stopRegisterMapScan: 'Stop scan', registerMapScanStopped: 'Scan stopped.'});
+    Object.assign(UI_TRANSLATIONS.uk, {stopRegisterMapScan: 'Зупинити сканування', registerMapScanStopped: 'Сканування зупинено.', registerMapPollHelp: 'Показано всі регістри, доступність яких підтверджена повним скануванням. Початковий набір містить 120 регістрів; користувач може додавати або вилучати будь-які з них.', modelIdLabel: 'ID моделі', deviceTypeLabel: 'Тип пристрою', serialNumberLabel: 'SN', deviceTypeSingle: 'Один інвертор (код пристрою 72)', unknownDeviceType: 'Невідомий тип пристрою ({code})', registerCount: 'Modbus: отримано {available} · без даних / не підтримується: {waiting} · у каталозі: {catalog} · показано: {shown}'});
+    Object.assign(UI_TRANSLATIONS.ru, {stopRegisterMapScan: 'Остановить сканирование', registerMapScanStopped: 'Сканирование остановлено.', registerMapPollHelp: 'Показаны все регистры, доступность которых подтверждена полным сканированием. Начальный набор содержит 120 регистров; пользователь может добавлять или удалять любые из них.', modelIdLabel: 'ID модели', deviceTypeLabel: 'Тип устройства', serialNumberLabel: 'SN', deviceTypeSingle: 'Один инвертор (код устройства 72)', unknownDeviceType: 'Неизвестный тип устройства ({code})', registerCount: 'Modbus: получено {available} · нет данных / не поддерживается: {waiting} · в каталоге: {catalog} · показано: {shown}'});
+    Object.assign(UI_TRANSLATIONS.en, {stopRegisterMapScan: 'Stop scan', registerMapScanStopped: 'Scan stopped.', registerMapPollHelp: 'Shows every register confirmed available by a full scan. The initial set contains 120 registers; users may add or remove any of them.', modelIdLabel: 'Model ID', deviceTypeLabel: 'Device type', serialNumberLabel: 'SN', deviceTypeSingle: 'Single inverter (device code 72)', unknownDeviceType: 'Unknown device type ({code})', registerCount: 'Modbus: {available} received · {waiting} without data / unsupported · {catalog} in catalog · {shown} shown'});
     const DATA_TRANSLATIONS = {
       'AC': {ru:'AC', en:'AC'},
       'BMS': {ru:'BMS', en:'BMS'},
@@ -845,7 +845,9 @@
     }
     function localizeApiField(record, field) {
       if (!record) return '';
-      return localizeDataText(record[`${field}_source`] ?? record[field]);
+      const source = record[`${field}_source`] ?? record[field] ?? '';
+      const translated = localizeDataText(source);
+      return translated !== source ? translated : record[field] ?? source;
     }
     function r413BmsFormula(value) {
       if (!Number.isFinite(value)) return '';

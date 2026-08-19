@@ -17,9 +17,9 @@
       count.textContent = String(selected.size);
       const query = document.querySelector('#register-map-search')?.value.trim().toLowerCase() || '';
       const registers = [...(data.registers || [])]
-        // The map is a record of what this inverter actually returned. Keep a
-        // selected item visible too, so it can always be removed from polling.
-        .filter(register => register.available || selected.has(Number(register.register)))
+        // Show every address proven by the full inverter scan, even before the
+        // current process has obtained a fresh value for it.
+        .filter(register => register.supported || selected.has(Number(register.register)))
         .sort((left, right) => Number(right.register) - Number(left.register))
         .sort((left, right) => Number(selected.has(Number(right.register))) - Number(selected.has(Number(left.register))))
         .filter(register => `${register.register} ${localizeApiField(register, 'group')} ${localizeApiField(register, 'name')} ${register.unit}`.toLowerCase().includes(query));

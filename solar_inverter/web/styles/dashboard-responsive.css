@@ -357,7 +357,7 @@
       .energy-inverter-load { font-size: clamp(14px,4vw,18px) }
       .energy-inverter-load-definition { max-width: 100%; overflow-wrap: anywhere; font-size: 6px }
       .energy-inverter-fan-row {
-        left: 22px; top: 50%; bottom: auto; flex-direction: column; width: 60px; max-width: 60px; gap: 0; overflow-wrap: normal;
+        left: 4px; top: 50%; bottom: auto; flex-direction: column; width: 60px; max-width: 60px; gap: 0; overflow-wrap: normal;
         font-size: 5.8px; line-height: 2; white-space: nowrap !important;
       }
       .energy-inverter-fan-icon { flex-basis: 48px; width: 60px; height: 48px }
@@ -374,7 +374,7 @@
       .energy-mode-code {
         font-size: clamp(14px,4vw,17px); font-weight: 950; line-height: 1; text-align: center; white-space: normal;
       }
-      .energy-mode-definition { font-size: clamp(5.2px,1.5vw,5.8px) }
+      .energy-mode-definition { font-size: clamp(6px,1.8vw,7px); line-height: 1.12 }
       .energy-battery, .energy-grid, .energy-generator { padding-inline: 2px }
       .energy-battery-icon {
         left: auto; right: 4%; top: 8px; bottom: 8px; width: 44%; height: auto;
@@ -405,7 +405,7 @@
       .energy-node.energy-inverter .energy-inverter-values {
         /* The selected inverter registers replace the three mode rows at runtime.
            Keep that compact value list clear of the fan/readout column. */
-        left: 62%; right: auto; top: 49%; width: 48%;
+        left: 72%; right: auto; top: 49%; width: 52%;
         font-size: clamp(16px, 2.2vw, 24px); line-height: 1.15;
         text-align: center; transform: translate(-50%,-50%);
       }

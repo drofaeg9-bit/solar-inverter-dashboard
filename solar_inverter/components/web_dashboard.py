@@ -242,6 +242,7 @@ def web_state(language: str = "uk") -> dict[str, Any]:
             "read_only": True, "maintenance": register in MAINTENANCE_REGISTERS, "word_format": "h_l" if REGISTER_WORD_FORMAT.get(register) else "word",
             "raw": raw,
             "available": manual_value is not None or raw is not None,
+            "supported": register in AVAILABLE_FAST_POLL_REGISTERS,
             "manual": manual_value is not None,
             "edited": bool(edit),
         })
@@ -284,6 +285,8 @@ def web_state(language: str = "uk") -> dict[str, Any]:
         "poll_rate_index": snapshot["poll_rate_index"],
         "read_mode": snapshot["read_mode"],
         "fast_selected_registers": list(snapshot["fast_selected_registers"]),
+        "default_fast_selected_registers": list(DEFAULT_FAST_SELECTED_REGISTERS),
+        "minimum_fast_poll_register_count": MIN_FAST_POLL_REGISTER_COUNT,
         "requests": snapshot["requests"],
         "successful": snapshot["successful"],
         "failed": snapshot["ошибок"],
@@ -1022,7 +1025,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         raise ValueError("fast_selected_registers must be a list")
                     selected_registers = []
                     for register in registers:
-                        if isinstance(register, bool) or not isinstance(register, int) or register not in KNOWN_REGISTERS:
+                        if (
+                            isinstance(register, bool)
+                            or not isinstance(register, int)
+                            or register not in AVAILABLE_FAST_POLL_REGISTERS
+                        ):
                             raise ValueError("fast_selected_registers contains an unsupported register")
                         if register not in selected_registers:
                             selected_registers.append(register)

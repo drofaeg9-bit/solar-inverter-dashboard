@@ -419,7 +419,6 @@
       height: 148px; padding-inline: 8px;
       --node-icon: url('/assets/inverter.svg?v=__ASSET_VERSION__');
     }
-    .energy-inverter .energy-card-settings { display: none }
     .energy-inverter .energy-node-icon {
       inset: 0; z-index: 0; width: 100%; height: 100%; opacity: .13;
       font-size: 76px; filter: none;
@@ -448,8 +447,7 @@
     }
     .energy-inverter-load-definition,
     .energy-inverter-fan-row > span[data-i18n],
-    .energy-inverter .energy-mode-label,
-    .energy-inverter .energy-mode-definition { display: none }
+    .energy-inverter .energy-mode-label { display: none }
     .energy-inverter-fan-row {
       position: absolute; z-index: 3; left: 22px; top: 50%; bottom: auto;
       display: flex; align-items: center; flex-direction: column; justify-content: center; width: 60px; gap: 0;
@@ -482,6 +480,11 @@
     }
     .energy-inverter .energy-mode-value {
       width: 100%; place-items: center; text-align: center;
+    }
+    .energy-inverter .energy-mode-definition {
+      display: block; width: 100%; margin-top: 2px;
+      color: var(--muted); font-size: clamp(6.5px,.72vw,8px); font-weight: 750;
+      line-height: 1.12; text-align: center; white-space: normal;
     }
     .energy-inverter .energy-mode-code {
       display: block; width: 100%; color: #fff; font-size: 18px; font-weight: 950; line-height: 1.05;
@@ -519,7 +522,7 @@
     }
     .flow-line-mobile { display: none }
     .flow-connector.active { z-index: 1; color: var(--flow-colour,#22d3ee); opacity: 1 }
-    .flow-connector.disconnected { opacity: 0 }
+    .flow-connector.disconnected { visibility: hidden; opacity: 0 }
     .flow-connector.disconnected .flow-line { animation: none }
     .flow-connector.active .flow-line {
       stroke-width: 6; filter: drop-shadow(0 0 5px currentColor);

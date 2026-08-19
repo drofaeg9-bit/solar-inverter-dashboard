@@ -659,10 +659,12 @@
         values: new Map([
           // TTN-INV external Modbus map V1.31. Public R numbers are the
           // workbook's zero-based addresses plus one.
-          [1, 0x5454], [2, 0x4e2d], [3, 0x494e], [4, 0x562d], [5, 0x4445],
-          [6, 0x4d4f], [7, 0x2d30], [8, 0x3030], [9, 0x3031], [10, 0],
-          [17, 1], [18, 31], [27, 1], [28, 31], [58, 0x0100],
-          [65, 0x0131], [66, 1], [67, statusCode],
+          // Identity captured from the real inverter on 2026-08-19.
+          [1, 0x4a32], [2, 0x3531], [3, 0x3130], [4, 0x3236], [5, 0x362d],
+          [6, 0x3148], [7, 0x3030], [8, 0x3032], [9, 0x3800], [10, 0],
+          [17, 1], [18, 5], [27, 768], [28, 1],
+          [57, 0], [58, 64], [59, 0], [60, 0], [61, 0], [62, 0],
+          [63, 0], [64, 0], [65, 768], [66, 2], [67, statusCode],
           [68, energyTerminalState],
           [69, energyFlowState],
           [70, parallelState], [71, 0], [72, 0], [73, 0], [74, 0],
@@ -827,7 +829,9 @@
           ? demoRegisterReading(register, scenarioValue)
           : Number.isInteger(capturedRaw)
             ? demoCapturedRawReading(register, capturedRaw)
-            : {raw: null, value: null, display: '—', available: false};
+            : register.supported
+              ? demoRegisterReading(register, demoFallbackValue(register, scenario.elapsedSeconds))
+              : {raw: null, value: null, display: '—', available: false};
         return {
           ...register,
           ...reading

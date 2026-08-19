@@ -615,8 +615,21 @@ def solar_energy_summary() -> dict[str, Any]:
 def poll_worker() -> None:
     cached: dict[int, int] = {}
     previous_cycle_started: float | None = None
-    missing_identifier_reported = False
     print("[Poll Worker] Starting poll worker")
+
+    identity_values, identity_failed, identity_requests, identity_error = read_initial_identity()
+    if identity_values:
+        cached.update(identity_values)
+        detected_identifier = decode_identifier(identity_values)
+        with state_lock:
+            state["identifier"] = detected_identifier
+        print(
+            f"[Poll Worker] Initial identity read - Identifier: "
+            f"{detected_identifier or 'not reported'}, Failed: {identity_failed}, "
+            f"Requests: {identity_requests}"
+        )
+    else:
+        print(f"[Poll Worker] Initial identity read failed: {identity_error or 'no data'}")
 
     while True:
         with state_lock:
@@ -656,15 +669,6 @@ def poll_worker() -> None:
             print(f"[Poll Worker] Cached {len(fresh)} new register values")
 
         identifier = decode_identifier(cached)
-        if fresh and identifier == DEVICE_MODEL_NAME:
-            if not missing_identifier_reported:
-                print(
-                    f'[Poll Worker] ERROR: Real inverter identifier could not be decoded from R1–R10; '
-                    f'using fallback "{DEVICE_MODEL_NAME}".'
-                )
-                missing_identifier_reported = True
-        else:
-            missing_identifier_reported = False
 
         read_duration = round(time.monotonic() - started, 2)
         cycle_duration = round(cycle_interval or read_duration, 2)

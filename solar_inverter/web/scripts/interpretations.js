@@ -415,10 +415,10 @@
         const code = ((major & 0xffff) * 0x10000 + (lowWord & 0xffff)) >>> 0;
         const codeText = `0x${code.toString(16).toUpperCase().padStart(8, '0')}`;
         const knownType = code === 0x00000048
-          ? (typeof t === 'function' ? t('deviceTypeSingle') : 'TTN 12KU U3.0 Single')
+          ? (typeof t === 'function' ? t('deviceTypeSingle') : 'Single inverter (device code 72)')
           : (typeof t === 'function'
             ? t('unknownDeviceType', {code})
-            : `Unknown U3.0 device type (${code})`);
+            : `Unknown device type (${code})`);
         return `${codeText} · ${knownType}`;
       }
       const minor = lowWord >= 10 ? Math.trunc(lowWord / 10) : lowWord;

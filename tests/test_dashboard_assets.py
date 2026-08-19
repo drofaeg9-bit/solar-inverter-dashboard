@@ -70,7 +70,7 @@ class DashboardAssetTests(unittest.TestCase):
             poll_worker.index("fresh, failed, requests, error = read_compatible()"),
             poll_worker.index("fresh, failed, requests, error = read_fast()"),
         )
-        identifier_check = poll_worker.index("if fresh and identifier == DEVICE_MODEL_NAME:")
+        identifier_check = poll_worker.index("identifier = decode_identifier(cached)")
         self.assertGreater(identifier_check, first_read)
 
         updater = (ROOT / "deploy" / "update_bundle_src" / "__main__.py").read_text(encoding="utf-8")
@@ -397,6 +397,7 @@ class DashboardAssetTests(unittest.TestCase):
 
     def test_energy_flow_uses_physical_live_grid_and_generator_registers(self) -> None:
         flow = (WEB_ROOT / "scripts" / "energy-flow.js").read_text(encoding="utf-8")
+        html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
         self.assertIn("firstRegister([81, 433])", flow)
         self.assertIn("firstRegister([85])", flow)
         self.assertIn("firstRegister([86])", flow)
@@ -423,10 +424,18 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("firstAvailableValue([449, 184])", flow)
         self.assertIn("firstAvailableValue([451, 185])", flow)
         self.assertIn("firstAvailableValue([453, 186])", flow)
-        self.assertIn("firstRegister([137, 129, 404, 342])", flow)
-        self.assertIn("firstRegister([130, 405])", flow)
-        self.assertIn("When R69 is available it is the authoritative topology", flow)
-        self.assertIn("const batteryCharging = batteryActive && (energyFlowState", flow)
+        self.assertIn("firstRegister([404, 137, 129, 342])", flow)
+        self.assertIn("firstRegister([405, 130])", flow)
+        self.assertIn("firstRegister([407, 139, 133, 339])", flow)
+        self.assertIn("Keep the sign supplied by the live power value", flow)
+        self.assertIn("The signed live reading is authoritative", flow)
+        self.assertIn("batteryPower <= -1", flow)
+        self.assertIn("batteryCurrent <= -.05", flow)
+        self.assertIn("? measuredBatteryDirection < 0", flow)
+        self.assertIn("positive imports from the grid", flow)
+        self.assertIn("? Math.sign(gridPower)", flow)
+        self.assertIn("? measuredGridDirection < 0", flow)
+        self.assertIn("const batteryCharging = batteryActive && (measuredBatteryDirection", flow)
         self.assertIn("const gridRouteActive = Boolean(energyFlowState?.gridToRectifier", flow)
         self.assertIn("const generatorRouteActive = Boolean(energyFlowState?.generatorToRectifier", flow)
         self.assertIn("const liveMeasurementsFresh = chartDemoRunning || Boolean(data.online)", flow)
@@ -449,8 +458,18 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertNotIn("label: `#${raw}`", flow)
         self.assertIn("`${routeSources.join(' + ')} → ${routeDestinations.join(' + ')}`", flow)
         self.assertIn("parallelTopologyCode(parallelState)", flow)
-        self.assertIn("classList.toggle('disconnected', !generatorConnected)", flow)
-        self.assertIn("classList.toggle('disconnected', !gridAvailable)", flow)
+        self.assertIn("const pvSourceAvailable = liveMeasurementsFresh", flow)
+        self.assertIn("const generatorSourceAvailable = liveMeasurementsFresh", flow)
+        self.assertIn("classList.toggle('disconnected', !pvSourceAvailable)", flow)
+        self.assertIn("classList.toggle('disconnected', !generatorSourceAvailable)", flow)
+        self.assertIn("liveMeasurementsFresh && measuredGridConnected", flow)
+        self.assertIn("liveMeasurementsFresh && measuredBatteryConnected", flow)
+        self.assertIn("const compactAcMode = [321, 530, 16644].includes(number)", flow)
+        self.assertIn("? ['APP', 'UPS', 'GEN'][raw] || '' : ''", flow)
+        self.assertIn("row.textContent = compactAcMode || (interpretation", flow)
+        self.assertIn(".flow-connector.disconnected { visibility: hidden; opacity: 0 }", dashboard_css())
+        for connector in ("pv", "generator", "grid", "battery"):
+            self.assertIn(f'class="flow-connector flow-{connector} disconnected"', html)
 
     def test_register_table_explains_raw_words_and_decoded_states(self) -> None:
         app = (WEB_ROOT / "scripts" / "app.js").read_text(encoding="utf-8")
@@ -481,8 +500,15 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn(".sort((left, right) => {", flow)
         self.assertIn("function openFlowCardPicker(cardKey)", flow)
         self.assertIn("function setFlowCardRegister(register, selected)", flow)
-        self.assertIn("function syncFlowCardSelectionsForFastPoll()", flow)
+        self.assertIn("function syncFlowCardSelectionsForFastPoll(selection = null)", flow)
         self.assertIn("fast_selected_registers: registers", flow)
+        self.assertIn("let pendingFastPollSelection = null", flow)
+        self.assertIn("if (pendingFastPollSelection !== null)", flow)
+        self.assertIn("return [...pendingFastPollSelection]", flow)
+        self.assertIn("if (hasReportedSelection) return reported", flow)
+        self.assertIn("pendingFastPollSelection = selected", flow)
+        self.assertIn("syncFlowCardSelectionsForFastPoll(selected)", flow)
+        self.assertNotIn("lastData.fast_selected_registers = selected", flow)
         self.assertIn("openFlowCardPicker(button.dataset.flowCardSettings)", events)
 
     def test_poll_timing_reports_real_cycles_and_accounts_for_postprocessing(self) -> None:
@@ -597,6 +623,14 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("b15", fault_mask["description"])
         self.assertTrue(all(item["description"] for item in snapshot["registers"]))
         self.assertTrue(all(item["description_reference"] in {"V1.31", "U3.0"} for item in snapshot["registers"]))
+        self.assertEqual(snapshot["minimum_fast_poll_register_count"], 0)
+        self.assertEqual(len(snapshot["default_fast_selected_registers"]), 120)
+        self.assertGreaterEqual(sum(item["supported"] for item in snapshot["registers"]), 386)
+
+        register_map = (WEB_ROOT / "scripts" / "register-map.js").read_text(encoding="utf-8")
+        self.assertIn("register.supported || selected.has", register_map)
+        self.assertNotIn("selection.length <= minimum", register_map)
+        self.assertNotIn("mapMessage('fastPollMinimum'", register_map)
 
         # The curated meter list is supplemented with every live register so
         # external API consumers do not lose readings outside the dashboard's
@@ -646,6 +680,27 @@ class DashboardAssetTests(unittest.TestCase):
                     item for item in served["registers"] if item["register"] == 81
                 )
                 self.assertEqual(served_r81["name"], "Grid voltage, phase A")
+            settings_url = f"http://127.0.0.1:{server.server_port}/api/settings"
+            reduced_selection = urllib.request.Request(
+                settings_url,
+                data=json.dumps({
+                    "fast_selected_registers": [90],
+                }).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(reduced_selection, timeout=5) as response:
+                self.assertTrue(json.load(response)["ok"])
+            restore_selection = urllib.request.Request(
+                settings_url,
+                data=json.dumps({
+                    "fast_selected_registers": snapshot["default_fast_selected_registers"],
+                }).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(restore_selection, timeout=5) as response:
+                self.assertTrue(json.load(response)["ok"])
             version_url = f"http://127.0.0.1:{server.server_port}/api/version"
             with urllib.request.urlopen(version_url, timeout=5) as response:
                 version = json.load(response)
@@ -660,18 +715,25 @@ class DashboardAssetTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
-    def test_device_identifier_uses_the_12ku_model_when_serial_words_are_empty(self) -> None:
-        from solar_inverter.services.inverter_service_core import decode_identifier
+    def test_device_identifier_comes_only_from_initial_modbus_identity_read(self) -> None:
+        from solar_inverter.services.inverter_service_core import IDENTITY_BLOCKS, IDENTITY_REGISTERS, decode_identifier
 
-        self.assertEqual(decode_identifier({}), "TTN 12KU U3.0 Single")
-        self.assertEqual(decode_identifier({1: 0xFFFF}), "TTN 12KU U3.0 Single")
+        self.assertEqual(IDENTITY_BLOCKS, ((1, 10), (57, 9)))
+        self.assertEqual(len(IDENTITY_REGISTERS), 19)
+        self.assertEqual(decode_identifier({}), "")
+        self.assertEqual(decode_identifier({1: 0xFFFF}), "")
         self.assertEqual(
             decode_identifier({1: 0x5454, 2: 0x4E2D}),
-            "TTN 12KU U3.0 Single · TTN-",
+            "SN TTN-",
+        )
+        self.assertEqual(
+            decode_identifier({58: 64, 61: 0, 62: 72, 1: 0x4A32, 2: 0x3531}),
+            "Model ID 64 · Device type 72 · SN J251",
         )
         runtime = (ROOT / "solar_inverter" / "services" / "inverter_service_runtime.py").read_text(encoding="utf-8")
-        self.assertIn("Real inverter identifier could not be decoded from R1–R10", runtime)
-        self.assertIn("missing_identifier_reported", runtime)
+        self.assertIn("read_initial_identity()", runtime)
+        self.assertIn("Initial identity read", runtime)
+        self.assertNotIn("DEVICE_MODEL_NAME", runtime)
 
     def test_updater_four_records_local_installations_without_github_ui(self) -> None:
         html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
@@ -906,11 +968,17 @@ class DashboardAssetTests(unittest.TestCase):
 
     def test_ttn_12ku_u30_embedded_workbook_profile(self) -> None:
         from solar_inverter.services.inverter_service_core import (
+            AVAILABLE_FAST_POLL_REGISTERS,
+            DEFAULT_FAST_SELECTED_REGISTERS,
             FAST_BLOCKS,
+            IDENTITY_REGISTERS,
             KNOWN_REGISTERS,
+            DEFAULT_FAST_POLL_REGISTER_COUNT,
+            MIN_FAST_POLL_REGISTER_COUNT,
             OBSERVED_AVAILABLE_REGISTERS,
             COUNTER_32BIT_LOW_WORD_REGISTERS,
             REGISTER_CONFIG,
+            fast_selected_blocks,
         )
         from solar_inverter.services.register_profile_12ku import REGISTER_BY_NUMBER, REGISTER_PROFILE
 
@@ -920,6 +988,27 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertTrue(set(OBSERVED_AVAILABLE_REGISTERS).issubset(KNOWN_REGISTERS))
         self.assertEqual(OBSERVED_AVAILABLE_REGISTERS[:3], (1, 2, 3))
         self.assertEqual(OBSERVED_AVAILABLE_REGISTERS[-3:], (16768, 16779, 16780))
+        self.assertEqual(MIN_FAST_POLL_REGISTER_COUNT, 0)
+        self.assertEqual(len(DEFAULT_FAST_SELECTED_REGISTERS), DEFAULT_FAST_POLL_REGISTER_COUNT)
+        self.assertEqual(DEFAULT_FAST_POLL_REGISTER_COUNT, 120)
+        self.assertEqual(DEFAULT_FAST_SELECTED_REGISTERS[:4], (90, 92, 93, 94))
+        self.assertTrue(set(DEFAULT_FAST_SELECTED_REGISTERS).issubset(OBSERVED_AVAILABLE_REGISTERS))
+        self.assertTrue(set(DEFAULT_FAST_SELECTED_REGISTERS).isdisjoint(IDENTITY_REGISTERS))
+        self.assertEqual(AVAILABLE_FAST_POLL_REGISTERS, frozenset(OBSERVED_AVAILABLE_REGISTERS))
+        selected_blocks = fast_selected_blocks(list(DEFAULT_FAST_SELECTED_REGISTERS))
+        self.assertEqual(fast_selected_blocks([11, 90]), [(90, 1)])
+        fixed_registers = {
+            register
+            for start, count in FAST_BLOCKS
+            for register in range(start, start + count)
+        }
+        selected_registers = {
+            register
+            for start, count in selected_blocks
+            for register in range(start, start + count)
+        }
+        self.assertGreaterEqual(len(fixed_registers | selected_registers), 120)
+        self.assertTrue(fixed_registers.issubset(AVAILABLE_FAST_POLL_REGISTERS))
         self.assertEqual(len(COUNTER_32BIT_LOW_WORD_REGISTERS), 30)
         for low_register, high_register in COUNTER_32BIT_LOW_WORD_REGISTERS.items():
             with self.subTest(low_register=low_register):
@@ -963,10 +1052,10 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("numberValue([537, 89])", lcd)
         self.assertIn("firstRegister([537, 89])", flow)
         self.assertIn("firstRegister([545, 94])", flow)
-        self.assertIn("const batterySocSource = firstRegister([407])", flow)
-        self.assertIn("const measuredBatteryDirectionKnown", flow)
-        self.assertIn("? batteryCurrent > 0", flow)
-        self.assertIn("? batteryCurrent < 0", flow)
+        self.assertIn("const batterySocSource = firstRegister([407, 139, 133, 339])", flow)
+        self.assertIn("const measuredBatteryDirection", flow)
+        self.assertIn("? measuredBatteryDirection > 0", flow)
+        self.assertIn("? measuredBatteryDirection < 0", flow)
         translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
         self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДІМ · − розряд'", translations)
         self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДОМ · − разрядка'", translations)
@@ -1116,7 +1205,7 @@ class DashboardRendererTests(unittest.TestCase):
     def test_full_r68_battery_state_forces_a_complete_soc_display(self) -> None:
         flow = (WEB_ROOT / "scripts" / "energy-flow.js").read_text(encoding="utf-8")
         lcd = (WEB_ROOT / "scripts" / "lcd.js").read_text(encoding="utf-8")
-        self.assertIn("firstRegister([133, 139, 339, 407])", flow)
+        self.assertIn("firstRegister([407, 139, 133, 339])", flow)
         self.assertIn("function effectiveBatterySoc(measuredSoc, terminalState)", flow)
         self.assertIn("if (terminalState?.battery === 4) return 100", flow)
         self.assertIn("const effectiveSoc = effectiveBatterySoc(batterySoc, terminalState)", flow)
@@ -1210,8 +1299,22 @@ class DashboardRendererTests(unittest.TestCase):
         api_catalog = json.loads(
             (WEB_ROOT / "data" / "data-translations.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(set(api_catalog), set(translation_keys["data"]))
-        self.assertTrue(all(set(values) == {"ru", "en"} for values in api_catalog.values()))
+        self.assertTrue(set(translation_keys["data"]).issubset(api_catalog))
+        self.assertTrue(all({"ru", "en"}.issubset(values) for values in api_catalog.values()))
+        workbook_translations = [values for values in api_catalog.values() if "uk" in values]
+        self.assertEqual(len(workbook_translations), 404)
+        from solar_inverter.services.register_profile_12ku import REGISTER_PROFILE
+        workbook_sources = {
+            value
+            for row in REGISTER_PROFILE
+            for value in (row[1], row[2])
+            if any(0x0400 <= ord(character) <= 0x04FF for character in value)
+        }
+        self.assertEqual(workbook_sources - set(api_catalog), set())
+        self.assertTrue(all(
+            not re.search(r"[\u0400-\u04FF]", api_catalog[source]["en"])
+            for source in workbook_sources
+        ))
 
     def test_demo_populates_fan_for_dashboard_charts_and_lcd_data(self) -> None:
         html_source = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
@@ -1226,7 +1329,11 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("Every V1.31 R69 power-route bit is demonstrated at least once", chart_source)
         self.assertIn("const scenarioIndex = Math.floor(Math.max(0, elapsedSeconds) / 20) % 6", chart_source)
         self.assertIn("1 << 10", chart_source)
-        self.assertNotIn(": demoFallbackValue(register, scenario.elapsedSeconds)", chart_source)
+        self.assertIn("demoFallbackValue(register, scenario.elapsedSeconds)", chart_source)
+        self.assertIn("Identity captured from the real inverter on 2026-08-19", chart_source)
+        self.assertIn("[1, 0x4a32], [2, 0x3531]", chart_source)
+        self.assertIn("[57, 0], [58, 64], [59, 0], [60, 0], [61, 0], [62, 0]", chart_source)
+        self.assertIn("const DEMO_DEVICE_IDENTITY = 'Model ID 64 · Device type 0 · SN J25110266-1H00028'", script_source("app.js"))
         self.assertIn("second / 120 * 100", chart_source)
         self.assertIn("[801, fanSpeed]", chart_source)
         self.assertIn("renderEnergyFlow(lastData, demoRegisterRows)", chart_source)
@@ -1292,15 +1399,17 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertNotIn("var(--fan-duration, 1s)", css_source)
         self.assertIn(".energy-inverter-fan-row.css-animation-fallback.active .energy-inverter-fan-rotor", css_source)
         self.assertIn("transform-box: view-box; transform-origin: 12px 12px", css_source)
-        self.assertIn("position: absolute; z-index: 3; left: 6px; top: 58%; bottom: auto", css_source)
+        self.assertIn("position: absolute; z-index: 3; left: 22px; top: 50%; bottom: auto", css_source)
         self.assertIn(".energy-inverter .energy-node-value { top: 76% }", css_source)
         self.assertIn("flex-direction: column; width: 60px; max-width: 60px", css_source)
         self.assertIn("flex: 0 0 48px; width: 60px; height: 48px", css_source)
-        self.assertIn("left: 50%; right: auto; top: 64%; width: 48%", css_source)
-        self.assertIn("row-gap: 10px", css_source)
+        self.assertIn("left: 4px; top: 50%; bottom: auto; flex-direction: column", css_source)
+        self.assertIn("left: 72%; right: auto; top: 49%; width: 52%", css_source)
         self.assertIn("color: #fff; font-size: clamp(18px,5.2vw,22px)", css_source)
-        self.assertIn("left: 50%; right: auto; top: 64%; width: 48%; row-gap: 8px", css_source)
-        self.assertIn("position: static; z-index: 2; flex: 0 0 auto", css_source)
+        self.assertIn("font-size: clamp(16px, 2.2vw, 24px); line-height: 1.15", css_source)
+        self.assertIn(".energy-inverter .energy-mode-definition {", css_source)
+        self.assertIn("display: block; width: 100%; margin-top: 2px", css_source)
+        self.assertNotIn(".energy-inverter .energy-mode-definition { display: none }", css_source)
         self.assertIn("transform: translate(-50%,-50%)", css_source)
 
     def test_lcd_information_pages_follow_the_manual_order(self) -> None:
@@ -1569,8 +1678,8 @@ class DashboardRendererTests(unittest.TestCase):
                 "serialPadding": "SN word R10: 0x0000 is empty padding or the end of the identifier",
                 "protocolDisplay": "V1.3",
                 "controlSoftwareDisplay": "V1.3",
-                "deviceTypeDisplay": "0x00000048 · TTN 12KU U3.0 Single",
-                "deviceTypeInterpretation": "0x00000048 · TTN 12KU U3.0 Single",
+                "deviceTypeDisplay": "0x00000048 · Single inverter (device code 72)",
+                "deviceTypeInterpretation": "0x00000048 · Single inverter (device code 72)",
                 "protocolMajor": "protocol version: major component = 1; decoded display V1.3",
                 "controlSoftwareMinor": "control-board software version: minor component = 31; decoded display V1.3",
                 "bmsCan": "ID locked through CAN",

@@ -13,7 +13,7 @@ export interface RegisterReading {
   /** Human-readable register name. */
   name: string;
   /** Raw unsigned 16-bit value. */
-  raw: number;
+  raw: number | null;
   /** Formatted engineering value or localized status text. */
   display: string;
   /** Engineering unit, when applicable. */
@@ -22,6 +22,8 @@ export interface RegisterReading {
   group: string;
   /** Whether the latest poll supplied a usable value. */
   available: boolean;
+  /** Whether a full device scan previously confirmed that this address responds. */
+  supported: boolean;
 }
 
 /** A live engineering-value definition. Curated gauges include fixed bounds; dynamically discovered registers do not. */
@@ -70,6 +72,9 @@ export interface DashboardState {
   poll_rate_index: number;
   poll_rates: number[];
   read_mode: "fast" | "compatible";
+  fast_selected_registers: number[];
+  default_fast_selected_registers: number[];
+  minimum_fast_poll_register_count: number;
   requests: number;
   successful: number;
   error: string;
@@ -87,6 +92,8 @@ export interface DashboardSettingsUpdate {
   poll_rate_index?: number;
   read_mode?: "fast" | "compatible";
   paused?: boolean;
+  /** At least 120 unique register addresses from the device catalog. */
+  fast_selected_registers?: number[];
 }
 
 /** Actions accepted by `POST /api/register-log`. */
