@@ -133,21 +133,21 @@ def web_state(language: str = "uk") -> dict[str, Any]:
         return normalize(register, values[register])[3]
 
     def battery_direction() -> int:
-        """Return the physical battery direction: charge +1, discharge -1."""
+        """Return the inverter sign convention: discharge +1, charge -1."""
         flow_state = effective_value(69)
         if flow_state is not None:
             flow_bits = int(flow_state)
             if flow_bits & (1 << 8):  # battery → inverter
-                return -1
-            if flow_bits & (1 << 5):  # rectifier → battery
                 return 1
+            if flow_bits & (1 << 5):  # rectifier → battery
+                return -1
         terminal_state = effective_value(68)
         if terminal_state is not None:
             battery_state = (int(terminal_state) >> 8) & 0x07
             if battery_state == 2:
-                return -1
-            if battery_state == 3:
                 return 1
+            if battery_state == 3:
+                return -1
         return 0
 
     def battery_current_with_flow_direction(value: float | None) -> float | None:
@@ -157,7 +157,7 @@ def web_state(language: str = "uk") -> dict[str, Any]:
 
     battery_current_value = battery_current_with_flow_direction(effective_value(130))
     def battery_power_with_current_direction(value: float | None) -> float | None:
-        """Use positive charge and negative discharge consistently for R134."""
+        """Use positive discharge and negative charge consistently for R134."""
         if value is None or battery_current_value is None or abs(battery_current_value) < 0.3:
             return value
         return abs(value) if battery_current_value > 0 else -abs(value)

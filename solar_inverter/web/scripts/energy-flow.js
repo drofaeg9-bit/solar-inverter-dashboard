@@ -118,11 +118,12 @@
       syncFlowCardSelectionsForFastPoll(selected);
       return selected;
     }
-    function formatFlowCardRegister(register) {
+    function formatFlowCardRegister(register, absolute = false) {
       const value = registerNumericValue(register);
       if (!Number.isFinite(value)) return t('noData');
       const unit = String(register.unit || '').trim();
-      return `${Number(value.toFixed(unit === 'A' || unit === 'V' || unit === '%' ? 1 : 2))}${unit ? ` ${unit}` : ''}`;
+      const displayedValue = absolute ? Math.abs(value) : value;
+      return `${Number(displayedValue.toFixed(unit === 'A' || unit === 'V' || unit === '%' ? 1 : 2))}${unit ? ` ${unit}` : ''}`;
     }
     function renderFlowCardValues(cardKey, selector, registers, visible = true) {
       const host = document.querySelector(selector);
@@ -147,7 +148,7 @@
         // the currently active source of energy.
         row.textContent = compactAcMode || (interpretation
           ? `${name}: ${interpretation}`
-          : (register ? formatFlowCardRegister(register) : t('noData')));
+          : (register ? formatFlowCardRegister(register, cardKey === 'grid') : t('noData')));
         row.classList.toggle('flow-card-state-value', Boolean(interpretation));
         row.title = `R${number} · ${name}${register ? ` · ${registerRawExplanation(register)}` : ''}`;
         return row;
@@ -575,8 +576,8 @@
           || (Number.isFinite(batteryCurrent) && batteryCurrent >= .05)
           ? 1
           : 0;
-      // The signed live reading is authoritative: negative is discharge and
-      // positive is charge. R69/R68 are fallbacks only while power/current is
+      // The signed live reading is authoritative: negative is charge and
+      // positive is discharge. R69/R68 are fallbacks only while power/current is
       // too close to zero to establish a real direction.
       const batteryActive = liveMeasurementsFresh && batteryConnected
         && (!flowSuppressedByState || measuredBatteryActive) && (energyFlowState
@@ -585,11 +586,11 @@
         : measuredBatteryActive || (terminalState ? terminalState.battery === 2 || terminalState.battery === 3 : false)
       );
       const batteryCharging = batteryActive && (measuredBatteryDirection
-        ? measuredBatteryDirection > 0
+        ? measuredBatteryDirection < 0
         : energyFlowState ? energyFlowState.rectifierToBattery && !energyFlowState.batteryToInverter
           : terminalState?.battery === 3);
       const batteryDischarging = batteryActive && (measuredBatteryDirection
-        ? measuredBatteryDirection < 0
+        ? measuredBatteryDirection > 0
         : energyFlowState ? energyFlowState.batteryToInverter
           : terminalState?.battery === 2);
       const pvConnected = liveMeasurementsFresh && (Boolean(energyFlowState?.pvToRectifier) || (terminalState
@@ -617,13 +618,13 @@
         || (Number.isFinite(measuredGridPower) && Math.abs(measuredGridPower) > 20);
       // R81 is the physical mains input. R68 confirms whether that input is
       // electrically normal, but may lag a live R433/R434 measurement.
-      const gridTerminalConnected = energyFlowState?.gridToRectifier || energyFlowState?.gridToLoad || energyFlowState?.rectifierToGrid
+      const gridTerminalConnected = energyFlowState?.gridToRectifier || energyFlowState?.gridToLoad
         ? true
         : terminalState
         ? terminalState.grid !== 0 || measuredGridConnected
         : measuredGridConnected;
       const gridAvailable = liveMeasurementsFresh && gridTerminalConnected;
-      const gridRouteActive = Boolean(energyFlowState?.gridToRectifier || energyFlowState?.gridToLoad || energyFlowState?.rectifierToGrid);
+      const gridRouteActive = Boolean(energyFlowState?.gridToRectifier || energyFlowState?.gridToLoad);
       const gridNormal = gridRouteActive || (terminalState?.grid === 1 ? false : gridAvailable);
       const gridAbnormal = !gridRouteActive && terminalState?.grid === 1 && !measuredGridConnected;
       // R68 output bits can be stale while R537/R541 show a live household
@@ -645,11 +646,12 @@
         : gridAvailable && Number.isFinite(loadPower)
             ? loadPower + batteryChargePower - batteryDischargePower - Math.max(0, pvPower || 0)
             : null;
-      // Preserve the signed grid reading: positive imports from the grid and
-      // negative exports to it. R69 is only a direction fallback at zero/no data.
-      const gridPower = Number.isFinite(calculatedGridPower) ? calculatedGridPower : null;
+      // This installation uses the grid as a one-way source. Some firmware
+      // revisions report imported R84/R436 power with a negative CT sign, so
+      // expose its magnitude and never infer an export from that sign.
+      const gridPower = Number.isFinite(calculatedGridPower) ? Math.abs(calculatedGridPower) : null;
       const gridCurrent = gridAvailable && Number.isFinite(measuredGridCurrent)
-        ? measuredGridCurrent
+        ? Math.abs(measuredGridCurrent)
         : Number.isFinite(gridPower) && Number.isFinite(gridVoltage) && Math.abs(gridVoltage) > .1
           ? gridPower / Math.abs(gridVoltage)
           : null;
@@ -704,27 +706,21 @@
         })
         : null;
       const homeFlowActive = liveMeasurementsFresh;
-      const measuredGridDirection = Number.isFinite(gridPower) && Math.abs(gridPower) >= 1
-        ? Math.sign(gridPower)
-        : 0;
-      const gridImporting = measuredGridDirection
-        ? measuredGridDirection > 0
+      const measuredGridSupplying = Number.isFinite(gridPower) && gridPower >= 1;
+      const gridImporting = measuredGridSupplying
+        ? true
         : energyFlowState
           ? energyFlowState.gridToRectifier || energyFlowState.gridToLoad
           : priorityOutputSource === 'grid';
-      const gridExporting = measuredGridDirection
-        ? measuredGridDirection < 0
-        : Boolean(energyFlowState?.rectifierToGrid);
-      const gridFlowActive = (!flowSuppressedByState || Boolean(measuredGridDirection))
-        && gridAvailable && gridNormal && (gridImporting || gridExporting);
+      const gridFlowActive = (!flowSuppressedByState || measuredGridSupplying)
+        && gridAvailable && gridNormal && gridImporting;
       const batterySupplyingOutput = energyFlowState
         ? batteryDischarging
         : priorityOutputSource ? priorityOutputSource === 'battery' : batteryDischarging;
       const gridFlowState = !gridAvailable
         ? 'off'
         : gridAbnormal ? 'abnormal'
-          : gridExporting ? 'export'
-            : gridFlowActive ? 'import' : 'ready';
+          : gridFlowActive ? 'import' : 'ready';
       const batteryFlowState = !batteryConnected
         ? 'off'
         : terminalState?.battery === 1 ? 'low'
@@ -752,7 +748,7 @@
           if (previousGrid !== gridFlowState) {
             const gridText = {
               off: t('notConnected'), abnormal: t('connectedAbnormal'), ready: t('gridReady'),
-              import: t('gridSupplying'), export: t('gridExporting')
+              import: t('gridSupplying')
             }[gridFlowState];
             notices.push(`${t('grid')}: ${gridText}`);
           }
@@ -787,7 +783,7 @@
       const displayedHouseVoltage = Number.isFinite(outputVoltage) ? Math.abs(outputVoltage) : null;
       const displayedGridPower = gridAvailable && Number.isFinite(gridPower) ? gridPower : 0;
       const displayedGridCurrent = gridAvailable && Number.isFinite(gridCurrent) ? gridCurrent : 0;
-      const measuredEnergyFlowActive = measuredBatteryActive || Boolean(measuredGridDirection)
+      const measuredEnergyFlowActive = measuredBatteryActive || measuredGridSupplying
         || (Number.isFinite(pvPower) && pvPower > 20)
         || (Number.isFinite(generatorPower) && generatorPower > 20)
         || (Number.isFinite(loadPower) && loadPower > 20);
@@ -852,7 +848,6 @@
         // R69 can lag actual output measurements; a live load always has a home destination.
         homeFlowActive && t('home'),
         batteryCharging && t('battery'),
-        gridExporting && t('grid'),
         routeFlowState?.rectifierToInverter && !(
           routeFlowState.inverterToMainOutput || routeFlowState.inverterToSecondaryOutput
         ) && t('inverter')
@@ -974,7 +969,7 @@
         directionSelector: '#energy-grid-direction',
         direction: gridAbnormal
           ? t('connectedAbnormal')
-          : gridExporting ? t('gridExporting') : gridFlowActive ? t('gridSupplying') : gridAvailable ? t('gridReady') : t('notConnected')
+          : gridFlowActive ? t('gridSupplying') : gridAvailable ? t('gridReady') : t('notConnected')
       });
       DashboardRenderers.energyCard({
         nodeSelector: '#energy-battery-node',
@@ -1030,12 +1025,12 @@
         generatorActive ? generatorPower : 0
       );
       document.querySelector('#energy-generator-flow')?.classList.toggle('disconnected', !generatorSourceAvailable);
-      // R69 bit 7 reverses this connector when the rectifier exports to the grid.
+      // Grid is a one-way source; animation always travels toward the inverter.
       setFlow(
         '#energy-grid-flow',
         gridFlowActive && inverterActive,
-        !gridExporting,
-        gridFlowActive ? gridPower : 0
+        true,
+        gridFlowActive ? Math.abs(gridPower || 0) : 0
       );
       document.querySelector('#energy-grid-flow')?.classList.toggle('disconnected', !(
         liveMeasurementsFresh && measuredGridConnected

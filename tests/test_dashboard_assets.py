@@ -139,17 +139,17 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("const chartInteractionStates = new WeakMap()", charts)
         self.assertIn("state.userZoomed = true", charts)
         self.assertIn("plot.setData(data, !state?.userZoomed)", charts)
-        self.assertIn("const CHART_UPDATE_ANIMATION_MS = 260", charts)
-        self.assertIn("const eased = progress * progress * (3 - 2 * progress)", charts)
-        self.assertIn("requestAnimationFrame(animate)", charts)
-        self.assertIn("prefers-reduced-motion: reduce", charts)
+        self.assertIn("Apply each poll as one in-place uPlot update", charts)
+        self.assertNotIn("CHART_UPDATE_ANIMATION_MS", charts)
+        self.assertNotIn("requestAnimationFrame(animate)", charts)
+        self.assertNotIn("prefers-reduced-motion: reduce", charts)
         self.assertIn("destroyDetachedCharts()", charts)
         self.assertIn("outline: 3px solid var(--focus-ring)", css)
         self.assertIn("--ui-border: #71849b", css)
         self.assertIn("--ui-border: #77868e", css)
         self.assertIn("scheduleRegisterRender(demoRegisterRows)", charts)
         self.assertIn("function demoFallbackValue(register, elapsedSeconds)", charts)
-        self.assertIn("item.available = true", charts)
+        self.assertIn("available: true", charts)
         self.assertIn("scheduleRegisterRender(displayedRegisters)", app)
         self.assertIn("TTN-INV external Modbus map V1.31", charts)
         self.assertIn("[16641, 2], [16642, 0]", charts)
@@ -432,9 +432,10 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("batteryPower <= -1", flow)
         self.assertIn("batteryCurrent <= -.05", flow)
         self.assertIn("? measuredBatteryDirection < 0", flow)
-        self.assertIn("positive imports from the grid", flow)
-        self.assertIn("? Math.sign(gridPower)", flow)
-        self.assertIn("? measuredGridDirection < 0", flow)
+        self.assertIn("grid as a one-way source", flow)
+        self.assertNotIn("gridExporting", flow)
+        self.assertIn("Grid is a one-way source; animation always travels toward the inverter", flow)
+        self.assertIn("formatFlowCardRegister(register, cardKey === 'grid')", flow)
         self.assertIn("const batteryCharging = batteryActive && (measuredBatteryDirection", flow)
         self.assertIn("const gridRouteActive = Boolean(energyFlowState?.gridToRectifier", flow)
         self.assertIn("const generatorRouteActive = Boolean(energyFlowState?.generatorToRectifier", flow)
@@ -1057,9 +1058,9 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("? measuredBatteryDirection > 0", flow)
         self.assertIn("? measuredBatteryDirection < 0", flow)
         translations = (WEB_ROOT / "scripts" / "translations.js").read_text(encoding="utf-8")
-        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДІМ · − розряд'", translations)
-        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДОМ · − разрядка'", translations)
-        self.assertIn("demoBatteryHome: 'DEMO · BAT. → HOME · − discharging'", translations)
+        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДІМ · + розряд'", translations)
+        self.assertIn("demoBatteryHome: 'ДЕМО · БАТ. → ДОМ · + разрядка'", translations)
+        self.assertIn("demoBatteryHome: 'DEMO · BAT. → HOME · + discharging'", translations)
         self.assertNotIn("numberValue([84, 437, 436])", lcd)
 
     def test_build_and_installer_payload_manifests_match(self) -> None:
@@ -1181,8 +1182,8 @@ class DashboardRendererTests(unittest.TestCase):
             const start = source.indexOf('function interpolate');
             const end = source.indexOf('function realisticDemoScenario', start);
             eval(source.slice(start, end));
-            const discharge = capturedRegisterLogDemoScenario(6).values;
-            const charge = capturedRegisterLogDemoScenario(66).values;
+            const discharge = capturedRegisterLogDemoScenario(46).values;
+            const charge = capturedRegisterLogDemoScenario(26).values;
             console.log(JSON.stringify({
               discharge: [discharge.get(130), discharge.get(134), discharge.get(69)],
               charge: [charge.get(81), charge.get(130), charge.get(134), charge.get(69)]
@@ -1194,12 +1195,12 @@ class DashboardRendererTests(unittest.TestCase):
             check=True, capture_output=True, text=True,
         )
         demo = json.loads(result.stdout)
-        self.assertLess(demo["discharge"][0], 0)
-        self.assertLess(demo["discharge"][1], 0)
+        self.assertGreater(demo["discharge"][0], 0)
+        self.assertGreater(demo["discharge"][1], 0)
         self.assertEqual(demo["discharge"][2] & (1 << 8), 1 << 8)
         self.assertEqual(demo["charge"][0], 230)
-        self.assertGreater(demo["charge"][1], 0)
-        self.assertGreater(demo["charge"][2], 0)
+        self.assertLess(demo["charge"][1], 0)
+        self.assertLess(demo["charge"][2], 0)
         self.assertEqual(demo["charge"][3] & ((1 << 0) | (1 << 5)), (1 << 0) | (1 << 5))
 
     def test_full_r68_battery_state_forces_a_complete_soc_display(self) -> None:
@@ -1222,7 +1223,7 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertEqual(effective_battery_soc(None, full_terminal_state), 100.0)
         self.assertIsNone(effective_battery_soc(None, None))
 
-    def test_api_signs_battery_current_and_power_during_discharge(self) -> None:
+    def test_api_uses_positive_battery_current_and_power_during_discharge(self) -> None:
         from solar_inverter.components.web_dashboard import web_state
         from solar_inverter.services.inverter_service import state, state_lock
 
@@ -1233,10 +1234,10 @@ class DashboardRendererTests(unittest.TestCase):
             snapshot = web_state("en")
             readings = {item["register"]: item for item in snapshot["registers"]}
             meters = {item["register"]: item for item in snapshot["meters"]}
-            self.assertEqual(readings[130]["value"], -5.7)
-            self.assertEqual(readings[134]["value"], -306)
-            self.assertEqual(meters[130]["value"], -5.7)
-            self.assertEqual(meters[134]["value"], -306)
+            self.assertEqual(readings[130]["value"], 5.7)
+            self.assertEqual(readings[134]["value"], 306)
+            self.assertEqual(meters[130]["value"], 5.7)
+            self.assertEqual(meters[134]["value"], 306)
         finally:
             with state_lock:
                 state["values"] = original_values
@@ -1248,8 +1249,9 @@ class DashboardRendererTests(unittest.TestCase):
         self.assertIn("firstRegister([69])", lcd)
         self.assertIn("decodeEnergyTerminalState(terminalStateSource)", lcd)
         self.assertIn("decodeEnergyFlowState(flowStateSource)", lcd)
-        self.assertIn("flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid", lcd)
-        self.assertIn("flowState.inverterToMainOutput || flowState.inverterToSecondaryOutput", lcd)
+        self.assertIn("flowState.gridToRectifier || flowState.gridToLoad", lcd)
+        self.assertNotIn("flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid", lcd)
+        self.assertIn("const loadFlowActive = outputConnected && outputCanSupply", lcd)
 
     def test_all_tabs_use_complete_translation_catalogs(self) -> None:
         translation_path = WEB_ROOT / "scripts" / "translations.js"

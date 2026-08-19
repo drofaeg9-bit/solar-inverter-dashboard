@@ -482,12 +482,12 @@
       // frame supplies the complete direction-related snapshot, so a value
       // from the real inverter can never leak into the demo.
       const scenarios = [
-        {caseKey: 'demoSolarChargeExport', inverterState: 4, terminal: 2 << 4 | 1 << 6 | 3 << 8 | 1 << 11, flow: 1 << 4 | 1 << 5 | 1 << 6 | 1 << 9, pvPower: 2700, batteryCurrent: 18, gridPower: 0, generatorPower: 0},
-        {caseKey: 'demoGridHome', inverterState: 3, terminal: 2 | 1 << 6 | 3 << 8 | 1 << 11, flow: 1 << 0 | 1 << 1 | 1 << 5 | 1 << 6 | 1 << 9, pvPower: 0, batteryCurrent: 12, gridPower: frame.load + 630, generatorPower: 0},
-        {caseKey: 'demoBatteryHome', inverterState: 5, terminal: 1 << 6 | 2 << 8, flow: 1 << 8 | 1 << 9, pvPower: 0, batteryCurrent: -Math.abs(frame.current), gridPower: 0, generatorPower: 0},
-        {caseKey: 'demoSolarExport', inverterState: 4, terminal: 2 << 4 | 1 << 6 | 4 << 8, flow: 1 << 4 | 1 << 6 | 1 << 7 | 1 << 9, pvPower: 3600, batteryCurrent: 0, gridPower: Math.max(0, 3600 - frame.load), generatorPower: 0},
-        {caseKey: 'demoGeneratorHome', inverterState: 6, terminal: 2 << 2 | 1 << 6 | 3 << 8 | 1 << 11, flow: 1 << 2 | 1 << 3 | 1 << 5 | 1 << 6 | 1 << 9, pvPower: 0, batteryCurrent: 8, gridPower: 0, generatorPower: frame.load + 420},
-        {caseKey: 'demoMixedSources', inverterState: 4, terminal: 2 << 4 | 1 << 6 | 2 << 8, flow: 1 << 4 | 1 << 6 | 1 << 8 | 1 << 10, pvPower: 1700, batteryCurrent: -8, gridPower: 0, generatorPower: 0}
+        {caseKey: 'demoSolarChargeExport', inverterState: 4, terminal: 2 << 4 | 1 << 6 | 3 << 8 | 1 << 11, flow: 1 << 4 | 1 << 5 | 1 << 6 | 1 << 9, pvPower: 2700, batteryCurrent: -18, gridPower: 0, generatorPower: 0},
+        {caseKey: 'demoGridHome', inverterState: 3, terminal: 2 | 1 << 6 | 3 << 8 | 1 << 11, flow: 1 << 0 | 1 << 1 | 1 << 5 | 1 << 6 | 1 << 9, pvPower: 0, batteryCurrent: -12, gridPower: frame.load + 630, generatorPower: 0},
+        {caseKey: 'demoBatteryHome', inverterState: 5, terminal: 1 << 6 | 2 << 8, flow: 1 << 8 | 1 << 9, pvPower: 0, batteryCurrent: Math.abs(frame.current), gridPower: 0, generatorPower: 0},
+        {caseKey: 'demoSolarExport', inverterState: 4, terminal: 2 << 4 | 1 << 6 | 4 << 8, flow: 1 << 4 | 1 << 6 | 1 << 9, pvPower: 3600, batteryCurrent: 0, gridPower: 0, generatorPower: 0},
+        {caseKey: 'demoGeneratorHome', inverterState: 6, terminal: 2 << 2 | 1 << 6 | 3 << 8 | 1 << 11, flow: 1 << 2 | 1 << 3 | 1 << 5 | 1 << 6 | 1 << 9, pvPower: 0, batteryCurrent: -8, gridPower: 0, generatorPower: frame.load + 420},
+        {caseKey: 'demoMixedSources', inverterState: 4, terminal: 2 << 4 | 1 << 6 | 2 << 8, flow: 1 << 4 | 1 << 6 | 1 << 8 | 1 << 10, pvPower: 1700, batteryCurrent: 8, gridPower: 0, generatorPower: 0}
       ];
       const scenario = scenarios[scenarioIndex];
       const outputCurrent = frame.load / frame.voltage;
@@ -539,7 +539,7 @@
         pvVoltage = 326 + ripple * 4;
         pvPower = 7200 + Math.sin(second * .21) * 260;
         loadPower = 2500 + Math.sin(second * .29) * 140;
-        batteryCurrent = 42 + ripple * 1.5;
+        batteryCurrent = -(42 + ripple * 1.5);
         batterySoc = 72 + second * .08;
         statusCode = 4;
         outputPriority = 2;
@@ -550,7 +550,7 @@
         pvVoltage = 0;
         pvPower = 0;
         loadPower = 2900 + ripple * 130;
-        batteryCurrent = 18 + ripple;
+        batteryCurrent = -(18 + ripple);
         batterySoc = 73.6 + (second - 20) * .05;
         statusCode = 3;
         outputPriority = 0;
@@ -563,7 +563,7 @@
         pvVoltage = 0;
         pvPower = 0;
         loadPower = 2300 + Math.sin(second * .31) * 160;
-        batteryCurrent = -loadPower / 51.8;
+        batteryCurrent = loadPower / 51.8;
         batterySoc = 74.4 - (second - 40) * .09;
         statusCode = 5;
         outputPriority = 0;
@@ -603,7 +603,7 @@
         pvVoltage = 320 + ripple * 3;
         pvPower = 1500 + ripple * 120;
         loadPower = 2500 + Math.sin(second * .25) * 120;
-        batteryCurrent = -(20 + ripple);
+        batteryCurrent = 20 + ripple;
         batterySoc = 72.5 - (second - 100) * .07;
         statusCode = 4;
         outputPriority = 2;

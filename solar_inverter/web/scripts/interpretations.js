@@ -60,7 +60,7 @@
         phrase('PVF — PV першим, мережа резервна; залежить від моделі', 'PVF — PV первым, сеть резервная; зависит от модели', 'PVF — PV first with grid backup; model dependent')
       ];
       const chargingState = [
-        phrase('Батарея не заряджається', 'Батарея не заряжается', 'Battery is not charging'),
+        phrase('Активну стадію заряджання не вказано; фактичний напрямок визначається за струмом', 'Активная стадия зарядки не указана; фактическое направление определяется по току', 'No active charging stage is reported; actual direction is determined from current'),
         phrase('Основне заряджання CC/CV', 'Основная зарядка CC/CV', 'Main CC/CV charging stage'),
         phrase('Підтримувальне (float) заряджання', 'Поддерживающая (float) зарядка', 'Float charging stage'),
         phrase('Вирівнювальне заряджання', 'Выравнивающая зарядка', 'Equalisation charging stage')

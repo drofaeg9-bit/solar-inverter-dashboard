@@ -113,11 +113,11 @@
       const batteryConnected = terminalState
         ? terminalState.battery !== 0
         : Number.isFinite(batteryVoltage) && batteryVoltage > 20;
-      // Battery current uses the BMS convention: positive charge, negative discharge.
+      // This inverter reports positive discharge and negative charge.
       const measuredBatteryCharging = Number.isFinite(batteryActiveValue)
-        && batteryActiveValue > batteryActivityThreshold;
-      const measuredBatteryDischarging = Number.isFinite(batteryActiveValue)
         && batteryActiveValue < -batteryActivityThreshold;
+      const measuredBatteryDischarging = Number.isFinite(batteryActiveValue)
+        && batteryActiveValue > batteryActivityThreshold;
       const batteryCharging = liveMeasurementsFresh && !flowSuppressed && batteryConnected && (batteryDirectionFromCurrent
         ? measuredBatteryCharging
         : flowState
@@ -156,7 +156,7 @@
       const outputConnected = liveMeasurementsFresh;
       const outputCanSupply = liveMeasurementsFresh;
       const gridFlowActive = !flowSuppressed && gridConnected && gridNormal && (flowState
-        ? flowState.gridToRectifier || flowState.gridToLoad || flowState.rectifierToGrid
+        ? flowState.gridToRectifier || flowState.gridToLoad
         : Number.isFinite(measuredGridPower) && Math.abs(measuredGridPower) > 20);
       const pvFlowActive = !flowSuppressed && pvConnected && pvNormal && (flowState
         ? flowState.pvToRectifier
@@ -169,7 +169,7 @@
         ? 0
         : batteryCharging && Number.isFinite(loadPower)
           ? loadPower + Math.abs(batteryPower || 0)
-          : measuredGridPower;
+          : Number.isFinite(measuredGridPower) ? Math.abs(measuredGridPower) : measuredGridPower;
 
       setText('#lcd-mode', chartDemoRunning ? t('demoMode') : data.online ? t('online') : t('offline'));
       setText('#lcd-grid', reading(gridPower, 'W', 0));
@@ -220,7 +220,7 @@
       const kilowattReading = (value, unit) =>
         Number.isFinite(value) ? reading(value / 1000, unit, 2) : t('noData');
       const chargerCurrent = sumValues([159, 160]);
-      const dischargingCurrent = Number.isFinite(batteryCurrent) && batteryCurrent < 0
+      const dischargingCurrent = Number.isFinite(batteryCurrent) && batteryCurrent > 0
         ? Math.abs(batteryCurrent)
         : 0;
       const pages = [

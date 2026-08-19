@@ -1,6 +1,5 @@
     const chartPlots = new Map();
     const chartInteractionStates = new WeakMap();
-    const CHART_UPDATE_ANIMATION_MS = 260;
     let modalChartPlot = null;
     let modalChartKey = '';
 
@@ -97,8 +96,7 @@
             chartInteractionStates.set(plot, {
               ready: true,
               updating: false,
-              userZoomed: false,
-              animationFrame: 0
+              userZoomed: false
             });
             const pointers = new Map();
             let pan = null;
@@ -269,8 +267,6 @@
             };
           }],
           destroy: [plot => {
-            const state = chartInteractionStates.get(plot);
-            if (state?.animationFrame) cancelAnimationFrame(state.animationFrame);
             cleanup();
           }]
         }
@@ -296,11 +292,6 @@
     }
 
     function updateChartData(plot, data) {
-      const state = chartInteractionStates.get(plot);
-      if (state?.animationFrame) {
-        cancelAnimationFrame(state.animationFrame);
-        state.animationFrame = 0;
-      }
       const previousTimes = plot.data?.[0] || [];
       const previousValues = plot.data?.[1] || [];
       const targetTimes = data?.[0] || [];
@@ -315,42 +306,10 @@
         && targetTime === previousTime
         && targetValue === previousValue;
       if (unchanged) return;
-
-      const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      const canAnimate = !document.hidden
-        && !reduceMotion
-        && targetTimes.length >= 2
-        && previousTimes.length >= 1
-        && targetTimes.length <= previousTimes.length + 1
-        && Number.isFinite(targetTime)
-        && Number.isFinite(targetValue)
-        && Number.isFinite(previousTime)
-        && Number.isFinite(previousValue);
-      if (!canAnimate) {
-        applyChartData(plot, data);
-        return;
-      }
-
-      const startedAt = performance.now();
-      const leadingTimes = targetTimes.slice(0, -1);
-      const leadingValues = targetValues.slice(0, -1);
-      const animate = now => {
-        const progress = Math.min(1, (now - startedAt) / CHART_UPDATE_ANIMATION_MS);
-        const eased = progress * progress * (3 - 2 * progress);
-        const frameData = [
-          [...leadingTimes, previousTime + (targetTime - previousTime) * eased],
-          [...leadingValues, previousValue + (targetValue - previousValue) * eased]
-        ];
-        applyChartData(plot, frameData);
-        if (progress < 1) {
-          if (state) state.animationFrame = requestAnimationFrame(animate);
-        } else {
-          if (state) state.animationFrame = 0;
-          applyChartData(plot, data);
-        }
-      };
-      if (state) state.animationFrame = requestAnimationFrame(animate);
-      else applyChartData(plot, data);
+      // Apply each poll as one in-place uPlot update. Repeated animated
+      // setData calls also repeatedly auto-scale the axes, which looks like
+      // the complete graph is blinking even though its DOM is preserved.
+      applyChartData(plot, data);
     }
 
     function chartOptions(host, item, colour, height) {
