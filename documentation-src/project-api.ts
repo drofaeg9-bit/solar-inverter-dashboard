@@ -92,7 +92,7 @@ export interface DashboardSettingsUpdate {
   poll_rate_index?: number;
   read_mode?: "fast" | "compatible";
   paused?: boolean;
-  /** At least 120 unique register addresses from the device catalog. */
+  /** Unique supported register addresses to include in each fast poll. */
   fast_selected_registers?: number[];
 }
 

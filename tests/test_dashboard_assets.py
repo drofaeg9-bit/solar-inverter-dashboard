@@ -496,6 +496,10 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertIn("const FLOW_CARD_SELECTION_KEY_PREFIX = 'inverter-flow-card-values-v2:'", flow)
         self.assertIn("function normalizeFlowCardSelection(cardKey, selection)", flow)
         self.assertIn("const FLOW_CARD_CONFIG = Object.freeze", flow)
+        self.assertRegex(
+            flow,
+            r"battery: \{label: 'battery'.*registers: \[66, .*401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, .*16671, 16672\]",
+        )
         self.assertIn("function renderFlowCardPickerList()", flow)
         self.assertIn("const selectedOrder = new Map(selected.map((register, index) => [register, index]))", flow)
         self.assertIn(".sort((left, right) => {", flow)
@@ -625,7 +629,7 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertTrue(all(item["description"] for item in snapshot["registers"]))
         self.assertTrue(all(item["description_reference"] in {"V1.31", "U3.0"} for item in snapshot["registers"]))
         self.assertEqual(snapshot["minimum_fast_poll_register_count"], 0)
-        self.assertEqual(len(snapshot["default_fast_selected_registers"]), 120)
+        self.assertEqual(len(snapshot["default_fast_selected_registers"]), 113)
         self.assertGreaterEqual(sum(item["supported"] for item in snapshot["registers"]), 386)
 
         register_map = (WEB_ROOT / "scripts" / "register-map.js").read_text(encoding="utf-8")
@@ -979,6 +983,7 @@ class DashboardAssetTests(unittest.TestCase):
             OBSERVED_AVAILABLE_REGISTERS,
             COUNTER_32BIT_LOW_WORD_REGISTERS,
             REGISTER_CONFIG,
+            TTN_FAST_MBPOLL_REGISTERS,
             fast_selected_blocks,
         )
         from solar_inverter.services.register_profile_12ku import REGISTER_BY_NUMBER, REGISTER_PROFILE
@@ -991,11 +996,17 @@ class DashboardAssetTests(unittest.TestCase):
         self.assertEqual(OBSERVED_AVAILABLE_REGISTERS[-3:], (16768, 16779, 16780))
         self.assertEqual(MIN_FAST_POLL_REGISTER_COUNT, 0)
         self.assertEqual(len(DEFAULT_FAST_SELECTED_REGISTERS), DEFAULT_FAST_POLL_REGISTER_COUNT)
-        self.assertEqual(DEFAULT_FAST_POLL_REGISTER_COUNT, 120)
-        self.assertEqual(DEFAULT_FAST_SELECTED_REGISTERS[:4], (90, 92, 93, 94))
-        self.assertTrue(set(DEFAULT_FAST_SELECTED_REGISTERS).issubset(OBSERVED_AVAILABLE_REGISTERS))
-        self.assertTrue(set(DEFAULT_FAST_SELECTED_REGISTERS).isdisjoint(IDENTITY_REGISTERS))
-        self.assertEqual(AVAILABLE_FAST_POLL_REGISTERS, frozenset(OBSERVED_AVAILABLE_REGISTERS))
+        self.assertEqual(DEFAULT_FAST_POLL_REGISTER_COUNT, 113)
+        self.assertEqual(DEFAULT_FAST_SELECTED_REGISTERS, TTN_FAST_MBPOLL_REGISTERS)
+        self.assertEqual(DEFAULT_FAST_SELECTED_REGISTERS[:5], (65, 66, 67, 68, 69))
+        self.assertEqual(DEFAULT_FAST_SELECTED_REGISTERS[-5:], (16688, 16689, 16692, 16694, 16696))
+        self.assertTrue(set(DEFAULT_FAST_SELECTED_REGISTERS).issubset(AVAILABLE_FAST_POLL_REGISTERS))
+        self.assertEqual(set(DEFAULT_FAST_SELECTED_REGISTERS) & IDENTITY_REGISTERS, {65})
+        self.assertEqual(
+            AVAILABLE_FAST_POLL_REGISTERS,
+            frozenset((*OBSERVED_AVAILABLE_REGISTERS, *TTN_FAST_MBPOLL_REGISTERS)),
+        )
+        self.assertEqual(set(TTN_FAST_MBPOLL_REGISTERS) - set(OBSERVED_AVAILABLE_REGISTERS), {162})
         selected_blocks = fast_selected_blocks(list(DEFAULT_FAST_SELECTED_REGISTERS))
         self.assertEqual(fast_selected_blocks([11, 90]), [(90, 1)])
         fixed_registers = {
